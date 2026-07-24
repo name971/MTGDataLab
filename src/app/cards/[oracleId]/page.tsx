@@ -15,6 +15,7 @@ import {
 import { fetchExchangeRates, toJpy, formatJpy } from "@/lib/fx";
 import { SAMPLE_CARD_SLUGS } from "@/lib/sampleCards";
 import { getArchetypesUsingCard } from "@/lib/sampleDeckDetail";
+import { getFormatUsageCountsForCard } from "@/lib/dbCardUsageByFormat";
 import {
   getCardDetailFromDb,
   getCardDetailByOracleId,
@@ -25,6 +26,7 @@ import {
 import LegalityGrid from "@/components/LegalityGrid";
 
 interface ResolvedCard {
+  oracleId: string | null;
   nameJa: string | null;
   nameEn: string;
   setName: string;
@@ -46,6 +48,7 @@ async function resolveCardFromDbDetail(dbResult: DbCardDetail): Promise<Resolved
     usdPrice = livePrice?.usd ? parseFloat(livePrice.usd) : null;
   }
   return {
+    oracleId: oracle.oracle_id,
     // 同一プリントの日本語版（jaCard）が無い場合、card_oracles.printed_name_jaに
     // 他プリントからのフォールバック済みの名前が入っていればそちらを使う
     // （例: Hallowed Fountainの代表英語版がJP版の無いプリントだった場合）。
@@ -84,6 +87,7 @@ async function resolveCard(searchName: string): Promise<ResolvedCard | null> {
     printed_name: jaCard ? resolveFrontFacePrintedName(jaCard) : undefined,
   });
   return {
+    oracleId: null,
     nameJa: displayName.sub ? displayName.main : null,
     nameEn: enFrontName,
     setName: enCard.set_name,
@@ -134,6 +138,7 @@ export default async function CardDetailPage({
 
   const jpyPrice = card.usdPrice !== null ? toJpy(card.usdPrice, rates.usdToJpy) : null;
   const relatedArchetypes = getArchetypesUsingCard(card.nameEn);
+  const formatUsageCounts = card.oracleId ? await getFormatUsageCountsForCard(card.oracleId) : [];
 
   return (
     <div className="flex flex-col gap-6">
@@ -181,8 +186,27 @@ export default async function CardDetailPage({
         </div>
 
         <div className="rounded-lg border border-neutral-200 p-4">
-          <h2 className="mb-3 text-sm font-medium text-neutral-500">使用デッキ</h2>
-          {relatedArchetypes.length > 0 ? (
+          <h2 className="mb-3 text-sm font-medium text-neutral-500">使用デッキ（直近7日間）</h2>
+          {formatUsageCounts.length > 0 ? (
+            <ul className="flex flex-col gap-1.5 text-sm">
+              {formatUsageCounts.map((f) => (
+                <li key={f.format} className="flex items-center justify-between">
+                  <span>{f.format}</span>
+                  <span>
+                    {f.deckCount7d}件
+                    {f.changePct !== null && (
+                      <span
+                        className={`ml-1 text-xs ${f.changePct < 0 ? "text-red-800" : "text-teal-800"}`}
+                      >
+                        （{f.changePct >= 0 ? "+" : ""}
+                        {f.changePct}%）
+                      </span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : relatedArchetypes.length > 0 ? (
             <ul className="flex flex-col gap-1.5 text-sm">
               {relatedArchetypes.map((a) => (
                 <li key={a.archetypeId}>
