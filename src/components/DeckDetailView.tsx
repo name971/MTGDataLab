@@ -1,11 +1,13 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useState } from "react";
 import { totalPriceJpy, formatJpy } from "@/lib/deckPricing";
 import ManaCost from "./ManaCost";
 
 export interface DeckCardDisplay {
+  oracleId: string | null;
   nameEn: string;
   nameJa: string | null;
   artCropUrl: string | null;
@@ -159,7 +161,14 @@ function CardListRow({ card }: { card: DeckCardDisplay }) {
     <li key={`${card.nameEn}-${card.board}`} className="contents">
       <span className="flex min-w-0 items-center gap-1.5 truncate border-b border-neutral-100 py-1">
         <span className="truncate">
-          {card.quantity}x {card.nameJa ?? card.nameEn}
+          {card.quantity}x{" "}
+          {card.oracleId ? (
+            <Link href={`/cards/${card.oracleId}`} className="hover:underline">
+              {card.nameJa ?? card.nameEn}
+            </Link>
+          ) : (
+            card.nameJa ?? card.nameEn
+          )}
         </span>
         <ManaCost cost={card.manaCost} />
       </span>
@@ -228,8 +237,8 @@ function DeckCardList({
 }
 
 function CardGridTile({ card }: { card: DeckCardDisplay }) {
-  return (
-    <div key={`${card.nameEn}-${card.board}`} className="flex flex-col items-center gap-1">
+  const content = (
+    <>
       {card.imageNormalUrl ? (
         <Image
           src={card.imageNormalUrl}
@@ -246,8 +255,20 @@ function CardGridTile({ card }: { card: DeckCardDisplay }) {
       <p className="text-center text-xs">
         {card.quantity}x {card.nameJa ?? card.nameEn}
       </p>
-    </div>
+    </>
   );
+
+  if (card.oracleId) {
+    return (
+      <Link
+        href={`/cards/${card.oracleId}`}
+        className="flex flex-col items-center gap-1 hover:opacity-80"
+      >
+        {content}
+      </Link>
+    );
+  }
+  return <div className="flex flex-col items-center gap-1">{content}</div>;
 }
 
 function DeckCardGrid({

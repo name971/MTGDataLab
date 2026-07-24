@@ -32,6 +32,7 @@ async function resolveDeck(deckId: string): Promise<PageDeck | null> {
       subtitle: `${sampleDeck.archetypeNameEn} ・ ${sampleDeck.eventName} ・ ${sampleDeck.standing}`,
       format: "",
       cards: sampleDeck.cards.map((c) => ({
+        oracleId: null,
         nameEn: c.nameEn,
         nameJa: c.nameJa,
         artCropUrl: c.artCropUrl,

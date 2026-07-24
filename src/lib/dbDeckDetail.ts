@@ -1,6 +1,7 @@
 import { supabase } from "./supabase";
 
 export interface DbDeckCard {
+  oracleId: string | null;
   nameEn: string;
   nameJa: string | null;
   artCropUrl: string | null;
@@ -188,6 +189,7 @@ export async function getDeckDetailFromDb(deckId: number): Promise<DbDeckDetail 
     cards: cards.map((c) => {
       const info = c.oracle_id ? oracleInfo.get(c.oracle_id) : undefined;
       return {
+        oracleId: c.oracle_id ?? null,
         nameEn: c.card_name,
         nameJa: info?.printedNameJa ?? null,
         artCropUrl: info?.artCropUrl ?? null,

@@ -59,12 +59,14 @@ describe("getDeckDetailFromDb", () => {
     expect(result?.eventName).toBe("Test Cup");
     expect(result?.cards).toEqual([
       {
+        oracleId: null,
         nameEn: "Lightning Bolt",
         nameJa: null,
         artCropUrl: null,
         imageNormalUrl: null,
         priceJpy: null,
         typeLine: null,
+        manaCost: null,
         quantity: 4,
         board: "main",
       },
