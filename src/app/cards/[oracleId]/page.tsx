@@ -16,6 +16,8 @@ import { fetchExchangeRates, toJpy, formatJpy } from "@/lib/fx";
 import { SAMPLE_CARD_SLUGS } from "@/lib/sampleCards";
 import { getArchetypesUsingCard } from "@/lib/sampleDeckDetail";
 import { getFormatUsageCountsForCard } from "@/lib/dbCardUsageByFormat";
+import { getPriceHistoryForCard } from "@/lib/dbPriceHistory";
+import PriceHistoryChart from "@/components/PriceHistoryChart";
 import {
   getCardDetailFromDb,
   getCardDetailByOracleId,
@@ -139,6 +141,12 @@ export default async function CardDetailPage({
   const jpyPrice = card.usdPrice !== null ? toJpy(card.usdPrice, rates.usdToJpy) : null;
   const relatedArchetypes = getArchetypesUsingCard(card.nameEn);
   const formatUsageCounts = card.oracleId ? await getFormatUsageCountsForCard(card.oracleId) : [];
+  const [enPriceHistory, jaPriceHistory] = card.oracleId
+    ? await Promise.all([
+        getPriceHistoryForCard(card.oracleId, "en"),
+        getPriceHistoryForCard(card.oracleId, "ja"),
+      ])
+    : [[], []];
 
   return (
     <div className="flex flex-col gap-6">
@@ -172,10 +180,7 @@ export default async function CardDetailPage({
             )}
           </div>
 
-          <div className="rounded-lg border border-dashed border-neutral-300 p-4 text-xs text-neutral-500">
-            TODO: 円建て価格推移チャート（期間切替、JP/EN比較トグル）。Scryfallは現在価格のみ提供のため、
-            日次スナップショットは card_price_snapshots（db/schema.sql）に蓄積してから表示する。
-          </div>
+          <PriceHistoryChart enHistory={enPriceHistory} jaHistory={jaPriceHistory} />
         </div>
       </div>
 
