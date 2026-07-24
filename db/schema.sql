@@ -1,0 +1,497 @@
+-- ────────────────────────────────────────────────────────────
+-- 日本語版MTGStocks データベーススキーマ
+-- PostgreSQL / Supabase 想定
+-- ────────────────────────────────────────────────────────────
+
+
+-- ════════════════════════════════════════════
+-- 1. カードマスタ（Scryfall由来）
+-- ════════════════════════════════════════════
+
+-- 「カードの概念」単位（oracle_id）。再録があっても1行。
+-- ランキング・採用率・トレンドスコアなど、プリント違いを問わない集計はここを参照する。
+CREATE TABLE card_oracles (
+  oracle_id       UUID PRIMARY KEY,
+  name            TEXT NOT NULL,
+  printed_name_ja TEXT
+);
+
+-- カードの「印刷」単位（セット違い・言語違いごとに1行）
+CREATE TABLE cards (
+  scryfall_id        UUID PRIMARY KEY,
+  oracle_id           UUID NOT NULL REFERENCES card_oracles (oracle_id),
+  name                TEXT NOT NULL,
+  printed_name_ja     TEXT,
+  set_code            TEXT NOT NULL,
+  set_name            TEXT NOT NULL,
+  rarity              TEXT NOT NULL,             -- common/uncommon/rare/mythic
+  collector_number    TEXT NOT NULL,
+  lang                TEXT NOT NULL DEFAULT 'en',
+  image_uri_normal    TEXT,                      -- Scryfall画像URL（直リンク、自前ホストしない）
+  image_uri_art_crop  TEXT,
+  mana_cost           TEXT,
+  type_line            TEXT,
+  legalities          JSONB,                     -- {"modern": "legal", "standard": "not_legal", ...}
+  released_at         DATE,                      -- このプリントの発売日（日本語名の「最新版採用」判定に使う）
+  finishes             TEXT[],                    -- ['nonfoil','foil'] 等（Scryfallのfinishesをそのまま保存）
+  is_showcase          BOOLEAN DEFAULT false,
+  is_borderless        BOOLEAN DEFAULT false,
+  is_promo             BOOLEAN DEFAULT false,
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- 代表プリントの選定ルール（一覧・ランキングでどのプリントの画像/価格を使うか）:
+-- 1. 通常版nonfoil（is_showcase/is_borderless/is_promoが全てfalse、finishesにnonfoilを含む）があればそれを優先
+-- 2. 該当がなければ、Scryfallから取得した現在価格が最安のものを採用
+-- この判定は自前のcard_price_snapshots（後述、代表プリントのみ日次保持）ではなく、
+-- 判定タイミングでScryfallから直接取得した現在価格を使う（全プリントの日次履歴は持たないため）。
+-- 再評価は新セット追加時・再録検知時など、代表プリントが変わりうるタイミングでのみ実行すれば十分。
+--
+-- SELECT c.* FROM cards c
+-- WHERE c.oracle_id = :oracle_id
+-- ORDER BY
+--   ('nonfoil' = ANY(c.finishes) AND NOT c.is_showcase AND NOT c.is_borderless AND NOT c.is_promo) DESC,
+--   c.current_usd_from_scryfall ASC  -- バッチ実行時にScryfallから都度取得した値（保存はしない）
+-- LIMIT 1;
+--
+-- 代表プリントが切り替わっても価格履歴が途切れないよう、card_price_snapshotsは
+-- scryfall_id単位ではなく oracle_id + series（en/ja）単位で継続的に記録する（後述）。
+
+-- card_oracles.printed_name_ja の更新ルール（日次バッチ）:
+-- エラッタ等で再録時に日本語名が変わるケースがあるため、単純な「最初に見つけた日本語名」で
+-- 固定してはいけない。必ず「日本語版プリントのうち発売日が最新のもの」の printed_name を採用する。
+--
+-- UPDATE card_oracles co
+-- SET printed_name_ja = latest.printed_name_ja
+-- FROM (
+--   SELECT DISTINCT ON (oracle_id) oracle_id, printed_name_ja
+--   FROM cards
+--   WHERE lang = 'ja'
+--   ORDER BY oracle_id, released_at DESC
+-- ) latest
+-- WHERE co.oracle_id = latest.oracle_id;
+
+CREATE INDEX idx_cards_oracle_id ON cards (oracle_id);
+CREATE INDEX idx_cards_name ON cards (name);
+CREATE INDEX idx_cards_set_code ON cards (set_code);
+
+-- 「代表プリント」を1枚選ぶためのビュー的な考え方はアプリ側で実装
+-- （直近セットの再録 or 一番安いプリントを代表として採用、等）
+
+
+-- ════════════════════════════════════════════
+-- 2. 価格データ（日次スナップショット）
+-- ════════════════════════════════════════════
+
+-- 為替レート（Frankfurter APIから日次取得）
+CREATE TABLE exchange_rates (
+  date        DATE PRIMARY KEY,
+  usd_to_jpy  NUMERIC(10, 4) NOT NULL,
+  eur_to_jpy  NUMERIC(10, 4) NOT NULL
+);
+
+-- カード単価の日次スナップショット（トレンドチャート・ランキングの元データ）
+--
+-- 重要: scryfall_id単位ではなく oracle_id + series（'en'/'ja'）単位で記録する。
+-- 代表プリントは再録等で切り替わることがあるが、oracle_id+seriesをキーにしておけば
+-- 切り替わりをまたいでも同じ系列として履歴が連続する（scryfall_idをキーにすると
+-- 切り替わるたびに新しい行が始まり、価格チャートの履歴が途切れてしまう）。
+-- scryfall_idは「その日実際に価格を取得したプリントがどれだったか」の監査用に保持する。
+CREATE TABLE card_price_snapshots (
+  id           BIGSERIAL PRIMARY KEY,
+  oracle_id    UUID NOT NULL REFERENCES card_oracles (oracle_id),
+  series       TEXT NOT NULL CHECK (series IN ('en', 'ja')),
+  scryfall_id  UUID NOT NULL REFERENCES cards (scryfall_id),
+  date         DATE NOT NULL,
+  usd          NUMERIC(10, 2),
+  eur          NUMERIC(10, 2),
+  -- jpy_estはアプリ側でusd × exchange_rates.usd_to_jpyから算出してもよいが、
+  -- 集計クエリの負荷軽減のためバッチ処理時点で計算して保存しておく
+  jpy_est      NUMERIC(12, 2),
+  UNIQUE (oracle_id, series, date)
+);
+
+-- UNIQUE (oracle_id, series, date) が生成する索引がそのまま
+-- 「あるカード・系列の日付順の履歴を取る」検索にも使えるため、別途インデックスは張らない
+-- （scryfall_id基準の旧インデックスと重複していたので統合した）。
+
+-- シールド商品（パック・ボックス）の日次スナップショット（TCGCSV由来）
+CREATE TABLE sealed_price_snapshots (
+  id                BIGSERIAL PRIMARY KEY,
+  set_code          TEXT NOT NULL,
+  product_type      TEXT NOT NULL,   -- 'play_booster' | 'collector_booster' | 'booster_box' 等
+  date              DATE NOT NULL,
+  usd_market_price  NUMERIC(10, 2),
+  jpy_est           NUMERIC(12, 2),
+  UNIQUE (set_code, product_type, date)
+);
+
+-- 言語プレミアム用（将来対応。TCGTracking等のSKU単位価格を想定）
+-- 言語プレミアム（EN版とJP版の価格差）は新規の外部データソース不要で、
+-- 既存のcards/card_price_snapshotsだけから計算できる。対象はScryfallが
+-- JP版プリントに独自のUSD価格を持つカードのみ（対象は限定的）。
+-- 日次バッチで計算しキャッシュする。
+CREATE TABLE language_premium_stats (
+  id              BIGSERIAL PRIMARY KEY,
+  oracle_id       UUID NOT NULL REFERENCES card_oracles (oracle_id),
+  en_price_jpy    NUMERIC(12, 2) NOT NULL,
+  ja_price_jpy    NUMERIC(12, 2) NOT NULL,
+  premium_ratio   NUMERIC(6, 2) NOT NULL,   -- ja_price / en_price
+  calculated_date DATE NOT NULL,
+  UNIQUE (oracle_id, calculated_date)
+);
+
+CREATE INDEX idx_language_premium_lookup ON language_premium_stats (calculated_date, premium_ratio DESC);
+
+-- 集計クエリの例（バッチ処理で日次実行）:
+-- INSERT INTO language_premium_stats (oracle_id, en_price_jpy, ja_price_jpy, premium_ratio, calculated_date)
+-- SELECT
+--   en.oracle_id, en.jpy_est, ja.jpy_est,
+--   ROUND((ja.jpy_est / en.jpy_est)::numeric, 2), CURRENT_DATE
+-- FROM card_price_snapshots en
+-- JOIN card_price_snapshots ja
+--   ON ja.oracle_id = en.oracle_id AND ja.date = en.date AND ja.series = 'ja'
+-- WHERE en.series = 'en' AND en.date = CURRENT_DATE
+--   AND en.usd IS NOT NULL AND ja.usd IS NOT NULL;
+
+
+-- ════════════════════════════════════════════
+-- 3. トーナメント・デッキデータ
+-- ════════════════════════════════════════════
+
+CREATE TABLE tournaments (
+  id            BIGSERIAL PRIMARY KEY,
+  source        TEXT NOT NULL,        -- 'mtgo' | 'topdeck'
+  source_event_id TEXT NOT NULL,      -- 取得元でのイベントID（重複取得防止用）
+  format        TEXT NOT NULL,        -- 'Standard' | 'Modern' | ...
+  event_name    TEXT NOT NULL,
+  event_date    DATE NOT NULL,
+  source_url    TEXT,
+  UNIQUE (source, source_event_id)
+);
+
+CREATE INDEX idx_tournaments_format_date ON tournaments (format, event_date DESC);
+
+CREATE TABLE archetypes (
+  id                BIGSERIAL PRIMARY KEY,
+  format            TEXT NOT NULL,
+  name              TEXT NOT NULL,        -- MTGOFormatData由来の英語名（例: "Scam"）
+  name_ja           TEXT,                 -- 表示用の日本語名（人力で用意する想定）
+  definition_source TEXT NOT NULL,        -- 'rule' | 'fallback'
+  UNIQUE (format, name)
+);
+
+-- フォーマット単位の設定（集計期間のデフォルト値、注記文など）。
+-- 例: 統率者戦は「大会参加者中心のデータのため、カジュアルな実態より
+-- 高額寄りに出る傾向があります」という注記を出す。
+CREATE TABLE format_settings (
+  format             TEXT PRIMARY KEY,
+  default_period_days INT NOT NULL DEFAULT 30,  -- スタンダードのみ14を想定
+  caveat_note        TEXT                        -- ランキングページ上部に表示する注記（なければNULL）
+);
+
+INSERT INTO format_settings (format, default_period_days, caveat_note) VALUES
+  ('Standard', 14, NULL),
+  ('Pioneer', 30, NULL),
+  ('Modern', 30, NULL),
+  ('Legacy', 30, NULL),
+  ('Vintage', 30, '母数が少なく、少数の超高額カードの有無で平均・中央値が大きく振れます。参考程度にご覧ください。'),
+  ('Commander', 30, '大会参加者のデッキが中心のため、カジュアルな実態より高額寄りに出る傾向があります。100枚シングルトン構成のため、同じアーキタイプでも価格のばらつきが大きくなりやすい点にもご注意ください。');
+
+CREATE TABLE decks (
+  id             BIGSERIAL PRIMARY KEY,
+  tournament_id  BIGINT NOT NULL REFERENCES tournaments (id),
+  player_name    TEXT,
+  standing       TEXT,                    -- '5-0', '優勝', '3-1' 等、出典表記のまま保存
+  archetype_id   BIGINT REFERENCES archetypes (id),  -- 未分類の場合はNULL
+  total_price_jpy_est NUMERIC(12, 2),      -- 取り込み時点の参考価格（鮮度あり、ランキング集計には使わない。詳細ページの「取込当時の価格」表示用）
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_decks_tournament ON decks (tournament_id);
+CREATE INDEX idx_decks_archetype ON decks (archetype_id);
+
+CREATE TABLE deck_cards (
+  id        BIGSERIAL PRIMARY KEY,
+  deck_id   BIGINT NOT NULL REFERENCES decks (id) ON DELETE CASCADE,
+  card_name TEXT NOT NULL,      -- 取得元の表記そのまま（正規化はアプリ側でoracle_idに紐付け）
+  oracle_id UUID REFERENCES card_oracles (oracle_id), -- 名寄せ失敗時はNULL許容
+  board     TEXT NOT NULL CHECK (board IN ('main', 'side')),
+  quantity  INT NOT NULL
+);
+
+CREATE INDEX idx_deck_cards_deck ON deck_cards (deck_id);
+CREATE INDEX idx_deck_cards_oracle ON deck_cards (oracle_id);
+
+
+-- ════════════════════════════════════════════
+-- 4. 採用率・ランキング用の集計テーブル
+-- ════════════════════════════════════════════
+
+-- アーキタイプ単位の「平均デッキ価格」（直近N件の中央値ベース）
+-- デッキ単位のランキングページで使用。単純平均は外れ値(1枚だけ高額カードを積んだ構成等)に
+-- 弱いため中央値を採用する。
+CREATE TABLE archetype_price_stats (
+  id                BIGSERIAL PRIMARY KEY,
+  archetype_id      BIGINT NOT NULL REFERENCES archetypes (id),
+  period_deck_count INT NOT NULL,        -- 集計対象にしたデッキ件数（例: 直近20件）
+  median_price_jpy  NUMERIC(12, 2) NOT NULL,
+  sample_size       INT NOT NULL,        -- 実際に集計に使えた件数（20件に満たない場合もある）
+  calculated_at     DATE NOT NULL,
+  UNIQUE (archetype_id, calculated_at)
+);
+
+CREATE INDEX idx_archetype_price_lookup ON archetype_price_stats (calculated_at, median_price_jpy DESC);
+
+-- 集計クエリの例（バッチ処理で日次実行）:
+-- 重要: total_price_jpy_est（取り込み時点の固定値）をそのまま集計に使うと、
+-- 古いデッキほど当時の価格のまま計算され、実勢と乖離する（鮮度問題）。
+-- 必ずdeck_cards × 当日のcard_price_snapshotsで再計算すること。
+-- card_price_snapshotsはoracle_id単位で代表プリント（'en'系列）のみ保持しているため、
+-- 複数プリントの中から最安値を選ぶ処理は不要（代表プリントの選定自体は1章のバッチで別途行う）。
+--
+-- WITH deck_totals_today AS (
+--   SELECT
+--     d.id AS deck_id, d.archetype_id,
+--     SUM(dc.quantity * cps.jpy_est) AS total_today,
+--     ROW_NUMBER() OVER (PARTITION BY d.archetype_id ORDER BY d.created_at DESC) AS rn
+--   FROM decks d
+--   JOIN deck_cards dc ON dc.deck_id = d.id
+--   JOIN card_price_snapshots cps
+--     ON cps.oracle_id = dc.oracle_id AND cps.series = 'en' AND cps.date = CURRENT_DATE
+--   WHERE d.archetype_id IS NOT NULL
+--   GROUP BY d.id, d.archetype_id, d.created_at
+-- )
+-- INSERT INTO archetype_price_stats (archetype_id, period_deck_count, median_price_jpy, sample_size, calculated_at)
+-- SELECT archetype_id, 20, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY total_today), COUNT(*), CURRENT_DATE
+-- FROM deck_totals_today WHERE rn <= 20 GROUP BY archetype_id;
+
+-- フォーマット別・カード別の採用率（バッチで日次再計算してキャッシュ）
+CREATE TABLE card_usage_stats (
+  id              BIGSERIAL PRIMARY KEY,
+  format          TEXT NOT NULL,
+  oracle_id       UUID NOT NULL REFERENCES card_oracles (oracle_id),
+  period_days     INT NOT NULL,        -- 14 or 30（フォーマットごとのデフォルト集計期間）
+  usage_rate      NUMERIC(5, 2) NOT NULL,  -- 0.00〜100.00(%)
+  deck_sample_size INT NOT NULL,        -- 集計対象デッキ数（サンプル数の信頼性判断用）
+  calculated_at   DATE NOT NULL,
+  UNIQUE (format, oracle_id, period_days, calculated_at)
+);
+
+CREATE INDEX idx_usage_stats_lookup ON card_usage_stats (format, calculated_at, usage_rate DESC);
+
+-- 注目カードランキング用のスコア（3日変化ベース、日次計算）
+-- 取引量は無料データソースが存在しないため（2章参照）、launchでは価格・採用率の2カテゴリのみ運用する。
+-- volume_change_3d_pctはTCGplayer等の有料APIを導入する将来のために列だけ用意してあり、
+-- それまでは常にNULL、categoryにも'volume'は出現しない。
+CREATE TABLE trending_scores (
+  id                  BIGSERIAL PRIMARY KEY,
+  oracle_id           UUID NOT NULL REFERENCES card_oracles (oracle_id),
+  format              TEXT NOT NULL,
+  calculated_date     DATE NOT NULL,
+  price_change_3d_pct NUMERIC(6, 2),
+  usage_change_3d_pt  NUMERIC(6, 2),
+  volume_change_3d_pct NUMERIC(6, 2),  -- 将来の有料API連携まで常にNULL
+  category            TEXT NOT NULL,     -- 現状は 'price' | 'usage' のみ（'volume'は将来の有料API導入後）
+  score               NUMERIC(6, 2) NOT NULL,
+  streak_days         INT NOT NULL DEFAULT 1,  -- 連続で同カテゴリ1位を維持している日数
+  UNIQUE (oracle_id, format, calculated_date, category)
+);
+
+CREATE INDEX idx_trending_lookup ON trending_scores (format, calculated_date, category, score DESC);
+
+
+-- ════════════════════════════════════════════
+-- 5. パックEV計算用
+-- ════════════════════════════════════════════
+
+-- Play Boosterのスロット構成（セットごとに大枠は共通だが、念のためセット単位で持つ）。
+--
+-- 【設計修正の経緯】当初 rarity_pool TEXT[] + probability 1個 + UNIQUE(set_code, product_type, slot_name)
+-- という設計だったが、これだと1スロットにつき1行しか持てず、「ワイルドカード枠でコモン15%・
+-- アンコモン64%・レア18%・神話3%」のようにスロット内で複数レアリティが異なる確率を持つ実データ
+-- （src/lib/samplePackData.ts、MTGJSONの排出ウェイトテーブルから算出）を表現できないことが判明。
+-- rarity_pool（配列）をrarity（単一値）に変更し、1スロット×1レアリティ＝1行にした。
+CREATE TABLE pack_slot_definitions (
+  id           BIGSERIAL PRIMARY KEY,
+  set_code     TEXT NOT NULL,
+  product_type TEXT NOT NULL DEFAULT 'play_booster',
+  slot_name    TEXT NOT NULL,        -- '確定コモン' | 'ワイルドカード（非フォイル）' 等
+  rarity       TEXT NOT NULL,        -- 'common' | 'uncommon' | 'rare' | 'mythic'
+  probability  NUMERIC(6, 4) NOT NULL, -- そのスロットでこのレアリティが出る確率（同一slot_name内の合計が1.0）
+  card_count   INT NOT NULL DEFAULT 1,
+  UNIQUE (set_code, product_type, slot_name, rarity)
+);
+
+
+-- ════════════════════════════════════════════
+-- 7. アカウント機能（お気に入り・価格アラート）
+-- ════════════════════════════════════════════
+
+-- 認証自体はSupabase Authに任せる想定（auth.usersテーブルは自動生成される）。
+-- ここではauth.users.idを参照する形でアプリ固有のデータだけを持つ。
+-- ローカル検証用に、Supabase Auth相当の簡易usersテーブルを用意する。
+CREATE TABLE users (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email      TEXT UNIQUE NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- お気に入りカード（無料機能。閲覧履歴的に使う）
+CREATE TABLE favorite_cards (
+  id         BIGSERIAL PRIMARY KEY,
+  user_id    UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  oracle_id  UUID NOT NULL REFERENCES card_oracles (oracle_id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, oracle_id)
+);
+
+-- 価格アラート（将来のプレミアム機能候補。Fan Content Policyの
+-- 「基本データは無料公開必須」に抵触しないよう、閲覧そのものではなく
+-- 「通知」という付加機能として位置づける）
+CREATE TABLE price_alerts (
+  id             BIGSERIAL PRIMARY KEY,
+  user_id        UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  oracle_id      UUID NOT NULL REFERENCES card_oracles (oracle_id),
+  direction      TEXT NOT NULL CHECK (direction IN ('above', 'below')),
+  threshold_jpy  NUMERIC(12, 2) NOT NULL,
+  is_active      BOOLEAN NOT NULL DEFAULT true,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  triggered_at   TIMESTAMPTZ
+);
+
+CREATE INDEX idx_favorite_cards_user ON favorite_cards (user_id);
+CREATE INDEX idx_price_alerts_active ON price_alerts (oracle_id) WHERE is_active = true;
+
+-- RLS（Row Level Security）: 個人データは本人しか読み書きできないよう制限する。
+-- auth.uid()はSupabaseが自動提供する関数（ローカル検証時は自前でスタブが必要）。
+ALTER TABLE favorite_cards ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "own favorites only" ON favorite_cards
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+ALTER TABLE price_alerts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "own alerts only" ON price_alerts
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+
+-- ════════════════════════════════════════════
+-- 8. データ保持ポリシー（肥大化対策）
+-- ════════════════════════════════════════════
+
+-- 【前提となる見積もり】
+-- ・card_oracles は約30,000件（Scryfallの英語オラクル数、新セットで年間+1,000〜2,000件）。
+-- ・card_price_snapshots を「全プリンティング」で日次取得すると、1オラクルあたり平均3〜5プリント
+--   ×30,000オラクル = 10万行/日 規模になり、年間3,000万〜4,000万行に達する。
+--   Supabase無料枠（DB 500MB）はもちろん、Proプラン（8GB込み）でも1〜2年で圧迫する規模。
+--
+-- 【対策1: 価格追跡の対象を絞る】
+-- card_price_snapshots は「全プリンティング」ではなく、oracle_idごとに以下の代表プリントのみ対象にする。
+--   1. 代表プリント（cards選定ルール参照。通常版nonfoil優先、なければ最安値）
+--   2. 日本語版プリントが存在する場合はそれも追加（JP/EN比較チャート・言語プレミアム計算に必要）
+-- これにより日次行数は 約30,000（代表） + 約12,000〜15,000（JP版が存在するオラクルの概算） ≒ 4万〜5万行/日 に抑えられる。
+-- 上記以外のプリント（ショーケース・ボーダーレス・プロモ等）は価格追跡対象外とし、
+-- カード詳細ページの「その他のプリント」表示が必要になった場合はオンデマンドでScryfallから取得する
+-- （常時DBに保持しない）。
+--
+-- 【対策2: 日次→週次→月次の3段階で解像度を落としながら長期保存する】
+-- カード詳細ページの価格チャートの期間切替は具体的な日数がまだ未定だが、直近1ヶ月分の
+-- 生データがあれば当面の表示要件は満たせる。
+--   ・直近30日: card_price_snapshots に日次の生データ
+--   ・30日〜365日: card_price_snapshots_weekly に週次の平均/最高/最安
+--   ・365日超: card_price_snapshots_monthly に月次の平均/最高/最安（無期限保持）
+-- 週次のみで無期限保持すると年間約4,500万行×バイト数で数年後にまた無料枠を圧迫するため、
+-- 1年より古いデータはさらに月次（週次の約4分の1のペース）に丸めて増加を抑える。
+-- 引き換えに1年より前の価格は月次の粒度でしか見られなくなる点はトレードオフとして許容する。
+
+-- weekly/monthlyもcard_price_snapshotsと同じ理由でoracle_id + seriesをキーにする
+-- （scryfall_id基準だと代表プリント切り替わり時にロールアップ後の履歴まで途切れてしまうため）。
+
+CREATE TABLE card_price_snapshots_weekly (
+  id            BIGSERIAL PRIMARY KEY,
+  oracle_id     UUID NOT NULL REFERENCES card_oracles (oracle_id),
+  series        TEXT NOT NULL CHECK (series IN ('en', 'ja')),
+  week_start    DATE NOT NULL,     -- 週の開始日（月曜日始まり）
+  avg_jpy       NUMERIC(12, 2) NOT NULL,
+  min_jpy       NUMERIC(12, 2) NOT NULL,
+  max_jpy       NUMERIC(12, 2) NOT NULL,
+  sample_days   INT NOT NULL,      -- 実際に値が取れた日数（欠損があれば7未満）
+  UNIQUE (oracle_id, series, week_start)
+);
+
+CREATE TABLE card_price_snapshots_monthly (
+  id            BIGSERIAL PRIMARY KEY,
+  oracle_id     UUID NOT NULL REFERENCES card_oracles (oracle_id),
+  series        TEXT NOT NULL CHECK (series IN ('en', 'ja')),
+  month_start   DATE NOT NULL,     -- 月の開始日（1日）
+  avg_jpy       NUMERIC(12, 2) NOT NULL,
+  min_jpy       NUMERIC(12, 2) NOT NULL,
+  max_jpy       NUMERIC(12, 2) NOT NULL,
+  sample_weeks  INT NOT NULL,      -- 集計に使えた週次レコード数（欠損があれば4〜5未満）
+  UNIQUE (oracle_id, series, month_start)
+);
+
+-- weekly/monthlyともUNIQUE制約の索引がそのまま履歴取得に使えるため、
+-- card_price_snapshotsと同様に別途の検索用インデックスは張らない。
+
+-- 週次ロールアップ＋古い日次データの削除（週1回、日次バッチとは別ジョブとして実行）:
+--
+-- INSERT INTO card_price_snapshots_weekly (oracle_id, series, week_start, avg_jpy, min_jpy, max_jpy, sample_days)
+-- SELECT
+--   oracle_id, series,
+--   date_trunc('week', date)::date AS week_start,
+--   ROUND(AVG(jpy_est), 2), MIN(jpy_est), MAX(jpy_est), COUNT(*)
+-- FROM card_price_snapshots
+-- WHERE date < CURRENT_DATE - INTERVAL '30 days'
+--   AND date >= CURRENT_DATE - INTERVAL '37 days'  -- 直近で未集計の1週間分だけを対象にする
+--   AND jpy_est IS NOT NULL
+-- GROUP BY oracle_id, series, date_trunc('week', date)
+-- ON CONFLICT (oracle_id, series, week_start) DO NOTHING;
+--
+-- DELETE FROM card_price_snapshots WHERE date < CURRENT_DATE - INTERVAL '30 days';
+--
+-- 月次ロールアップ＋古い週次データの削除（月1回、別ジョブとして実行）:
+--
+-- INSERT INTO card_price_snapshots_monthly (oracle_id, series, month_start, avg_jpy, min_jpy, max_jpy, sample_weeks)
+-- SELECT
+--   oracle_id, series,
+--   date_trunc('month', week_start)::date AS month_start,
+--   ROUND(AVG(avg_jpy), 2), MIN(min_jpy), MAX(max_jpy), COUNT(*)
+-- FROM card_price_snapshots_weekly
+-- WHERE week_start < CURRENT_DATE - INTERVAL '365 days'
+-- GROUP BY oracle_id, series, date_trunc('month', week_start)
+-- ON CONFLICT (oracle_id, series, month_start) DO NOTHING;
+--
+-- DELETE FROM card_price_snapshots_weekly WHERE week_start < CURRENT_DATE - INTERVAL '365 days';
+--
+-- 【対策3: 集計・ランキング系テーブルは「現在の状態」中心なので短期で間引く】
+-- card_usage_stats / trending_scores はランキング表示用の最新値が主目的で、
+-- trending_scores.streak_days は「前日分のstreak_daysを見て+1する」形で日次バッチ内に閉じて
+-- 計算できるため、長期の履歴を持つ必要がない。archetype_price_stats も同様に短期のみ保持する。
+--
+-- DELETE FROM card_usage_stats WHERE calculated_at < CURRENT_DATE - INTERVAL '30 days';
+-- DELETE FROM trending_scores WHERE calculated_date < CURRENT_DATE - INTERVAL '30 days';
+-- DELETE FROM archetype_price_stats WHERE calculated_at < CURRENT_DATE - INTERVAL '90 days';
+--
+-- 【対象外】
+-- ・sealed_price_snapshots（set_code × product_type単位、数百〜1,500件/日程度）は母数が小さく
+--   無期限保持でも年間数十万行規模に収まるため、当面ロールアップ不要。
+-- ・language_premium_stats も対象カードが限定的（JP独自USD価格を持つカードのみ）で同様に対象外。
+--
+-- 【運用への組み込み】
+-- 上記の削除・ロールアップは、まだ未確定のスクレイピング/集計バッチのスケジュール
+-- （日次実行タイミング自体が保留中）が決まり次第、日次バッチの最後のステップとして組み込む。
+-- 週次ロールアップ（対策2）だけは日次バッチとは別に週1回のジョブとして分離してよい。
+
+
+-- ════════════════════════════════════════════
+-- 6. 運用メモ
+-- ════════════════════════════════════════════
+
+-- ・deck_cards.oracle_id の名寄せ（カード名 → oracle_id）は取り込みバッチ側の責務。
+--   MTGO/TopDeck側の表記ゆれ（アポストロフィ違い等）を吸収する正規化関数を別途用意する想定。
+-- ・price_snapshots系のデータ保持ポリシー（対象プリントの絞り込み・週次ロールアップ・
+--   集計テーブルの間引き）は8章を参照。
+-- ・archetypes.name_ja は自動翻訳ではなく人力でメンテナンスする前提
+--   （英語のアーキタイプ名をそのまま日本語直訳すると不自然になるケースが多いため）。

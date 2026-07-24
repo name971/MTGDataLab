@@ -1,65 +1,91 @@
-import Image from "next/image";
+import Link from "next/link";
+import { FORMATS, formatSlug } from "@/lib/formats";
+import TrendingCard, { type TrendingCardData } from "@/components/TrendingCard";
+import { applyDbPrices } from "@/lib/applyDbPrices";
 
-export default function Home() {
+/** TODO: card_usage_stats / trending_scores（db/schema.sql）から取得したデータに差し替える */
+const SAMPLE_TRENDING_CARDS: TrendingCardData[] = [
+  {
+    oracleId: "fable-of-the-mirror-breaker",
+    nameJa: "鏡割りの寓話",
+    nameEn: "Fable of the Mirror-Breaker",
+    artCropUrl:
+      "https://cards.scryfall.io/art_crop/front/2/4/24c0d87b-0049-4beb-b9cb-6f813b7aa7dc.jpg",
+    category: "price",
+    priceJpy: 1840,
+    changeLabel: "+12%",
+    streakDays: 3,
+  },
+  {
+    oracleId: "this-town-aint-big-enough",
+    nameJa: "この町は狭すぎる",
+    nameEn: "This Town Ain't Big Enough",
+    artCropUrl:
+      "https://cards.scryfall.io/art_crop/front/b/b/bb206e27-da4d-4abe-9d8c-6d18c5f2f52a.jpg",
+    category: "usage",
+    priceJpy: 620,
+    changeLabel: "+8pt",
+    streakDays: 1,
+  },
+  {
+    oracleId: "force-of-will",
+    nameJa: "意志の力",
+    nameEn: "Force of Will",
+    artCropUrl:
+      "https://cards.scryfall.io/art_crop/front/8/9/89f612d6-7c59-4a7b-a87d-45f789e88ba5.jpg",
+    category: "price",
+    priceJpy: 9120,
+    changeLabel: "-3%",
+    streakDays: 1,
+  },
+  {
+    oracleId: "solitude",
+    nameJa: "孤独",
+    nameEn: "Solitude",
+    artCropUrl:
+      "https://cards.scryfall.io/art_crop/front/4/7/47a6234f-309f-4e03-9263-66da48b57153.jpg",
+    category: "usage",
+    priceJpy: 5100,
+    changeLabel: "+5pt",
+    streakDays: 2,
+  },
+];
+
+export default async function TopPage() {
+  const trendingCards = await applyDbPrices(SAMPLE_TRENDING_CARDS);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="flex flex-col gap-10">
+      <section>
+        <h2 className="mb-3 text-sm font-medium text-neutral-500">注目カード</h2>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {trendingCards.map((card) => (
+            <TrendingCard key={card.oracleId} card={card} />
+          ))}
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-sm font-medium text-neutral-500">注目カードランキング</h2>
+        <div className="rounded-lg border border-dashed border-neutral-300 p-6 text-sm text-neutral-500">
+          TODO: 価格・採用率の3日変化を合成したスコア順（取引量は無料データソースがないためlaunchでは対象外。docs/spec.md 2章参照）。
         </div>
-      </main>
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-sm font-medium text-neutral-500">フォーマットランキング</h2>
+        <div className="flex flex-wrap gap-2">
+          {FORMATS.map((format) => (
+            <Link
+              key={format}
+              href={`/rankings/${formatSlug(format)}`}
+              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:border-neutral-500"
+            >
+              {format}
+            </Link>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

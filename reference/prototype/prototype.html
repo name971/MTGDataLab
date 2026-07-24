@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MTG価格サイト プロトタイプ（実データ）</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    background: #0b0c0e;
+    color: #e8e8ea;
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 24px 16px 60px;
+  }
+  h1 { font-size: 15px; font-weight: 500; color: #9a9aa0; margin-bottom: 4px; }
+  p.note { font-size: 12px; color: #6b6b70; margin-top: 0; margin-bottom: 20px; }
+  .search-row { display: flex; gap: 8px; margin-bottom: 20px; }
+  input {
+    flex: 1; padding: 10px 12px; border-radius: 8px;
+    border: 1px solid #2a2b2f; background: #1a1b1e; color: #e8e8ea; font-size: 14px;
+  }
+  button {
+    padding: 10px 16px; border-radius: 8px; border: 1px solid #2a2b2f;
+    background: #1a1b1e; color: #e8e8ea; font-size: 13px; cursor: pointer;
+  }
+  button:hover { border-color: #4a4b50; }
+  #status { font-size: 13px; color: #9a9aa0; min-height: 20px; margin-bottom: 12px; }
+  .card-box { display: none; gap: 16px; }
+  .card-box.show { display: flex; }
+  .card-box img { width: 140px; border-radius: 10px; border: 1px solid #2a2b2f; flex-shrink: 0; }
+  .info p { margin: 0 0 4px; }
+  .name-ja { font-size: 17px; font-weight: 500; }
+  .name-en { font-size: 12px; color: #9a9aa0; }
+  .set-line { font-size: 12px; color: #9a9aa0; margin-top: 8px !important; }
+  .price { font-size: 22px; font-weight: 500; margin-top: 12px !important; }
+  .price-note { font-size: 10px; color: #6b6b70; }
+  .examples { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 20px; }
+  .examples button { font-size: 11px; padding: 4px 10px; }
+</style>
+</head>
+<body>
+  <h1>カード検索プロトタイプ</h1>
+  <p class="note">Scryfall APIとFrankfurter(為替)APIから実データを取得します。日本語名があればメイン表示、なければ英語名にフォールバックします。</p>
+
+  <div class="search-row">
+    <input id="q" type="text" placeholder="カード名を入力（英語推奨）" value="Ragavan, Nimble Pilferer">
+    <button onclick="lookup()">検索</button>
+  </div>
+  <div class="examples">
+    <button onclick="quick('Ragavan, Nimble Pilferer')">Ragavan</button>
+    <button onclick="quick('Solitude')">Solitude</button>
+    <button onclick="quick('Dragonlord Dromoka')">Dragonlord Dromoka</button>
+    <button onclick="quick('Persist')">Persist</button>
+  </div>
+
+  <div id="status"></div>
+
+  <div class="card-box" id="box">
+    <img id="img" src="" alt="">
+    <div class="info">
+      <p class="name-ja" id="nameJa"></p>
+      <p class="name-en" id="nameEn"></p>
+      <p class="set-line" id="setLine"></p>
+      <p class="price" id="price"></p>
+      <p class="price-note">為替換算の参考値（USD→JPY, Frankfurter API）</p>
+    </div>
+  </div>
+
+<script>
+function quick(name) {
+  document.getElementById('q').value = name;
+  lookup();
+}
+
+async function lookup() {
+  const name = document.getElementById('q').value.trim();
+  if (!name) return;
+  const statusEl = document.getElementById('status');
+  const box = document.getElementById('box');
+  box.classList.remove('show');
+  statusEl.textContent = '検索中...';
+
+  try {
+    // 1. 英語版のカード情報（価格・画像のフォールバック元）を取得
+    const enRes = await fetch('https://api.scryfall.com/cards/named?fuzzy=' + encodeURIComponent(name));
+    if (!enRes.ok) { statusEl.textContent = 'カードが見つかりませんでした。'; return; }
+    const enCard = await enRes.json();
+
+    // 2. 日本語版プリントがあるか検索
+    let jaName = null;
+    let jaImage = null;
+    try {
+      const jaRes = await fetch('https://api.scryfall.com/cards/search?q=' +
+        encodeURIComponent('!"' + enCard.name + '" lang:ja') + '&unique=prints');
+      if (jaRes.ok) {
+        const jaData = await jaRes.json();
+        if (jaData.data && jaData.data.length > 0) {
+          const jaCard = jaData.data[0];
+          jaName = jaCard.printed_name || null;
+          jaImage = jaCard.image_uris ? jaCard.image_uris.normal : null;
+        }
+      }
+    } catch (e) { /* 日本語版なしとして扱う */ }
+
+    // 3. 為替レート取得（USD→JPY）
+    statusEl.textContent = '為替レート取得中...';
+    const fxRes = await fetch('https://api.frankfurter.dev/v1/latest?base=USD&symbols=JPY');
+    const fx = await fxRes.json();
+    const rate = fx.rates.JPY;
+
+    // 4. 表示を組み立て
+    const usdPrice = enCard.prices && enCard.prices.usd ? parseFloat(enCard.prices.usd) : null;
+    const image = jaImage || (enCard.image_uris ? enCard.image_uris.normal : null);
+
+    document.getElementById('img').src = image || '';
+    document.getElementById('nameJa').textContent = jaName || enCard.name;
+    document.getElementById('nameEn').textContent = jaName ? enCard.name : '';
+    document.getElementById('nameEn').style.display = jaName ? 'block' : 'none';
+    document.getElementById('setLine').textContent = enCard.set_name + ' ・ ' + (enCard.rarity || '');
+
+    if (usdPrice !== null) {
+      const jpy = usdPrice * rate;
+      document.getElementById('price').textContent =
+        '¥' + jpy.toLocaleString('ja-JP', {maximumFractionDigits: 0}) +
+        '　($' + usdPrice.toFixed(2) + ' × ' + rate.toFixed(2) + ')';
+    } else {
+      document.getElementById('price').textContent = '価格データなし';
+    }
+
+    box.classList.add('show');
+    statusEl.textContent = '';
+  } catch (err) {
+    statusEl.textContent = 'エラーが発生しました: ' + err.message;
+  }
+}
+
+// 初回自動検索
+lookup();
+</script>
+</body>
+</html>
