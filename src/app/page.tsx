@@ -2,8 +2,9 @@ import Link from "next/link";
 import { FORMATS, formatSlug } from "@/lib/formats";
 import TrendingCard, { type TrendingCardData } from "@/components/TrendingCard";
 import { applyDbPrices } from "@/lib/applyDbPrices";
+import { getTrendingCardsFromDb } from "@/lib/dbTrendingCards";
 
-/** TODO: card_usage_stats / trending_scores（db/schema.sql）から取得したデータに差し替える */
+/** trending_scoresがまだ空（3日分蓄積前等）の間だけ使うフォールバック */
 const SAMPLE_TRENDING_CARDS: TrendingCardData[] = [
   {
     oracleId: "fable-of-the-mirror-breaker",
@@ -52,7 +53,9 @@ const SAMPLE_TRENDING_CARDS: TrendingCardData[] = [
 ];
 
 export default async function TopPage() {
-  const trendingCards = await applyDbPrices(SAMPLE_TRENDING_CARDS);
+  const dbTrendingCards = await getTrendingCardsFromDb();
+  const trendingCards =
+    dbTrendingCards.length > 0 ? dbTrendingCards : await applyDbPrices(SAMPLE_TRENDING_CARDS);
 
   return (
     <div className="flex flex-col gap-10">
