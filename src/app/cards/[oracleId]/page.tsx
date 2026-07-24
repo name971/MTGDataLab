@@ -128,19 +128,33 @@ export async function generateMetadata({
   return { title: `${card.nameJa ?? card.nameEn} - MTG DataLab` };
 }
 
+const USAGE_PERIOD_OPTIONS = [7, 30, 90] as const;
+type UsagePeriodDays = (typeof USAGE_PERIOD_OPTIONS)[number];
+
+function resolveUsagePeriod(raw: string | undefined): UsagePeriodDays {
+  const n = Number(raw);
+  return (USAGE_PERIOD_OPTIONS as readonly number[]).includes(n) ? (n as UsagePeriodDays) : 7;
+}
+
 export default async function CardDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ oracleId: string }>;
+  searchParams: Promise<{ period?: string }>;
 }) {
   const { oracleId } = await params;
+  const { period } = await searchParams;
+  const usagePeriodDays = resolveUsagePeriod(period);
 
   const [card, rates] = await Promise.all([resolveCardByParam(oracleId), fetchExchangeRates()]);
   if (!card) notFound();
 
   const jpyPrice = card.usdPrice !== null ? toJpy(card.usdPrice, rates.usdToJpy) : null;
   const relatedArchetypes = getArchetypesUsingCard(card.nameEn);
-  const formatUsageCounts = card.oracleId ? await getFormatUsageCountsForCard(card.oracleId) : [];
+  const formatUsageCounts = card.oracleId
+    ? await getFormatUsageCountsForCard(card.oracleId, usagePeriodDays)
+    : [];
   const [enPriceHistory, jaPriceHistory] = card.oracleId
     ? await Promise.all([
         getPriceHistoryForCard(card.oracleId, "en"),
@@ -191,41 +205,63 @@ export default async function CardDetailPage({
         </div>
 
         <div className="rounded-lg border border-neutral-200 p-4">
-          <h2 className="mb-3 text-sm font-medium text-neutral-500">使用デッキ（直近7日間）</h2>
+          <h2 className="mb-2 text-sm font-medium text-neutral-500">使用デッキ</h2>
+          <div className="mb-3 flex items-center gap-1">
+            {USAGE_PERIOD_OPTIONS.map((p) => (
+              <Link
+                key={p}
+                href={`/cards/${oracleId}${p !== 7 ? `?period=${p}` : ""}`}
+                className={`rounded-md border px-2 py-0.5 text-xs ${
+                  p === usagePeriodDays
+                    ? "border-neutral-500 bg-neutral-100 text-neutral-900"
+                    : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
+                }`}
+              >
+                {p}日
+              </Link>
+            ))}
+          </div>
           {formatUsageCounts.length > 0 ? (
             <ul className="flex flex-col gap-1.5 text-sm">
               {formatUsageCounts.map((f) => (
                 <li key={f.format} className="flex items-center justify-between">
-                  <span>{f.format}</span>
+                  <Link
+                    href={`/cards/${oracleId}/decks?format=${encodeURIComponent(f.format)}&period=${usagePeriodDays}`}
+                    className="hover:underline"
+                  >
+                    {f.format}
+                  </Link>
                   <span>
-                    {f.deckCount7d}件
+                    {f.deckCount}件
                     {f.changePct !== null && (
                       <span
                         className={`ml-1 text-xs ${f.changePct < 0 ? "text-red-800" : "text-teal-800"}`}
                       >
                         （{f.changePct >= 0 ? "+" : ""}
-                        {f.changePct}%）
+                        {f.changePct}%/前日比）
                       </span>
                     )}
                   </span>
                 </li>
               ))}
             </ul>
-          ) : relatedArchetypes.length > 0 ? (
-            <ul className="flex flex-col gap-1.5 text-sm">
-              {relatedArchetypes.map((a) => (
-                <li key={a.archetypeId}>
-                  <Link href={`/decks/${a.archetypeId}`} className="hover:underline">
-                    {a.archetypeNameJa}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-neutral-500">
-              現在このカードを使用しているデッキは登録されていません。
-            </p>
-          )}
+          ) : null}
+          {formatUsageCounts.length === 0 &&
+            (relatedArchetypes.length > 0 ? (
+              <ul className="flex flex-col gap-1.5 text-sm">
+                {relatedArchetypes.map((a) => (
+                  <li key={a.archetypeId}>
+                    <Link href={`/decks/${a.archetypeId}`} className="hover:underline">
+                      {a.archetypeNameJa}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-neutral-500">
+                現在このカードを使用しているデッキは登録されていません。
+              </p>
+            ))}
         </div>
 
         <div className="rounded-lg border border-neutral-200 p-4">

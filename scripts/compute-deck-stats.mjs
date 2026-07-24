@@ -17,7 +17,7 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   process.exit(1);
 }
 
-const PERIOD_DAYS = 30;
+const PERIOD_DAYS_OPTIONS = [7, 30, 90];
 const ARCHETYPE_DECK_WINDOW = 20; // アーキタイプごとに直近何件を集計対象にするか
 
 const PAGE_SIZE = 1000; // PostgRESTのデフォルト最大行数（db-max-rows）に合わせてページングする
@@ -63,12 +63,18 @@ function median(nums) {
   return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
 }
 
+function isoDate(d) {
+  return d.toISOString().slice(0, 10);
+}
+
 async function main() {
   const today = new Date().toISOString().slice(0, 10);
 
-  // decks + tournaments(format) + deck_cards(main)
+  // decks + tournaments(format, event_date) + deck_cards(main)
+  // 「直近N日」はトーナメント開催日（event_date）基準。deck自体のimport日時（created_at）
+  // は取り込みタイミング依存でズレるため使わない。
   const decks = await supabaseGet(
-    "decks?select=id,archetype_id,created_at,tournaments!inner(format),deck_cards(card_name,oracle_id,quantity,board)"
+    "decks?select=id,archetype_id,created_at,tournaments!inner(format,event_date),deck_cards(card_name,oracle_id,quantity,board)"
   );
   console.log(`対象デッキ: ${decks.length}件`);
 
@@ -79,42 +85,49 @@ async function main() {
   const priceByOracle = new Map(snapshots.map((s) => [s.oracle_id, Number(s.jpy_est)]));
   console.log(`本日の価格スナップショット: ${priceByOracle.size}件`);
 
-  // ── card_usage_stats: フォーマット別・オラクルID別の採用率 ──
-  const formatDeckCount = new Map(); // format -> total decks
-  const formatOracleDeckCount = new Map(); // "format|oracle_id" -> decks containing it (main only)
+  // ── card_usage_stats: フォーマット別・オラクルID別の採用率（7/30/90日それぞれ） ──
+  const usageRows = [];
+  for (const periodDays of PERIOD_DAYS_OPTIONS) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - (periodDays - 1));
+    const cutoffStr = isoDate(cutoff);
+    const decksInPeriod = decks.filter((d) => (d.tournaments?.event_date ?? "") >= cutoffStr);
 
-  for (const deck of decks) {
-    const format = deck.tournaments?.format;
-    if (!format) continue;
-    formatDeckCount.set(format, (formatDeckCount.get(format) ?? 0) + 1);
+    const formatDeckCount = new Map(); // format -> total decks
+    const formatOracleDeckCount = new Map(); // "format|oracle_id" -> decks containing it (main only)
 
-    const mainOracleIds = new Set(
-      deck.deck_cards
-        .filter((c) => c.board === "main" && c.oracle_id)
-        .map((c) => c.oracle_id)
-    );
-    for (const oracleId of mainOracleIds) {
-      const key = `${format}|${oracleId}`;
-      formatOracleDeckCount.set(key, (formatOracleDeckCount.get(key) ?? 0) + 1);
+    for (const deck of decksInPeriod) {
+      const format = deck.tournaments?.format;
+      if (!format) continue;
+      formatDeckCount.set(format, (formatDeckCount.get(format) ?? 0) + 1);
+
+      const mainOracleIds = new Set(
+        deck.deck_cards
+          .filter((c) => c.board === "main" && c.oracle_id)
+          .map((c) => c.oracle_id)
+      );
+      for (const oracleId of mainOracleIds) {
+        const key = `${format}|${oracleId}`;
+        formatOracleDeckCount.set(key, (formatOracleDeckCount.get(key) ?? 0) + 1);
+      }
+    }
+
+    for (const [key, count] of formatOracleDeckCount) {
+      const [format, oracleId] = key.split("|");
+      const totalDecks = formatDeckCount.get(format) ?? 0;
+      if (totalDecks === 0) continue;
+      usageRows.push({
+        format,
+        oracle_id: oracleId,
+        period_days: periodDays,
+        usage_rate: Math.round((count / totalDecks) * 10000) / 100,
+        deck_sample_size: totalDecks,
+        calculated_at: today,
+      });
     }
   }
-
-  const usageRows = [];
-  for (const [key, count] of formatOracleDeckCount) {
-    const [format, oracleId] = key.split("|");
-    const totalDecks = formatDeckCount.get(format) ?? 0;
-    if (totalDecks === 0) continue;
-    usageRows.push({
-      format,
-      oracle_id: oracleId,
-      period_days: PERIOD_DAYS,
-      usage_rate: Math.round((count / totalDecks) * 10000) / 100,
-      deck_sample_size: totalDecks,
-      calculated_at: today,
-    });
-  }
   await supabaseUpsert("card_usage_stats", usageRows, "format,oracle_id,period_days,calculated_at");
-  console.log(`card_usage_stats 保存: ${usageRows.length}件`);
+  console.log(`card_usage_stats 保存: ${usageRows.length}件（${PERIOD_DAYS_OPTIONS.join("/")}日分）`);
 
   // ── archetype_price_stats: アーキタイプ別デッキ価格の中央値 ──
   const decksByArchetype = new Map(); // archetype_id -> deck[]

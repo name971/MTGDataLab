@@ -11,6 +11,14 @@ function resolveFormat(slug: string): Format | null {
   return FORMATS.find((f) => formatSlug(f) === slug) ?? null;
 }
 
+const PERIOD_OPTIONS = [7, 30, 90] as const;
+type PeriodDays = (typeof PERIOD_OPTIONS)[number];
+
+function resolvePeriod(raw: string | undefined): PeriodDays {
+  const n = Number(raw);
+  return (PERIOD_OPTIONS as readonly number[]).includes(n) ? (n as PeriodDays) : 30;
+}
+
 export async function generateMetadata({
   params,
 }: {
@@ -23,15 +31,20 @@ export async function generateMetadata({
 
 export default async function FormatRankingPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ format: string }>;
+  searchParams: Promise<{ period?: string }>;
 }) {
   const { format: slug } = await params;
   const format = resolveFormat(slug);
   if (!format) notFound();
 
-  const { periodDays } = await getFormatSettings(format);
-  const dbRows = await getCardRankingFromDb(format);
+  const { period } = await searchParams;
+  const periodDays = resolvePeriod(period);
+
+  const { caveatNote } = await getFormatSettings(format);
+  const dbRows = await getCardRankingFromDb(format, periodDays);
   const rows =
     dbRows.length > 0
       ? dbRows
@@ -45,7 +58,7 @@ export default async function FormatRankingPage({
         {FORMATS.map((f) => (
           <Link
             key={f}
-            href={`/rankings/${formatSlug(f)}`}
+            href={`/rankings/${formatSlug(f)}${periodDays !== 30 ? `?period=${periodDays}` : ""}`}
             className={`rounded-md border px-3 py-1.5 text-sm ${
               f === format
                 ? "border-neutral-500 bg-neutral-100 text-neutral-900"
@@ -57,7 +70,24 @@ export default async function FormatRankingPage({
         ))}
       </div>
 
-      <p className="text-sm text-neutral-500">集計期間: 直近{periodDays}日</p>
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-neutral-500">集計期間:</span>
+        {PERIOD_OPTIONS.map((p) => (
+          <Link
+            key={p}
+            href={`/rankings/${formatSlug(format)}?period=${p}`}
+            className={`rounded-md border px-2 py-1 text-xs ${
+              p === periodDays
+                ? "border-neutral-500 bg-neutral-100 text-neutral-900"
+                : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
+            }`}
+          >
+            直近{p}日
+          </Link>
+        ))}
+      </div>
+      {caveatNote && <p className="text-xs text-neutral-400">{caveatNote}</p>}
+
       <RankingTable rows={rows} showArenaPrice={format === "Standard"} />
     </div>
   );

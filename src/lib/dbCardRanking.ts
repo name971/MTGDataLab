@@ -29,7 +29,10 @@ const BASIC_LAND_NAMES = new Set([
  * priceChangePct（3日変化率）はtrending_scoresが3日分のスナップショット蓄積待ちのため
  * 常に0（変化なし）を返す。
  */
-export async function getCardRankingFromDb(format: Format): Promise<RankingRow[]> {
+export async function getCardRankingFromDb(
+  format: Format,
+  periodDays: 7 | 30 | 90 = 30,
+): Promise<RankingRow[]> {
   // Supabase/PostgRESTは1リクエスト最大1000行までしか返さない。Commander等は同一
   // calculated_atだけで1000件を超えるため、.range()でページングしないと採用率上位のカードが
   // 黙って切り捨てられ、たまたま残った無関係な低採用率カードが「上位」に見えてしまう。
@@ -40,6 +43,7 @@ export async function getCardRankingFromDb(format: Format): Promise<RankingRow[]
       .from("card_usage_stats")
       .select("oracle_id, usage_rate, calculated_at")
       .eq("format", format)
+      .eq("period_days", periodDays)
       .order("calculated_at", { ascending: false })
       .range(offset, offset + PAGE_SIZE - 1);
     if (error || !page || page.length === 0) break;

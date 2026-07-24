@@ -70,6 +70,50 @@ export async function getDecksByArchetypeId(archetypeId: number): Promise<Recent
   });
 }
 
+/**
+ * 指定カード（oracle_id）・フォーマットで、直近periodDays日間に使われたデッキの一覧を返す
+ * （/cards/[oracleId]/decks ページ用。使用デッキ件数の内訳表示）。
+ * dbCardUsageByFormat.getFormatUsageCountsForCardと同じウィンドウの取り方で揃える。
+ */
+export async function getDecksByCardAndFormat(
+  oracleId: string,
+  format: string,
+  periodDays: number = 7,
+): Promise<RecentDeckSummary[]> {
+  const end = new Date();
+  const start = new Date(end);
+  start.setDate(start.getDate() - (periodDays - 1));
+  const isoDate = (d: Date) => d.toISOString().slice(0, 10);
+
+  const { data, error } = await supabase
+    .from("deck_cards")
+    .select(
+      "deck_id, decks!inner(id, player_name, standing, tournaments!inner(event_name, format, event_date))",
+    )
+    .eq("oracle_id", oracleId)
+    .eq("decks.tournaments.format", format)
+    .gte("decks.tournaments.event_date", isoDate(start))
+    .lte("decks.tournaments.event_date", isoDate(end));
+
+  if (error || !data) return [];
+
+  const byDeckId = new Map<number, RecentDeckSummary>();
+  for (const row of data) {
+    const deck = Array.isArray(row.decks) ? row.decks[0] : row.decks;
+    if (!deck) continue;
+    const tournament = Array.isArray(deck.tournaments) ? deck.tournaments[0] : deck.tournaments;
+    if (!tournament || byDeckId.has(deck.id)) continue;
+    byDeckId.set(deck.id, {
+      deckId: deck.id,
+      playerName: deck.player_name,
+      standing: deck.standing,
+      eventName: tournament.event_name,
+      format: tournament.format,
+    });
+  }
+  return [...byDeckId.values()];
+}
+
 /** 最近インポートされた実トーナメント戦績デッキの一覧（/decks ページ用） */
 export async function getRecentDecksFromDb(format?: string): Promise<RecentDeckSummary[]> {
   let query = supabase
