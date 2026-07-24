@@ -22,6 +22,12 @@ jobs:
         with:
           node-version: 22
 
+      # ランナー同梱のnpmはlockfileVersion 3のoptionalDependencies同期チェックが
+      # 甘く、実際には存在するのに"missing from lock file"と誤検知することがあるため、
+      # ローカル開発環境と揃えて最新版に上げてからnpm ciする。
+      - name: Update npm
+        run: npm install -g npm@latest
+
       - name: Install dependencies
         run: npm ci
 
