@@ -43,6 +43,20 @@ jobs:
             console.log("KEY length:", key.length, "head:", JSON.stringify(key.slice(0,8)), "tail:", JSON.stringify(key.slice(-8)));
           '
 
+      - name: Debug live request from runner
+        run: |
+          node -e '
+            const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+            const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+            fetch(`${url}/rest/v1/tournaments?select=id&limit=1`, {
+              headers: { apikey: key, Authorization: `Bearer ${key}` },
+            }).then(async (r) => {
+              console.log("status:", r.status);
+              console.log("body:", await r.text());
+              console.log("headers:", JSON.stringify([...r.headers.entries()]));
+            }).catch((e) => console.log("fetch threw:", e));
+          '
+
       - name: Import tournaments (TopDeck.gg)
         run: node scripts/import-tournaments.mjs
 
