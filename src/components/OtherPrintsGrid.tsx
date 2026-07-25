@@ -22,16 +22,20 @@ export default function OtherPrintsGrid({
 
   return (
     <div className="flex flex-col gap-3">
-      <table className="w-full border-collapse text-sm">
+      <table className="w-full table-fixed border-collapse text-sm">
+        <colgroup>
+          <col className="w-auto" />
+          <col className="w-20" />
+        </colgroup>
         <tbody>
           {visible.map((p) => {
             const jpy = pricesByScryfallId[p.scryfallId];
             return (
               <tr key={p.scryfallId} className="border-b border-neutral-100 last:border-0">
-                <td className="py-2 pr-2">
+                <td className="min-w-0 py-2 pr-2">
                   <Link
                     href={`/cards/${oracleId}/prints/${p.scryfallId}`}
-                    className="flex items-center gap-2 text-neutral-700 hover:underline"
+                    className="flex min-w-0 items-center gap-2 text-neutral-700 hover:underline"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element -- ScryfallのSVGアイコンCDN、next/imageの最適化対象外の小さな外部SVG */}
                     <img
@@ -41,10 +45,10 @@ export default function OtherPrintsGrid({
                       height={14}
                       className="shrink-0"
                     />
-                    <span className="truncate">{p.setName}</span>
+                    <span className="min-w-0 truncate">{p.setName}</span>
                   </Link>
                 </td>
-                <td className="py-2 text-right whitespace-nowrap tabular-nums text-neutral-700">
+                <td className="overflow-hidden py-2 text-right text-ellipsis whitespace-nowrap tabular-nums text-neutral-700">
                   {jpy !== undefined ? `¥${jpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}` : "-"}
                 </td>
               </tr>

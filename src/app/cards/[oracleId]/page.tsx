@@ -257,8 +257,6 @@ export default async function CardDetailPage({
               </p>
             )}
           </div>
-
-          <PriceHistoryChart enHistory={enPriceHistory} jaHistory={jaPriceHistory} />
         </div>
 
         <div className="rounded-lg border border-neutral-200 p-4 sm:w-80 sm:shrink-0">
@@ -291,6 +289,8 @@ export default async function CardDetailPage({
           )}
         </div>
       </div>
+
+      <PriceHistoryChart enHistory={enPriceHistory} jaHistory={jaPriceHistory} />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="rounded-lg border border-neutral-200 p-4">
