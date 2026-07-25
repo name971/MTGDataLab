@@ -32,6 +32,7 @@ import LegalityGrid from "@/components/LegalityGrid";
 
 interface ResolvedCard {
   oracleId: string | null;
+  scryfallId: string | null;
   nameJa: string | null;
   nameEn: string;
   setName: string;
@@ -57,6 +58,7 @@ async function resolveCardFromDbDetail(dbResult: DbCardDetail): Promise<Resolved
   }
   return {
     oracleId: oracle.oracle_id,
+    scryfallId: enCard.scryfall_id,
     // 同一プリントの日本語版（jaCard）が無い場合、card_oracles.printed_name_jaに
     // 他プリントからのフォールバック済みの名前が入っていればそちらを使う
     // （例: Hallowed Fountainの代表英語版がJP版の無いプリントだった場合）。
@@ -101,6 +103,7 @@ async function resolveCard(searchName: string): Promise<ResolvedCard | null> {
   });
   return {
     oracleId: null,
+    scryfallId: enCard.id,
     nameJa: displayName.sub ? displayName.main : null,
     nameEn: enFrontName,
     setName: enCard.set_name,
@@ -213,7 +216,7 @@ export default async function CardDetailPage({
       <CardHero
         oracleId={oracleId}
         defaultPrint={{
-          scryfallId: null,
+          scryfallId: card.scryfallId,
           imageUrl: card.imageUrl,
           nameJa: card.nameJa,
           nameEn: card.nameEn,

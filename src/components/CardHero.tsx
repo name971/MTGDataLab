@@ -43,13 +43,39 @@ export default function CardHero({
   otherPrints: CardPrint[];
   pricesByScryfallId: Record<string, number>;
 }) {
-  const [selected, setSelected] = useState<CardPrint | null>(null);
+  // 代表プリントも「一覧の中の1件」として扱い、選ばれているものだけ一覧から外して
+  // メイン表示側に出す（クリックすると入れ替わる＝スワップの見た目にする）。
+  const defaultAsPrint: CardPrint = {
+    scryfallId: defaultPrint.scryfallId ?? "",
+    setCode: defaultPrint.setCode,
+    setName: defaultPrint.setName,
+    collectorNumber: defaultPrint.collectorNumber,
+    releasedAt: null,
+    imageUrl: defaultPrint.imageUrl,
+  };
+  const allPrints = [defaultAsPrint, ...otherPrints];
+
+  const [currentScryfallId, setCurrentScryfallId] = useState(defaultPrint.scryfallId ?? "");
   const [selectedHistory, setSelectedHistory] = useState<PricePoint[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
+  const isAlternate = currentScryfallId !== defaultPrint.scryfallId;
+  const current = allPrints.find((p) => p.scryfallId === currentScryfallId) ?? defaultAsPrint;
+  const listPrints = allPrints.filter((p) => p.scryfallId !== currentScryfallId);
+  const visiblePrints = expanded ? listPrints : listPrints.slice(0, VISIBLE_COUNT);
+
+  const allPrices: Record<string, number> = { ...pricesByScryfallId };
+  if (defaultPrint.scryfallId && defaultPrint.jpyPrice !== null) {
+    allPrices[defaultPrint.scryfallId] = defaultPrint.jpyPrice;
+  }
+
   async function selectPrint(p: CardPrint) {
-    setSelected(p);
+    setCurrentScryfallId(p.scryfallId);
+    if (p.scryfallId === defaultPrint.scryfallId) {
+      setSelectedHistory(null); // 代表プリントに戻る場合はdefaultEnHistoryをそのまま使う
+      return;
+    }
     setSelectedHistory(null);
     setLoading(true);
     try {
@@ -63,33 +89,21 @@ export default function CardHero({
     }
   }
 
-  function backToDefault() {
-    setSelected(null);
-    setSelectedHistory(null);
-  }
-
-  const isAlternate = selected !== null;
-  const imageUrl = isAlternate ? selected.imageUrl : defaultPrint.imageUrl;
-  const setCode = isAlternate ? selected.setCode : defaultPrint.setCode;
-  const setName = isAlternate ? selected.setName : defaultPrint.setName;
-  const collectorNumber = isAlternate ? selected.collectorNumber : defaultPrint.collectorNumber;
-  const jpyPrice = isAlternate ? (pricesByScryfallId[selected.scryfallId] ?? null) : defaultPrint.jpyPrice;
+  const jpyPrice = isAlternate ? (allPrices[currentScryfallId] ?? null) : defaultPrint.jpyPrice;
   const enHistory = isAlternate ? (selectedHistory ?? []) : defaultEnHistory;
-
-  const visiblePrints = expanded ? otherPrints : otherPrints.slice(0, VISIBLE_COUNT);
 
   return (
     <div className="flex flex-col gap-6 sm:flex-row">
       <div className="flex flex-1 flex-col gap-4">
         <div className="flex flex-col gap-6 sm:flex-row">
-          {imageUrl && (
+          {current.imageUrl && (
             <Image
-              src={imageUrl}
+              src={current.imageUrl}
               alt={defaultPrint.nameEn}
               width={223}
               height={311}
               className={`h-fit w-[180px] shrink-0 border border-neutral-200 object-cover ${
-                SQUARE_CORNER_SET_CODES.has(setCode) ? "" : "rounded-xl"
+                SQUARE_CORNER_SET_CODES.has(current.setCode) ? "" : "rounded-xl"
               }`}
             />
           )}
@@ -106,17 +120,9 @@ export default function CardHero({
             )}
 
             {isAlternate ? (
-              <>
-                <p className="mt-3 text-sm text-neutral-500">
-                  {setName} (#{collectorNumber})
-                </p>
-                <button
-                  onClick={backToDefault}
-                  className="mt-1 text-xs text-neutral-400 hover:text-neutral-600 hover:underline"
-                >
-                  ← 代表プリントの表示に戻る
-                </button>
-              </>
+              <p className="mt-3 text-sm text-neutral-500">
+                {current.setName} (#{current.collectorNumber})
+              </p>
             ) : (
               <p className="mt-3 text-sm text-neutral-500">
                 {defaultPrint.setName} ・ {defaultPrint.rarityLabel}
@@ -153,19 +159,25 @@ export default function CardHero({
       <div className="rounded-lg border border-neutral-200 p-4 sm:w-80 sm:shrink-0">
         <div className="mb-3 flex items-center gap-2 rounded-lg bg-neutral-800 px-3 py-2.5 text-white">
           {/* eslint-disable-next-line @next/next/no-img-element -- ScryfallのSVGアイコンCDN、next/imageの最適化対象外の小さな外部SVG */}
-          <img src={`https://svgs.scryfall.io/sets/${setCode}.svg`} alt="" width={22} height={22} className="shrink-0 invert" />
+          <img
+            src={`https://svgs.scryfall.io/sets/${current.setCode}.svg`}
+            alt=""
+            width={22}
+            height={22}
+            className="shrink-0 invert"
+          />
           <div className="min-w-0">
             <p className="truncate text-sm leading-snug font-semibold">
-              {setName} ({setCode.toUpperCase()})
+              {current.setName} ({current.setCode.toUpperCase()})
             </p>
             <p className="text-xs leading-snug text-neutral-300">
-              #{collectorNumber}
+              #{current.collectorNumber}
               {!isAlternate && ` ・ ${defaultPrint.rarityLabel}`}
             </p>
           </div>
         </div>
 
-        {otherPrints.length > 0 ? (
+        {listPrints.length > 0 ? (
           <div className="flex flex-col gap-3">
             <table className="w-full table-fixed border-collapse text-sm">
               <colgroup>
@@ -174,7 +186,7 @@ export default function CardHero({
               </colgroup>
               <tbody>
                 {visiblePrints.map((p) => {
-                  const jpy = pricesByScryfallId[p.scryfallId];
+                  const jpy = allPrices[p.scryfallId];
                   return (
                     <tr key={p.scryfallId} className="border-b border-neutral-100 last:border-0">
                       <td className="min-w-0 py-2 pr-2">
@@ -201,12 +213,12 @@ export default function CardHero({
                 })}
               </tbody>
             </table>
-            {otherPrints.length > VISIBLE_COUNT && (
+            {listPrints.length > VISIBLE_COUNT && (
               <button
                 onClick={() => setExpanded((v) => !v)}
                 className="self-center rounded-md border border-neutral-300 px-4 py-1.5 text-sm text-neutral-600 hover:border-neutral-500"
               >
-                {expanded ? "閉じる" : `もっと見る（残り${otherPrints.length - VISIBLE_COUNT}件）`}
+                {expanded ? "閉じる" : `もっと見る（残り${listPrints.length - VISIBLE_COUNT}件）`}
               </button>
             )}
           </div>
