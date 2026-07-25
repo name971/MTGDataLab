@@ -19,6 +19,7 @@ import { getFormatUsageCountsForCard } from "@/lib/dbCardUsageByFormat";
 import { getPriceHistoryForCard, type PricePoint } from "@/lib/dbPriceHistory";
 import { getOtherPrintsForCard } from "@/lib/dbCardPrints";
 import PriceHistoryChart from "@/components/PriceHistoryChart";
+import OtherPrintsGrid from "@/components/OtherPrintsGrid";
 import {
   getCardDetailFromDb,
   getCardDetailByOracleId,
@@ -329,32 +330,7 @@ export default async function CardDetailPage({
             価格・画像は代表プリントのみ追跡しています（データ肥大化対策、db/schema.sql 8章参照）。
           </p>
           {otherPrints.length > 0 ? (
-            <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-              {otherPrints.map((p) => (
-                <li key={p.scryfallId}>
-                  <Link
-                    href={`/cards/${oracleId}/prints/${p.scryfallId}`}
-                    className="flex flex-col gap-1 hover:opacity-80"
-                  >
-                    {p.imageUrl ? (
-                      <Image
-                        src={p.imageUrl}
-                        alt={p.setName}
-                        width={146}
-                        height={204}
-                        className={`w-full ${SQUARE_CORNER_SET_CODES.has(p.setCode) ? "" : "rounded"}`}
-                      />
-                    ) : (
-                      <div className="flex aspect-[5/7] w-full items-center justify-center rounded bg-neutral-100 text-xs text-neutral-400">
-                        画像なし
-                      </div>
-                    )}
-                    <span className="truncate text-xs text-neutral-600">{p.setName}</span>
-                    <span className="text-xs text-neutral-400">{p.releasedAt?.slice(0, 4) ?? "-"}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
+            <OtherPrintsGrid oracleId={oracleId} prints={otherPrints} />
           ) : (
             <p className="text-sm text-neutral-500">他のプリントは見つかりませんでした。</p>
           )}
