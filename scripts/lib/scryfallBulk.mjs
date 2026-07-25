@@ -265,6 +265,14 @@ export async function loadIndex() {
   const byExactNameEn = new Map();
   const byLooseNameEn = new Map();
   const byOracleIdJa = new Map();
+  // 名前ごとに「表面名の完全一致（tier 0）」か「裏面名・別名のみの一致（tier 1）」かを記録する。
+  // 例: "Ancestral Recall"は本物の単面カードだが、"Emeritus of Ideation // Ancestral Recall"
+  // という無関係な両面カードの裏面名としても存在する。裏面名は表面名と同じ扱いで拾わないと
+  // 両面カードが名前だけで引けなくなる（コメント参照）一方、tierを区別せずisBetterRepresentative
+  // （価格・発売日）だけで競わせると、無関係な両面カードの裏面名が本物の単面カードを
+  // 上書きしてしまう事故が起きる（実際にAncestral Recallで発生した）。
+  const exactNameTier = new Map();
+  const looseNameTier = new Map();
 
   await forEachJsonArrayObject(DATA_FILE, (raw) => {
     // all_cardsは全言語を含むため、アプリで使わない言語は保持せずその場で捨ててメモリを抑える
@@ -309,15 +317,32 @@ export async function loadIndex() {
       const printedNames = raw.card_faces?.length
         ? raw.card_faces.map((f) => f.printed_name).filter(Boolean)
         : [raw.printed_name].filter(Boolean);
+      // tier 0: カード自体の正式名（両面なら"A // B"）またはその表面名との完全一致
+      // tier 1: 裏面名・印刷名のみでの一致（無関係な別カードと衝突しうる、弱い手がかり）
+      const primaryNames = new Set([raw.name, faceNames[0]].filter(Boolean));
       for (const n of new Set([raw.name, ...faceNames, ...printedNames])) {
+        const tier = primaryNames.has(n) ? 0 : 1;
+
         const exact = normalizeName(n);
-        if (isBetterRepresentative(raw, byExactNameEn.get(exact))) {
+        const currentExactTier = exactNameTier.get(exact);
+        if (
+          currentExactTier === undefined ||
+          tier < currentExactTier ||
+          (tier === currentExactTier && isBetterRepresentative(raw, byExactNameEn.get(exact)))
+        ) {
           byExactNameEn.set(exact, slimCard(raw));
+          exactNameTier.set(exact, tier);
         }
 
         const loose = looseNormalizeName(n);
-        if (isBetterRepresentative(raw, byLooseNameEn.get(loose))) {
+        const currentLooseTier = looseNameTier.get(loose);
+        if (
+          currentLooseTier === undefined ||
+          tier < currentLooseTier ||
+          (tier === currentLooseTier && isBetterRepresentative(raw, byLooseNameEn.get(loose)))
+        ) {
           byLooseNameEn.set(loose, slimCard(raw));
+          looseNameTier.set(loose, tier);
         }
       }
     }
