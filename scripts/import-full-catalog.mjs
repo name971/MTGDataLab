@@ -95,8 +95,13 @@ async function main() {
     const printKey = `${raw.set}#${raw.collector_number}`;
     if (isBetterRepresentative(raw, byPrint.get(printKey))) byPrint.set(printKey, raw);
 
-    const bestJa = bestJaByOracle.get(raw.oracle_id);
-    if (isBetterRepresentative(raw, bestJa)) bestJaByOracle.set(raw.oracle_id, raw);
+    // printed_nameが欠落しているプリント（Scryfall側のデータ欠け）を名前フォールバックの
+    // 代表に選んでしまうと、後段でnullが上書きされてしまう（Islandで実際に発生した事故）。
+    // 実際に名前を持つプリントの中からのみ選ぶ（scryfallBulk.mjsのfindAnyJapaneseNameと同じ判定）。
+    if (frontFacePrintedName(raw)) {
+      const bestJa = bestJaByOracle.get(raw.oracle_id);
+      if (isBetterRepresentative(raw, bestJa)) bestJaByOracle.set(raw.oracle_id, raw);
+    }
   });
   console.log(`バルクデータ走査: ${scanned}件中 対象oracle_id ${bestEnByOracle.size}件`);
 

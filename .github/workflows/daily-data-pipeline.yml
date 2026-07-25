@@ -11,7 +11,7 @@ on:
 jobs:
   pipeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
@@ -61,6 +61,27 @@ jobs:
 
       - name: Resolve deck card oracle_ids
         run: node scripts/import-deck-cards.mjs
+
+      # classify-decks.ts / classify-decks-commander.mjsはどのワークフローにも組み込まれておらず、
+      # 手動実行でしかarchetype_idが更新されていなかった（アーキタイプランキングの分母に
+      # 未分類デッキが4〜6割溜まっていた原因）。日次で回して毎日分類する。
+      - name: Classify decks (Standard)
+        run: npx tsx scripts/classify-decks.ts Standard
+
+      - name: Classify decks (Pioneer)
+        run: npx tsx scripts/classify-decks.ts Pioneer
+
+      - name: Classify decks (Modern)
+        run: npx tsx scripts/classify-decks.ts Modern
+
+      - name: Classify decks (Legacy)
+        run: npx tsx scripts/classify-decks.ts Legacy
+
+      - name: Classify decks (Vintage)
+        run: npx tsx scripts/classify-decks.ts Vintage
+
+      - name: Classify decks (Commander)
+        run: node scripts/classify-decks-commander.mjs
 
       - name: Snapshot today's card prices
         run: node scripts/snapshot-prices.mjs
