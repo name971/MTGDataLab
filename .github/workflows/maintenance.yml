@@ -1,0 +1,42 @@
+name: Maintenance (manual)
+
+# ローカルPCで動かすと2GB超のバルクデータ処理で時間がかかる・PCをつけっぱなしにする必要がある
+# 単発スクリプトを、GitHub Actions側で手動実行できるようにする（workflow_dispatchのみ、日次では動かない）。
+on:
+  workflow_dispatch:
+    inputs:
+      script:
+        description: "実行するスクリプト"
+        required: true
+        type: choice
+        options:
+          - rebuild-representative-prints
+          - rebuild-card-prints
+          - import-full-catalog
+          - cleanup-duplicate-cards
+          - snapshot-prices
+          - snapshot-print-prices
+          - compute-deck-stats
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Update npm
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ${{ inputs.script }}
+        run: node scripts/${{ inputs.script }}.mjs
