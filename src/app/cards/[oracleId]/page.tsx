@@ -326,10 +326,8 @@ export default async function CardDetailPage({
             <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4">
               {otherPrints.map((p) => (
                 <li key={p.scryfallId}>
-                  <a
-                    href={`https://scryfall.com/card/${p.setCode}/${p.collectorNumber}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <Link
+                    href={`/cards/${oracleId}/prints/${p.scryfallId}`}
                     className="flex flex-col gap-1 hover:opacity-80"
                   >
                     {p.imageUrl ? (
@@ -347,7 +345,7 @@ export default async function CardDetailPage({
                     )}
                     <span className="truncate text-xs text-neutral-600">{p.setName}</span>
                     <span className="text-xs text-neutral-400">{p.releasedAt?.slice(0, 4) ?? "-"}</span>
-                  </a>
+                  </Link>
                 </li>
               ))}
             </ul>

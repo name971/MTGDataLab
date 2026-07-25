@@ -38,3 +38,22 @@ export async function getOtherPrintsForCard(
       imageUrl: p.image_uri_normal,
     }));
 }
+
+/** プリント別詳細ページ（/cards/[oracleId]/prints/[scryfallId]）用に1件だけ取得する */
+export async function getCardPrintByScryfallId(scryfallId: string): Promise<CardPrint | null> {
+  const { data, error } = await supabase
+    .from("card_prints")
+    .select("scryfall_id, set_code, set_name, collector_number, released_at, image_uri_normal")
+    .eq("scryfall_id", scryfallId)
+    .maybeSingle();
+  if (error || !data) return null;
+
+  return {
+    scryfallId: data.scryfall_id,
+    setCode: data.set_code,
+    setName: data.set_name,
+    collectorNumber: data.collector_number,
+    releasedAt: data.released_at,
+    imageUrl: data.image_uri_normal,
+  };
+}
