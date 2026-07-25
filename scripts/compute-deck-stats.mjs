@@ -70,13 +70,38 @@ function isoDate(d) {
 async function main() {
   const today = new Date().toISOString().slice(0, 10);
 
-  // decks + tournaments(format, event_date) + deck_cards(main)
+  // card_usage_stats（採用率）が実際に使う範囲は最大でもPERIOD_DAYS_OPTIONSの最大値（90日）分だけ。
+  // それより古いデッキは絞り込み無しで取得しても集計に使われないため、データ量が増えると
+  // （例: Commanderの大量バックフィルで一時的にdeck_cardsが数十万行に達した際）Supabase側の
+  // クエリタイムアウトを起こす。必要な範囲だけサーバー側で絞り込んで取得する。
+  const oldestNeededDate = new Date();
+  oldestNeededDate.setDate(oldestNeededDate.getDate() - (Math.max(...PERIOD_DAYS_OPTIONS) - 1));
+  const oldestNeededDateStr = isoDate(oldestNeededDate);
+
+  // decks + tournaments(format, event_date)
   // 「直近N日」はトーナメント開催日（event_date）基準。deck自体のimport日時（created_at）
   // は取り込みタイミング依存でズレるため使わない。
-  const decks = await supabaseGet(
-    "decks?select=id,archetype_id,created_at,tournaments!inner(format,event_date),deck_cards(card_name,oracle_id,quantity,board)"
+  // deck_cardsは別クエリで取得する（1クエリにまとめてネスト取得すると、decks×deck_cardsの
+  // JOINコストがデータ量増加時にPostgres側のstatement timeoutを超えてしまうため）。
+  const deckMetas = await supabaseGet(
+    "decks?select=id,archetype_id,created_at,tournaments!inner(format,event_date)" +
+      `&tournaments.event_date=gte.${oldestNeededDateStr}`
   );
-  console.log(`対象デッキ: ${decks.length}件`);
+  console.log(`対象デッキ: ${deckMetas.length}件（${oldestNeededDateStr}以降）`);
+
+  const deckCardsByDeckId = new Map();
+  const DECK_ID_CHUNK = 200; // in.()のURL長・1クエリあたりの行数を抑えるため小分けにする
+  for (let i = 0; i < deckMetas.length; i += DECK_ID_CHUNK) {
+    const idsChunk = deckMetas.slice(i, i + DECK_ID_CHUNK).map((d) => d.id);
+    const cards = await supabaseGet(
+      `deck_cards?select=deck_id,card_name,oracle_id,quantity,board&deck_id=in.(${idsChunk.join(",")})`,
+    );
+    for (const c of cards) {
+      if (!deckCardsByDeckId.has(c.deck_id)) deckCardsByDeckId.set(c.deck_id, []);
+      deckCardsByDeckId.get(c.deck_id).push(c);
+    }
+  }
+  const decks = deckMetas.map((d) => ({ ...d, deck_cards: deckCardsByDeckId.get(d.id) ?? [] }));
 
   // card_price_snapshots（本日分、'en'系列）を oracle_id -> jpy_est でマップ化
   const snapshots = await supabaseGet(
@@ -126,7 +151,14 @@ async function main() {
       });
     }
   }
-  await supabaseUpsert("card_usage_stats", usageRows, "format,oracle_id,period_days,calculated_at");
+  // 1回のUPSERTで送る行数が多すぎるとPostgres側のstatement timeoutに達するため分割送信する
+  for (let i = 0; i < usageRows.length; i += PAGE_SIZE) {
+    await supabaseUpsert(
+      "card_usage_stats",
+      usageRows.slice(i, i + PAGE_SIZE),
+      "format,oracle_id,period_days,calculated_at",
+    );
+  }
   console.log(`card_usage_stats 保存: ${usageRows.length}件（${PERIOD_DAYS_OPTIONS.join("/")}日分）`);
 
   // ── archetype_price_stats: アーキタイプ別デッキ価格の中央値 ──
@@ -166,7 +198,9 @@ async function main() {
       calculated_at: today,
     });
   }
-  await supabaseUpsert("archetype_price_stats", priceRows, "archetype_id,calculated_at");
+  for (let i = 0; i < priceRows.length; i += PAGE_SIZE) {
+    await supabaseUpsert("archetype_price_stats", priceRows.slice(i, i + PAGE_SIZE), "archetype_id,calculated_at");
+  }
   console.log(`archetype_price_stats 保存: ${priceRows.length}件`);
 }
 

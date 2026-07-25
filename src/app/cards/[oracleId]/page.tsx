@@ -257,23 +257,27 @@ export default async function CardDetailPage({
           {formatUsageCounts.length > 0 ? (
             <ul className="flex flex-col gap-1.5 text-sm">
               {formatUsageCounts.map((f) => (
-                <li key={f.format} className="flex items-center justify-between">
+                <li key={f.format} className="flex items-center justify-between gap-2">
                   <Link
                     href={`/cards/${oracleId}/decks?format=${encodeURIComponent(f.format)}&period=${usagePeriodDays}`}
                     className="hover:underline"
                   >
                     {f.format}
                   </Link>
-                  <span>
-                    {f.deckCount}件
-                    {f.changePct !== null && (
-                      <span
-                        className={`ml-1 text-xs ${f.changePct < 0 ? "text-red-800" : "text-teal-800"}`}
-                      >
-                        （{f.changePct >= 0 ? "+" : ""}
-                        {f.changePct}%）
-                      </span>
-                    )}
+                  <span className="flex shrink-0 items-baseline justify-end">
+                    <span className="text-right tabular-nums">{f.deckCount}件</span>
+                    <span
+                      className={`ml-1 w-16 shrink-0 text-right text-xs tabular-nums ${
+                        f.changePct === null ? "" : f.changePct < 0 ? "text-red-800" : "text-teal-800"
+                      }`}
+                    >
+                      {f.changePct !== null && (
+                        <>
+                          （{f.changePct >= 0 ? "+" : ""}
+                          {f.changePct}%）
+                        </>
+                      )}
+                    </span>
                   </span>
                 </li>
               ))}
