@@ -35,8 +35,23 @@ jobs:
       - name: Import tournaments (TopDeck.gg)
         run: node scripts/import-tournaments.mjs
 
-      - name: Import MTGO decklists
-        run: node scripts/import-mtgo-decklists.mjs
+      # import-mtgo-decklists.mjsは引数無しだとPioneerのみ取得する。mtgo.com/decklistsには
+      # Standard/Modern/Legacy/Vintageの分もあるため、対応フォーマット全部を個別に呼ぶ
+      # （Commanderはmtgo.comに無い形式のためTopDeck.gg取り込みのみに任せる）。
+      - name: Import MTGO decklists (Standard)
+        run: node scripts/import-mtgo-decklists.mjs standard Standard
+
+      - name: Import MTGO decklists (Pioneer)
+        run: node scripts/import-mtgo-decklists.mjs pioneer Pioneer
+
+      - name: Import MTGO decklists (Modern)
+        run: node scripts/import-mtgo-decklists.mjs modern Modern
+
+      - name: Import MTGO decklists (Legacy)
+        run: node scripts/import-mtgo-decklists.mjs legacy Legacy
+
+      - name: Import MTGO decklists (Vintage)
+        run: node scripts/import-mtgo-decklists.mjs vintage Vintage
 
       - name: Resolve deck card oracle_ids
         run: node scripts/import-deck-cards.mjs

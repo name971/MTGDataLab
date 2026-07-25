@@ -271,7 +271,7 @@ export default async function CardDetailPage({
                         className={`ml-1 text-xs ${f.changePct < 0 ? "text-red-800" : "text-teal-800"}`}
                       >
                         （{f.changePct >= 0 ? "+" : ""}
-                        {f.changePct}%/前日比）
+                        {f.changePct}%/前期間比）
                       </span>
                     )}
                   </span>

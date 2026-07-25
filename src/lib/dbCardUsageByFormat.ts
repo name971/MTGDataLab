@@ -3,7 +3,7 @@ import { supabase } from "./supabase";
 export interface FormatUsageCount {
   format: string;
   deckCount: number;
-  /** 前日の同じ幅のウィンドウ（1日ずらし）との比較。前日側が0件で比較不能な場合はnull */
+  /** 直前の同じ日数分のウィンドウ（非重複）との比較（前期間比）。前期間側が0件で比較不能な場合はnull */
   changePct: number | null;
 }
 
@@ -27,8 +27,9 @@ interface DeckCardEmbedRow {
 
 /**
  * 指定カード（oracle_id）が、各フォーマットで直近periodDays日間に何個のデッキで使われているかを
- * 集計する。カッコ内の増減率は、1日ずらした同じ幅のウィンドウ（前日を末日とする同じ日数）との
- * 比較（前日比）。deck_cards.oracle_id → decks → tournaments の外部キーをたどって取得するため、
+ * 集計する。カッコ内の増減率は、直前の同じ日数分・非重複のウィンドウとの比較（前期間比）。
+ * 例: 7日間なら直前7日間、30日間なら直前30日間、90日間なら直前90日間と比較する。
+ * deck_cards.oracle_id → decks → tournaments の外部キーをたどって取得するため、
  * このカードを含むデッキが多いフォーマットでも件数は小さく抑えられる（母数はカード単位）。
  */
 export async function getFormatUsageCountsForCard(
@@ -54,7 +55,7 @@ export async function getFormatUsageCountsForCard(
   const entries = [...entryByDeckId.values()];
 
   const currentWindow = periodWindow(periodDays, 0);
-  const prevWindow = periodWindow(periodDays, 1);
+  const prevWindow = periodWindow(periodDays, periodDays);
   const countInWindow = (format: string, w: { start: string; end: string }) =>
     entries.filter((e) => e.format === format && e.eventDate >= w.start && e.eventDate <= w.end).length;
 
