@@ -2,9 +2,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getCardPrintByScryfallId } from "@/lib/dbCardPrints";
+import { getPrintPriceHistory } from "@/lib/dbCardPrintPrices";
 import { supabase } from "@/lib/supabase";
-import { fetchPriceByScryfallId } from "@/lib/cardData";
-import { fetchExchangeRates, toJpy, formatJpy } from "@/lib/fx";
+import { formatJpy } from "@/lib/fx";
+import PriceHistoryChart from "@/components/PriceHistoryChart";
 
 /** "2026-07-25" -> "2026/7/25" */
 function formatDateSlash(isoDate: string): string {
@@ -23,10 +24,10 @@ export default async function CardPrintDetailPage({
 }) {
   const { oracleId, scryfallId } = await params;
 
-  const [print, oracleRes, rates] = await Promise.all([
+  const [print, oracleRes, priceHistory] = await Promise.all([
     getCardPrintByScryfallId(scryfallId),
     supabase.from("card_oracles").select("name, printed_name_ja").eq("oracle_id", oracleId).maybeSingle(),
-    fetchExchangeRates(),
+    getPrintPriceHistory(scryfallId),
   ]);
   if (!print || print.scryfallId !== scryfallId) notFound();
 
@@ -34,12 +35,10 @@ export default async function CardPrintDetailPage({
   const nameJa = oracle?.printed_name_ja ?? null;
   const nameEn = oracle?.name ?? "";
 
-  // このプリント固有の価格はDBで追跡していない（代表プリントのみ日次スナップショット対象、
-  // db/schema.sql 8章参照）ため、このページを開いたときだけ1件ライブ取得する
-  // （一覧側は price を持たずAPIも呼ばない。個別ページ限定の軽量な例外）。
-  const livePrice = await fetchPriceByScryfallId(print.scryfallId);
-  const usdPrice = livePrice?.usd ? parseFloat(livePrice.usd) : null;
-  const jpyPrice = usdPrice !== null ? toJpy(usdPrice, rates.usdToJpy) : null;
+  // card_print_prices（scripts/snapshot-print-prices.mjsが日次で追記、db/schema.sql参照）の
+  // 最新日を「現在価格」として表示する。まだ一度もスナップショットが無い場合は価格データなし。
+  const latest = priceHistory.at(-1) ?? null;
+  const jpyPrice = latest?.jpy ?? null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -72,19 +71,16 @@ export default async function CardPrintDetailPage({
             {jpyPrice !== null ? (
               <>
                 <p className="mt-4 text-2xl font-medium">{formatJpy(jpyPrice)}</p>
-                <p className="text-xs text-neutral-400">
-                  為替換算の参考値（${usdPrice?.toFixed(2)} × {rates.usdToJpy.toFixed(2)}円/$）
-                </p>
+                <p className="text-xs text-neutral-400">{latest?.date}時点の参考値</p>
               </>
             ) : (
               <p className="mt-4 text-sm text-neutral-500">価格データなし</p>
             )}
-            <p className="mt-2 text-xs text-neutral-400">
-              ※このプリント固有の価格は日次履歴を保持していません（表示のたびに取得した現在値です）
-            </p>
           </div>
         </div>
       </div>
+
+      {priceHistory.length > 0 && <PriceHistoryChart enHistory={priceHistory} jaHistory={[]} />}
     </div>
   );
 }

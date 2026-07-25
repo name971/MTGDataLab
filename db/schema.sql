@@ -96,6 +96,20 @@ CREATE TABLE card_prints (
 
 CREATE INDEX idx_card_prints_oracle_id ON card_prints (oracle_id);
 
+-- card_prints（全プリント、10万件超）の日次価格履歴。card_price_snapshots（代表プリントのみ、
+-- 1日1行を積み上げる方式）と同じ設計にすると1日ごとにUUID・インデックスのオーバーヘッドが
+-- プリント数分発生し、無料枠（DB 500MB）をすぐ食い潰す。そのため1プリント=1行を維持し、
+-- 日付ごとの価格をJSONBに追記していく方式にする（例: {"2026-07-25": 123.45, ...}）。
+-- scripts/snapshot-print-prices.mjsが日次で追記する。期間指定の絞り込みはJSONB演算子で行う。
+CREATE TABLE card_print_prices (
+  scryfall_id UUID PRIMARY KEY REFERENCES card_prints (scryfall_id),
+  oracle_id   UUID NOT NULL REFERENCES card_oracles (oracle_id),
+  prices      JSONB NOT NULL DEFAULT '{}'::jsonb, -- {"YYYY-MM-DD": usd円換算前のUSD価格}
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_card_print_prices_oracle_id ON card_print_prices (oracle_id);
+
 
 -- ════════════════════════════════════════════
 -- 2. 価格データ（日次スナップショット）

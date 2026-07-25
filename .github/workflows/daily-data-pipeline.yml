@@ -65,6 +65,9 @@ jobs:
       - name: Snapshot today's card prices
         run: node scripts/snapshot-prices.mjs
 
+      - name: Snapshot today's print prices (all versions)
+        run: node scripts/snapshot-print-prices.mjs
+
       - name: Compute usage stats / archetype price stats
         run: node scripts/compute-deck-stats.mjs
 
