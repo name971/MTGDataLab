@@ -69,6 +69,7 @@ async function main() {
   console.log(`対象oracle_id: ${knownOracleIds.size}件`);
 
   const prints = [];
+  const setsByCode = new Map();
   let scanned = 0;
   await forEachJsonArrayObject(DATA_FILE, (raw) => {
     scanned++;
@@ -76,11 +77,11 @@ async function main() {
     if (!raw.oracle_id || !knownOracleIds.has(raw.oracle_id)) return;
     const face = raw.card_faces?.[0];
     const imageUris = raw.image_uris ?? face?.image_uris ?? null;
+    setsByCode.set(raw.set, raw.set_name);
     prints.push({
       scryfall_id: raw.id,
       oracle_id: raw.oracle_id,
       set_code: raw.set,
-      set_name: raw.set_name,
       collector_number: raw.collector_number,
       released_at: raw.released_at ?? null,
       image_uri_normal: imageUris?.normal ?? null,
@@ -88,8 +89,11 @@ async function main() {
   });
   console.log(`バルクデータ走査: ${scanned}件中 ${prints.length}件が対象（英語・非デジタル・登録済みカード）`);
 
+  // card_printsがset_codeを外部キー参照しているため、setsを先に投入する
+  const setRows = [...setsByCode.entries()].map(([set_code, set_name]) => ({ set_code, set_name }));
+  await supabaseUpsert("sets", setRows, "set_code");
   await supabaseUpsert("card_prints", prints, "scryfall_id");
-  console.log(`\n完了: card_prints ${prints.length}件を保存`);
+  console.log(`\n完了: sets ${setRows.length}件、card_prints ${prints.length}件を保存`);
 }
 
 main().catch((err) => {

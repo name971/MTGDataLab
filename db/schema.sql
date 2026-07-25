@@ -83,11 +83,17 @@ CREATE INDEX idx_cards_set_code ON cards (set_code);
 -- 価格は追跡しない（画像・セット名・発売年のみ）。scripts/rebuild-card-prints.mjsが
 -- Scryfallバルクデータから英語版nonfoil/非デジタルのプリントのみを対象に生成する
 -- （新セット追加時など、代表プリントが変わりうるタイミングで再実行すれば十分。日次不要）。
+-- セットコード→セット名の対応表。card_printsは10万行超あり、set_nameを毎行フルテキストで
+-- 重複保持すると容量を無駄に食うため、正規化して数百行のこちらだけに持たせる。
+CREATE TABLE sets (
+  set_code TEXT PRIMARY KEY,
+  set_name TEXT NOT NULL
+);
+
 CREATE TABLE card_prints (
   scryfall_id      UUID PRIMARY KEY,
   oracle_id        UUID NOT NULL REFERENCES card_oracles (oracle_id),
-  set_code         TEXT NOT NULL,
-  set_name         TEXT NOT NULL,
+  set_code         TEXT NOT NULL REFERENCES sets (set_code),
   collector_number TEXT NOT NULL,
   released_at      DATE,
   image_uri_normal TEXT,

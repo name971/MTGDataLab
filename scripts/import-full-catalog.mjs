@@ -64,6 +64,7 @@ async function main() {
   const bestJaByOracle = new Map();
   // oracle_id -> 全英語非デジタルプリント（card_prints用）
   const allEnPrintsByOracle = new Map();
+  const setsByCode = new Map();
 
   let scanned = 0;
   await forEachJsonArrayObject(DATA_FILE, (raw) => {
@@ -76,11 +77,11 @@ async function main() {
       const current = bestEnByOracle.get(raw.oracle_id);
       if (isBetterRepresentative(raw, current)) bestEnByOracle.set(raw.oracle_id, raw);
 
+      setsByCode.set(raw.set, raw.set_name);
       if (!allEnPrintsByOracle.has(raw.oracle_id)) allEnPrintsByOracle.set(raw.oracle_id, []);
       allEnPrintsByOracle.get(raw.oracle_id).push({
         scryfall_id: raw.id,
         set_code: raw.set,
-        set_name: raw.set_name,
         collector_number: raw.collector_number,
         released_at: raw.released_at ?? null,
         image_uri_normal: (raw.image_uris ?? raw.card_faces?.[0]?.image_uris)?.normal ?? null,
@@ -122,9 +123,15 @@ async function main() {
     }
   }
 
-  console.log(`card_oracles: ${oracleRows.length}件、cards: ${cardRows.length}件、card_prints: ${printRows.length}件を保存中...`);
+  const setRows = [...setsByCode.entries()].map(([set_code, set_name]) => ({ set_code, set_name }));
+
+  console.log(
+    `card_oracles: ${oracleRows.length}件、cards: ${cardRows.length}件、sets: ${setRows.length}件、card_prints: ${printRows.length}件を保存中...`,
+  );
   await supabaseUpsert("card_oracles", oracleRows, "oracle_id");
   await supabaseUpsert("cards", cardRows, "scryfall_id");
+  // card_printsがset_codeを外部キー参照しているため、setsを先に投入する
+  await supabaseUpsert("sets", setRows, "set_code");
   await supabaseUpsert("card_prints", printRows, "scryfall_id");
 
   console.log("\n完了");
