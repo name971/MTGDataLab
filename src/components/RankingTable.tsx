@@ -25,7 +25,11 @@ export default function RankingTable({ rows }: { rows: RankingRow[] }) {
 
   const filtered = useMemo(() => {
     if (colorFilter.size === 0) return rows;
-    return rows.filter((r) => r.colors && r.colors.length > 0 && r.colors.every((c) => colorFilter.has(c)));
+    // 選択した色の組み合わせと完全一致するカードだけを出す（黒単選択なら黒単のみ、
+    // 黒青選択なら黒と青の両方を持つ2色カードのみで、黒単・青単・3色以上は含まない）
+    return rows.filter(
+      (r) => r.colors && r.colors.length === colorFilter.size && r.colors.every((c) => colorFilter.has(c)),
+    );
   }, [rows, colorFilter]);
 
   const sorted = useMemo(
