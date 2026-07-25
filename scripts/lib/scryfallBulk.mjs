@@ -174,6 +174,7 @@ function slimFace(face) {
     printed_name: face.printed_name,
     mana_cost: face.mana_cost,
     type_line: face.type_line,
+    oracle_text: face.oracle_text,
     image_uris: face.image_uris
       ? { normal: face.image_uris.normal, art_crop: face.image_uris.art_crop }
       : undefined,
@@ -200,6 +201,7 @@ function slimCard(card) {
     collector_number: card.collector_number,
     mana_cost: card.mana_cost,
     type_line: card.type_line,
+    oracle_text: card.oracle_text,
     legalities: card.legalities,
     released_at: card.released_at,
     finishes: card.finishes,
@@ -431,6 +433,20 @@ function stripFurigana(name) {
 
 export function frontFacePrintedName(card) {
   return stripFurigana(card.card_faces?.[0]?.printed_name ?? card.printed_name ?? null);
+}
+
+/**
+ * ルールテキスト。両面カードは表裏それぞれのoracle_textを持つため、両方を連結して返す
+ * （片面だけだと裏面の能力が読めなくなるため）。
+ */
+export function combinedOracleText(card) {
+  if (card.card_faces?.length) {
+    return card.card_faces
+      .map((f) => f.oracle_text)
+      .filter(Boolean)
+      .join("\n//\n");
+  }
+  return card.oracle_text ?? null;
 }
 
 export function imageUris(card) {

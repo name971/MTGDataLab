@@ -17,6 +17,7 @@ import {
   findAnyJapaneseName,
   frontFaceName,
   frontFacePrintedName,
+  combinedOracleText,
   toCardRow,
 } from "./lib/scryfallBulk.mjs";
 
@@ -80,7 +81,7 @@ async function main() {
   await ensureBulkData();
   const index = await loadIndex();
 
-  const oracles = await supabaseGet("card_oracles?select=oracle_id,name,printed_name_ja");
+  const oracles = await supabaseGet("card_oracles?select=oracle_id,name,printed_name_ja,oracle_text");
   console.log(`card_oracles: ${oracles.length}件を再構築`);
 
   let updated = 0;
@@ -112,8 +113,10 @@ async function main() {
     // 画像用のcards行は変わらなくても、名前だけの日本語フォールバックが変わることがあるので別途判定する
     const newPrintedNameJa = jaCard ? frontFacePrintedName(jaCard) : findAnyJapaneseName(index, better.oracle_id);
     const nameJaChanged = newPrintedNameJa !== oracle.printed_name_ja;
+    const newOracleText = combinedOracleText(better);
+    const oracleTextChanged = newOracleText !== oracle.oracle_text;
 
-    if (!enChanged && !jaChanged && !nameJaChanged) {
+    if (!enChanged && !jaChanged && !nameJaChanged && !oracleTextChanged) {
       unchanged++;
       continue;
     }
@@ -138,6 +141,7 @@ async function main() {
       name: frontFaceName(better),
       // 画像に使うjaCard（同一プリント限定）が無くても、名前だけは他プリントの日本語版から拾う。
       printed_name_ja: newPrintedNameJa,
+      oracle_text: newOracleText,
     });
 
     updated++;

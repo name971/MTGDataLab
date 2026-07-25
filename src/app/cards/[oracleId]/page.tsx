@@ -9,6 +9,7 @@ import {
   resolveFrontFacePrintedName,
   resolveFrontFacePrintedTypeLine,
   resolveFrontFaceTypeLine,
+  resolveCombinedOracleText,
   resolveImageUris,
   RARITY_LABEL_JA,
 } from "@/lib/scryfall";
@@ -18,6 +19,7 @@ import { getArchetypesUsingCard } from "@/lib/sampleDeckDetail";
 import { getFormatUsageCountsForCard } from "@/lib/dbCardUsageByFormat";
 import { getPriceHistoryForCard, type PricePoint } from "@/lib/dbPriceHistory";
 import { getOtherPrintsForCard } from "@/lib/dbCardPrints";
+import { getLatestPricesForPrints } from "@/lib/dbCardPrintPrices";
 import PriceHistoryChart from "@/components/PriceHistoryChart";
 import OtherPrintsGrid from "@/components/OtherPrintsGrid";
 import {
@@ -38,6 +40,7 @@ interface ResolvedCard {
   collectorNumber: string;
   rarity: string;
   typeLine: string | null;
+  oracleText: string | null;
   legalities: Record<string, string>;
   imageUrl: string | null;
   usdPrice: number | null;
@@ -65,6 +68,7 @@ async function resolveCardFromDbDetail(dbResult: DbCardDetail): Promise<Resolved
     collectorNumber: enCard.collector_number,
     rarity: enCard.rarity,
     typeLine: (jaCard?.type_line || enCard.type_line) ?? null,
+    oracleText: oracle.oracle_text,
     legalities: enCard.legalities,
     imageUrl: jaCard?.image_uri_normal ?? enCard.image_uri_normal,
     usdPrice,
@@ -106,6 +110,7 @@ async function resolveCard(searchName: string): Promise<ResolvedCard | null> {
       (jaCard && resolveFrontFacePrintedTypeLine(jaCard)) ??
       resolveFrontFaceTypeLine(enCard) ??
       null,
+    oracleText: resolveCombinedOracleText(enCard),
     legalities: enCard.legalities,
     imageUrl:
       (jaCard && resolveImageUris(jaCard)?.normal) ?? resolveImageUris(enCard)?.normal ?? null,
@@ -200,6 +205,7 @@ export default async function CardDetailPage({
         collectorNumber: card.collectorNumber,
       })
     : [];
+  const otherPrintPrices = await getLatestPricesForPrints(otherPrints.map((p) => p.scryfallId));
 
   return (
     <div className="flex flex-col gap-6">
@@ -220,9 +226,9 @@ export default async function CardDetailPage({
             <p className="text-xl font-medium">{card.nameJa ?? card.nameEn}</p>
             {card.nameJa && <p className="text-sm text-neutral-500">{card.nameEn}</p>}
             {card.typeLine && <p className="mt-2 text-sm text-neutral-600">{card.typeLine}</p>}
-            <p className="mt-1 text-sm text-neutral-500">
-              {card.setName} ・ {RARITY_LABEL_JA[card.rarity] ?? card.rarity}
-            </p>
+            {card.oracleText && (
+              <p className="mt-2 whitespace-pre-line text-sm text-neutral-700">{card.oracleText}</p>
+            )}
             {jpyPrice !== null ? (
               <>
                 <p className="mt-4 text-2xl font-medium">{formatJpy(jpyPrice)}</p>
@@ -248,6 +254,36 @@ export default async function CardDetailPage({
           </div>
 
           <PriceHistoryChart enHistory={enPriceHistory} jaHistory={jaPriceHistory} />
+        </div>
+
+        <div className="rounded-lg border border-neutral-200 p-4 sm:w-80 sm:shrink-0">
+          <div className="mb-3 flex items-center gap-2 rounded-lg bg-neutral-800 px-3 py-2.5 text-white">
+            {/* eslint-disable-next-line @next/next/no-img-element -- ScryfallのSVGアイコンCDN、next/imageの最適化対象外の小さな外部SVG */}
+            <img
+              src={`https://svgs.scryfall.io/sets/${card.setCode}.svg`}
+              alt=""
+              width={22}
+              height={22}
+              className="shrink-0 invert"
+            />
+            <div className="min-w-0">
+              <p className="truncate text-sm leading-snug font-semibold">
+                {card.setName} ({card.setCode.toUpperCase()})
+              </p>
+              <p className="text-xs leading-snug text-neutral-300">
+                #{card.collectorNumber} ・ {RARITY_LABEL_JA[card.rarity] ?? card.rarity}
+              </p>
+            </div>
+          </div>
+          {otherPrints.length > 0 ? (
+            <OtherPrintsGrid
+              oracleId={oracleId}
+              prints={otherPrints}
+              pricesByScryfallId={Object.fromEntries(otherPrintPrices)}
+            />
+          ) : (
+            <p className="text-sm text-neutral-500">他のプリントは見つかりませんでした。</p>
+          )}
         </div>
       </div>
 
@@ -324,18 +360,6 @@ export default async function CardDetailPage({
             ))}
         </div>
 
-      </div>
-
-      <div className="rounded-lg border border-neutral-200 p-4">
-        <h2 className="mb-3 text-sm font-medium text-neutral-500">その他のプリント</h2>
-        <p className="mb-3 text-xs text-neutral-400">
-          価格・画像は代表プリントのみ追跡しています（データ肥大化対策、db/schema.sql 8章参照）。
-        </p>
-        {otherPrints.length > 0 ? (
-          <OtherPrintsGrid oracleId={oracleId} prints={otherPrints} />
-        ) : (
-          <p className="text-sm text-neutral-500">他のプリントは見つかりませんでした。</p>
-        )}
       </div>
     </div>
   );

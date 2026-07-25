@@ -13,7 +13,8 @@
 CREATE TABLE card_oracles (
   oracle_id       UUID PRIMARY KEY,
   name            TEXT NOT NULL,
-  printed_name_ja TEXT
+  printed_name_ja TEXT,
+  oracle_text     TEXT -- ルールテキスト（英語）。カード詳細ページ表示用
 );
 
 -- カードの「印刷」単位（セット違い・言語違いごとに1行）

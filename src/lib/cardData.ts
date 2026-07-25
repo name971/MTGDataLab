@@ -4,6 +4,7 @@ export interface CardOracleRow {
   oracle_id: string;
   name: string;
   printed_name_ja: string | null;
+  oracle_text: string | null;
 }
 
 export interface CardRow {
@@ -36,7 +37,7 @@ export interface DbCardDetail {
 export async function getCardDetailFromDb(englishName: string): Promise<DbCardDetail | null> {
   const { data: oracle, error: oracleError } = await supabase
     .from("card_oracles")
-    .select("oracle_id, name, printed_name_ja")
+    .select("oracle_id, name, printed_name_ja, oracle_text")
     .ilike("name", englishName)
     .maybeSingle();
 
@@ -65,7 +66,7 @@ export async function getCardDetailFromDb(englishName: string): Promise<DbCardDe
 export async function getCardDetailByOracleId(oracleId: string): Promise<DbCardDetail | null> {
   const { data: oracle, error: oracleError } = await supabase
     .from("card_oracles")
-    .select("oracle_id, name, printed_name_ja")
+    .select("oracle_id, name, printed_name_ja, oracle_text")
     .eq("oracle_id", oracleId)
     .maybeSingle();
 

@@ -22,6 +22,7 @@ import {
   findAnyJapaneseName,
   frontFaceName,
   frontFacePrintedName,
+  combinedOracleText,
   toCardRow,
 } from "./lib/scryfallBulk.mjs";
 
@@ -143,6 +144,7 @@ async function main() {
       oracle_id: enCard.oracle_id,
       name: frontFaceName(enCard),
       printed_name_ja: printedNameJa,
+      oracle_text: combinedOracleText(enCard),
     });
     cardRows.push(toCardRow(enCard, enCard.oracle_id));
     if (jaCard) cardRows.push(toCardRow(jaCard, enCard.oracle_id));

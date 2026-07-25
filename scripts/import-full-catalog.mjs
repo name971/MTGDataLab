@@ -23,6 +23,7 @@ import {
   isBetterRepresentative,
   frontFaceName,
   frontFacePrintedName,
+  combinedOracleText,
   toCardRow,
 } from "./lib/scryfallBulk.mjs";
 
@@ -119,7 +120,12 @@ async function main() {
         ? frontFacePrintedName(bestJaByOracle.get(oracleId))
         : null;
 
-    oracleRows.push({ oracle_id: oracleId, name: frontFaceName(enCard), printed_name_ja: printedNameJa });
+    oracleRows.push({
+      oracle_id: oracleId,
+      name: frontFaceName(enCard),
+      printed_name_ja: printedNameJa,
+      oracle_text: combinedOracleText(enCard),
+    });
     cardRows.push(toCardRow(enCard, oracleId));
     if (jaCard) cardRows.push(toCardRow(jaCard, oracleId));
 

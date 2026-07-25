@@ -1,22 +1,19 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import type { CardPrint } from "@/lib/dbCardPrints";
-
-// 実物が角丸ではない（角が四角い）ことで知られるセットの一覧。角丸カードかどうかを毎回
-// 判定するより、角が四角い方が少数派で既知のセットに限られるため、こちらを列挙する方が楽。
-const SQUARE_CORNER_SET_CODES = new Set(["ced", "cei"]);
 
 const VISIBLE_COUNT = 20;
 
 export default function OtherPrintsGrid({
   oracleId,
   prints,
+  pricesByScryfallId,
 }: {
   oracleId: string;
   prints: CardPrint[];
+  pricesByScryfallId: Record<string, number>;
 }) {
   const [expanded, setExpanded] = useState(false);
   // 基本土地等は数百〜700件超のプリントがあり、全件表示すると見づらいため、
@@ -25,32 +22,36 @@ export default function OtherPrintsGrid({
 
   return (
     <div className="flex flex-col gap-3">
-      <ul className="grid grid-cols-3 gap-2 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8">
-        {visible.map((p) => (
-          <li key={p.scryfallId}>
-            <Link
-              href={`/cards/${oracleId}/prints/${p.scryfallId}`}
-              className="flex flex-col gap-1 hover:opacity-80"
-            >
-              {p.imageUrl ? (
-                <Image
-                  src={p.imageUrl}
-                  alt={p.setName}
-                  width={146}
-                  height={204}
-                  className={`w-full ${SQUARE_CORNER_SET_CODES.has(p.setCode) ? "" : "rounded"}`}
-                />
-              ) : (
-                <div className="flex aspect-[5/7] w-full items-center justify-center rounded bg-neutral-100 text-xs text-neutral-400">
-                  画像なし
-                </div>
-              )}
-              <span className="truncate text-xs text-neutral-600">{p.setName}</span>
-              <span className="text-xs text-neutral-400">{p.releasedAt?.slice(0, 4) ?? "-"}</span>
-            </Link>
-          </li>
-        ))}
-      </ul>
+      <table className="w-full border-collapse text-sm">
+        <tbody>
+          {visible.map((p) => {
+            const jpy = pricesByScryfallId[p.scryfallId];
+            return (
+              <tr key={p.scryfallId} className="border-b border-neutral-100 last:border-0">
+                <td className="py-1.5 pr-2">
+                  <Link
+                    href={`/cards/${oracleId}/prints/${p.scryfallId}`}
+                    className="flex items-center gap-1.5 text-neutral-700 hover:underline"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element -- ScryfallのSVGアイコンCDN、next/imageの最適化対象外の小さな外部SVG */}
+                    <img
+                      src={`https://svgs.scryfall.io/sets/${p.setCode}.svg`}
+                      alt=""
+                      width={14}
+                      height={14}
+                      className="shrink-0"
+                    />
+                    <span className="truncate">{p.setName}</span>
+                  </Link>
+                </td>
+                <td className="py-1.5 text-right whitespace-nowrap tabular-nums text-neutral-700">
+                  {jpy !== undefined ? `¥${jpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}` : "-"}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
       {prints.length > VISIBLE_COUNT && (
         <button
           onClick={() => setExpanded((v) => !v)}

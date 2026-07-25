@@ -34,6 +34,7 @@ export interface ScryfallCard {
   released_at: string;
   mana_cost?: string;
   type_line?: string;
+  oracle_text?: string;
   legalities: Record<string, string>;
   finishes: string[];
   image_uris?: {
@@ -47,6 +48,7 @@ export interface ScryfallCard {
     printed_type_line?: string;
     mana_cost?: string;
     type_line?: string;
+    oracle_text?: string;
     image_uris?: {
       normal: string;
       art_crop: string;
@@ -93,6 +95,17 @@ export function resolveFrontFacePrintedTypeLine(
   card: Pick<ScryfallCard, "printed_type_line" | "card_faces">,
 ): string | undefined {
   return card.card_faces?.[0]?.printed_type_line ?? card.printed_type_line;
+}
+
+/** 両面カードは表裏それぞれのoracle_textを連結する（片面だけだと裏面の能力が読めなくなるため） */
+export function resolveCombinedOracleText(
+  card: Pick<ScryfallCard, "oracle_text" | "card_faces">,
+): string | null {
+  if (card.card_faces?.length) {
+    const texts = card.card_faces.map((f) => f.oracle_text).filter(Boolean);
+    return texts.length > 0 ? texts.join("\n//\n") : null;
+  }
+  return card.oracle_text ?? null;
 }
 
 export const RARITY_LABEL_JA: Record<string, string> = {
