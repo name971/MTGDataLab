@@ -4,7 +4,7 @@ import type { RankingRow } from "./sampleRankingData";
 import { colorsFromManaCost } from "./manaColors";
 
 // 色フィルタで絞り込んでも表示件数が残るよう、表示用（20件）より広めに候補を取得する
-const TOP_N = 60;
+const TOP_N = 100;
 
 // 基本土地は常に採用率が高くランキングの大半を占めてしまい、値上がり/採用率ランキングとしての
 // 意味が薄いため除外する（雪だらけ版含む）
