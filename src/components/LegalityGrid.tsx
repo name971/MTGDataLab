@@ -23,7 +23,7 @@ const STATUS_CLASS: Record<string, string> = {
 
 export default function LegalityGrid({ legalities }: { legalities: Record<string, string> }) {
   return (
-    <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+    <dl className="grid grid-cols-1 gap-y-1.5 text-sm">
       {FORMATS.map((format) => {
         const status = legalities[formatSlug(format)] ?? "not_legal";
         return (

@@ -213,50 +213,54 @@ export default async function CardDetailPage({
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-6 sm:flex-row">
-        {card.imageUrl && (
-          <Image
-            src={card.imageUrl}
-            alt={card.nameEn}
-            width={223}
-            height={311}
-            className={`h-fit w-[180px] shrink-0 border border-neutral-200 object-cover ${
-              SQUARE_CORNER_SET_CODES.has(card.setCode) ? "" : "rounded-xl"
-            }`}
-          />
-        )}
         <div className="flex flex-1 flex-col gap-4">
-          <div>
-            <p className="text-xl font-medium">{card.nameJa ?? card.nameEn}</p>
-            {card.nameJa && <p className="text-sm text-neutral-500">{card.nameEn}</p>}
-            {card.typeLine && <p className="mt-2 text-sm text-neutral-600">{card.typeLine}</p>}
-            {card.oracleText && (
-              <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-neutral-700">
-                {card.oracleText}
-              </p>
+          <div className="flex flex-col gap-6 sm:flex-row">
+            {card.imageUrl && (
+              <Image
+                src={card.imageUrl}
+                alt={card.nameEn}
+                width={223}
+                height={311}
+                className={`h-fit w-[180px] shrink-0 border border-neutral-200 object-cover ${
+                  SQUARE_CORNER_SET_CODES.has(card.setCode) ? "" : "rounded-xl"
+                }`}
+              />
             )}
-            {jpyPrice !== null ? (
-              <>
-                <p className="mt-5 text-2xl font-medium">{formatJpy(jpyPrice)}</p>
-                <p className="text-xs text-neutral-400">
-                  為替換算の参考値（${card.usdPrice?.toFixed(2)} × {rates.usdToJpy.toFixed(2)}円/$）
+            <div className="flex-1">
+              <p className="text-xl font-medium">{card.nameJa ?? card.nameEn}</p>
+              {card.nameJa && <p className="text-sm text-neutral-500">{card.nameEn}</p>}
+              {card.typeLine && <p className="mt-2 text-sm text-neutral-600">{card.typeLine}</p>}
+              {card.oracleText && (
+                <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-neutral-700">
+                  {card.oracleText}
                 </p>
-              </>
-            ) : (
-              <p className="mt-4 text-sm text-neutral-500">価格データなし</p>
-            )}
-            {priceExtremes && (
-              <p className="mt-2 text-xs text-neutral-500">
-                最高値: ¥{priceExtremes.maxJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
-                （{formatDateSlash(priceExtremes.maxDate)}） ／ 最安値: ¥
-                {priceExtremes.minJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
-                （{formatDateSlash(priceExtremes.minDate)}）
-                <br />
-                <span className="text-neutral-400">
-                  ※日次スナップショットの記録が残っている範囲内での最高値・最安値です
-                </span>
-              </p>
-            )}
+              )}
+              {jpyPrice !== null ? (
+                <>
+                  <p className="mt-5 text-2xl font-medium">{formatJpy(jpyPrice)}</p>
+                  <p className="text-xs text-neutral-400">
+                    為替換算の参考値（${card.usdPrice?.toFixed(2)} × {rates.usdToJpy.toFixed(2)}円/$）
+                  </p>
+                </>
+              ) : (
+                <p className="mt-4 text-sm text-neutral-500">価格データなし</p>
+              )}
+              {priceExtremes && (
+                <p className="mt-2 text-xs text-neutral-500">
+                  最高値: ¥{priceExtremes.maxJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
+                  （{formatDateSlash(priceExtremes.maxDate)}） ／ 最安値: ¥
+                  {priceExtremes.minJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
+                  （{formatDateSlash(priceExtremes.minDate)}）
+                  <br />
+                  <span className="text-neutral-400">
+                    ※日次スナップショットの記録が残っている範囲内での最高値・最安値です
+                  </span>
+                </p>
+              )}
+            </div>
           </div>
+
+          <PriceHistoryChart enHistory={enPriceHistory} jaHistory={jaPriceHistory} />
         </div>
 
         <div className="rounded-lg border border-neutral-200 p-4 sm:w-80 sm:shrink-0">
@@ -289,8 +293,6 @@ export default async function CardDetailPage({
           )}
         </div>
       </div>
-
-      <PriceHistoryChart enHistory={enPriceHistory} jaHistory={jaPriceHistory} />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="rounded-lg border border-neutral-200 p-4">

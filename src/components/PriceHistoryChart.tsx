@@ -12,7 +12,7 @@ const PERIOD_OPTIONS: { key: Period; label: string }[] = [
 ];
 
 const WIDTH = 600;
-const HEIGHT = 200;
+const HEIGHT = 280;
 const PADDING = { top: 12, right: 12, bottom: 24, left: 56 };
 
 export default function PriceHistoryChart({
