@@ -251,7 +251,7 @@ export default async function CardDetailPage({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="rounded-lg border border-neutral-200 p-4">
           <h2 className="mb-3 text-sm font-medium text-neutral-500">フォーマットリーガル</h2>
           <LegalityGrid legalities={card.legalities} />
@@ -324,17 +324,18 @@ export default async function CardDetailPage({
             ))}
         </div>
 
-        <div className="rounded-lg border border-neutral-200 p-4">
-          <h2 className="mb-3 text-sm font-medium text-neutral-500">その他のプリント</h2>
-          <p className="mb-3 text-xs text-neutral-400">
-            価格・画像は代表プリントのみ追跡しています（データ肥大化対策、db/schema.sql 8章参照）。
-          </p>
-          {otherPrints.length > 0 ? (
-            <OtherPrintsGrid oracleId={oracleId} prints={otherPrints} />
-          ) : (
-            <p className="text-sm text-neutral-500">他のプリントは見つかりませんでした。</p>
-          )}
-        </div>
+      </div>
+
+      <div className="rounded-lg border border-neutral-200 p-4">
+        <h2 className="mb-3 text-sm font-medium text-neutral-500">その他のプリント</h2>
+        <p className="mb-3 text-xs text-neutral-400">
+          価格・画像は代表プリントのみ追跡しています（データ肥大化対策、db/schema.sql 8章参照）。
+        </p>
+        {otherPrints.length > 0 ? (
+          <OtherPrintsGrid oracleId={oracleId} prints={otherPrints} />
+        ) : (
+          <p className="text-sm text-neutral-500">他のプリントは見つかりませんでした。</p>
+        )}
       </div>
     </div>
   );

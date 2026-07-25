@@ -25,7 +25,7 @@ export default function OtherPrintsGrid({
 
   return (
     <div className="flex flex-col gap-3">
-      <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+      <ul className="grid grid-cols-3 gap-2 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8">
         {visible.map((p) => (
           <li key={p.scryfallId}>
             <Link
