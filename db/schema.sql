@@ -93,13 +93,17 @@ CREATE TABLE sets (
 );
 
 CREATE TABLE card_prints (
-  scryfall_id      UUID PRIMARY KEY,
-  oracle_id        UUID NOT NULL REFERENCES card_oracles (oracle_id),
-  set_code         TEXT NOT NULL REFERENCES sets (set_code),
-  collector_number TEXT NOT NULL,
-  released_at      DATE,
-  image_uri_normal TEXT,
-  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+  scryfall_id          UUID PRIMARY KEY,
+  oracle_id            UUID NOT NULL REFERENCES card_oracles (oracle_id),
+  set_code             TEXT NOT NULL REFERENCES sets (set_code),
+  collector_number     TEXT NOT NULL,
+  released_at          DATE,
+  image_uri_normal     TEXT,
+  -- 金縁(World Championship Decks等)・銀縁(Un-set)・memorabilia区分(30th Anniversary Edition等)は
+  -- オラクルとしては合法でも、この物理プリント自体はどのフォーマットでも使用不可
+  -- （border_colorが標準の黒/白以外、またはset_typeが非トーナメント区分）。
+  not_tournament_legal BOOLEAN NOT NULL DEFAULT false,
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX idx_card_prints_oracle_id ON card_prints (oracle_id);

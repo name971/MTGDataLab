@@ -25,7 +25,18 @@ import {
   frontFacePrintedName,
   combinedOracleText,
   toCardRow,
+  NON_TOURNAMENT_SET_TYPES,
 } from "./lib/scryfallBulk.mjs";
+
+// 黒/白/ボーダーレス以外の縁は金縁(World Championship Decks等)・銀縁(Un-set)で、
+// オラクルとしては合法でもこの物理プリント自体はどのフォーマットでも使用不可
+// （Scryfallのlegalitiesには反映されない）。
+function isNotTournamentLegal(raw) {
+  return (
+    (raw.border_color !== "black" && raw.border_color !== "white" && raw.border_color !== "borderless") ||
+    NON_TOURNAMENT_SET_TYPES.has(raw.set_type)
+  );
+}
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -63,8 +74,9 @@ async function main() {
   const jaByOracleAndPrint = new Map();
   // oracle_id -> 日本語プリント候補（同一プリントが無い場合の名前フォールバック用、最良の1件）
   const bestJaByOracle = new Map();
-  // oracle_id -> 全英語非デジタルプリント（card_prints用）
-  const allEnPrintsByOracle = new Map();
+  // card_prints用: (oracle_id, set, collector_number)ごとに英語版を優先し、
+  // 無ければ日本語版限定プリント（Mystical Archive等）を採用する
+  const allPrintsByKey = new Map();
   const setsByCode = new Map();
 
   let scanned = 0;
@@ -74,19 +86,16 @@ async function main() {
     if (raw.lang !== "en" && raw.lang !== "ja") return;
     if (!raw.oracle_id) return;
 
+    const printKeyAll = `${raw.oracle_id}|${raw.set}|${raw.collector_number}`;
+    const currentPrint = allPrintsByKey.get(printKeyAll);
+    if (!(currentPrint && (currentPrint.lang === "en" || raw.lang === "ja"))) {
+      allPrintsByKey.set(printKeyAll, raw);
+      setsByCode.set(raw.set, raw.set_name);
+    }
+
     if (raw.lang === "en") {
       const current = bestEnByOracle.get(raw.oracle_id);
       if (isBetterRepresentative(raw, current)) bestEnByOracle.set(raw.oracle_id, raw);
-
-      setsByCode.set(raw.set, raw.set_name);
-      if (!allEnPrintsByOracle.has(raw.oracle_id)) allEnPrintsByOracle.set(raw.oracle_id, []);
-      allEnPrintsByOracle.get(raw.oracle_id).push({
-        scryfall_id: raw.id,
-        set_code: raw.set,
-        collector_number: raw.collector_number,
-        released_at: raw.released_at ?? null,
-        image_uri_normal: (raw.image_uris ?? raw.card_faces?.[0]?.image_uris)?.normal ?? null,
-      });
       return;
     }
 
@@ -128,10 +137,20 @@ async function main() {
     });
     cardRows.push(toCardRow(enCard, oracleId));
     if (jaCard) cardRows.push(toCardRow(jaCard, oracleId));
+  }
 
-    for (const p of allEnPrintsByOracle.get(oracleId) ?? []) {
-      printRows.push({ ...p, oracle_id: oracleId });
-    }
+  for (const raw of allPrintsByKey.values()) {
+    const face = raw.card_faces?.[0];
+    const imageUris = raw.image_uris ?? face?.image_uris ?? null;
+    printRows.push({
+      scryfall_id: raw.id,
+      oracle_id: raw.oracle_id,
+      set_code: raw.set,
+      collector_number: raw.collector_number,
+      released_at: raw.released_at ?? null,
+      image_uri_normal: imageUris?.normal ?? null,
+      not_tournament_legal: isNotTournamentLegal(raw),
+    });
   }
 
   const setRows = [...setsByCode.entries()].map(([set_code, set_name]) => ({ set_code, set_name }));

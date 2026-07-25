@@ -52,6 +52,7 @@ export default function CardHero({
     collectorNumber: defaultPrint.collectorNumber,
     releasedAt: null,
     imageUrl: defaultPrint.imageUrl,
+    notTournamentLegal: false,
   };
   const allPrints = [defaultAsPrint, ...otherPrints];
 
@@ -176,6 +177,11 @@ export default function CardHero({
             </p>
           </div>
         </div>
+        {current.notTournamentLegal && (
+          <p className="mb-3 rounded-md bg-red-50 px-2 py-1 text-xs text-red-700">
+            ※このプリントは特殊な縁/区分のため、どのフォーマットでも使用できません
+          </p>
+        )}
 
         {listPrints.length > 0 ? (
           <div className="flex flex-col gap-3">
@@ -203,6 +209,11 @@ export default function CardHero({
                             className="shrink-0"
                           />
                           <span className="min-w-0 truncate">{p.setName}</span>
+                          {p.notTournamentLegal && (
+                            <span className="shrink-0 rounded bg-red-50 px-1 text-[10px] text-red-700">
+                              使用不可
+                            </span>
+                          )}
                         </button>
                       </td>
                       <td className="overflow-hidden py-2 text-right text-ellipsis whitespace-nowrap tabular-nums text-neutral-700">

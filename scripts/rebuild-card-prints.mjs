@@ -1,7 +1,12 @@
 /**
  * card_prints（表示専用の「その他のプリント」一覧、db/schema.sql参照）をScryfallバルクデータから
- * 作り直す。cardsテーブルと違い代表プリント1枚に絞らず、oracle_idごとの英語版nonfoil・非デジタル
- * プリントを全件対象にする。価格は追跡しない（画像・セット名・発売年のみ）。
+ * 作り直す。cardsテーブルと違い代表プリント1枚に絞らず、oracle_idごとの非デジタルプリントを
+ * 全件対象にする。価格は追跡しない（画像・セット名・発売年のみ）。
+ *
+ * 基本は英語版のみだが、(セット, コレクター番号)の組に英語版が存在せず日本語版しか無い場合
+ * （Mystical Archive等、日本語版限定で別コレクター番号のプリントが存在するケース）は
+ * その日本語版を採用する。英語版・日本語版どちらも存在する組は今まで通り英語版だけを使う
+ * （単なる言語違いの重複を増やさないため）。
  *
  * loadIndex()（scripts/lib/scryfallBulk.mjs）はメモリ節約のため名前ごとに「一番良い1件」しか
  * 保持しないため、全プリント一覧が必要なこのスクリプトは自前でバルクデータをストリーミングし直す。
@@ -12,7 +17,16 @@
  * 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... node scripts/rebuild-card-prints.mjs
  */
 
-import { ensureBulkData, forEachJsonArrayObject, DATA_FILE } from "./lib/scryfallBulk.mjs";
+import { ensureBulkData, forEachJsonArrayObject, DATA_FILE, NON_TOURNAMENT_SET_TYPES } from "./lib/scryfallBulk.mjs";
+
+// 黒/白以外の縁は金縁(World Championship Decks等)・銀縁(Un-set)で、オラクルとしては合法でも
+// この物理プリント自体はどのフォーマットでも使用不可（Scryfallのlegalitiesには反映されない）。
+function isNotTournamentLegal(raw) {
+  return (
+    (raw.border_color !== "black" && raw.border_color !== "white" && raw.border_color !== "borderless") ||
+    NON_TOURNAMENT_SET_TYPES.has(raw.set_type)
+  );
+}
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -68,26 +82,38 @@ async function main() {
   const knownOracleIds = new Set(oracles.map((o) => o.oracle_id));
   console.log(`対象oracle_id: ${knownOracleIds.size}件`);
 
-  const prints = [];
+  // (oracle_id, set, collector_number)ごとに英語版を優先し、無ければ日本語版を採用する
+  const byPrintKey = new Map();
   const setsByCode = new Map();
   let scanned = 0;
   await forEachJsonArrayObject(DATA_FILE, (raw) => {
     scanned++;
-    if (raw.lang !== "en" || raw.digital) return;
+    if ((raw.lang !== "en" && raw.lang !== "ja") || raw.digital) return;
     if (!raw.oracle_id || !knownOracleIds.has(raw.oracle_id)) return;
+
+    const key = `${raw.oracle_id}|${raw.set}|${raw.collector_number}`;
+    const current = byPrintKey.get(key);
+    if (current && (current.lang === "en" || raw.lang === "ja")) return; // 英語版があれば日本語版は無視
+    byPrintKey.set(key, raw);
+    setsByCode.set(raw.set, raw.set_name);
+  });
+
+  const prints = [...byPrintKey.values()].map((raw) => {
     const face = raw.card_faces?.[0];
     const imageUris = raw.image_uris ?? face?.image_uris ?? null;
-    setsByCode.set(raw.set, raw.set_name);
-    prints.push({
+    return {
       scryfall_id: raw.id,
       oracle_id: raw.oracle_id,
       set_code: raw.set,
       collector_number: raw.collector_number,
       released_at: raw.released_at ?? null,
       image_uri_normal: imageUris?.normal ?? null,
-    });
+      not_tournament_legal: isNotTournamentLegal(raw),
+    };
   });
-  console.log(`バルクデータ走査: ${scanned}件中 ${prints.length}件が対象（英語・非デジタル・登録済みカード）`);
+  console.log(
+    `バルクデータ走査: ${scanned}件中 ${prints.length}件が対象（登録済みカード、英語優先・日本語限定プリント含む）`,
+  );
 
   // card_printsがset_codeを外部キー参照しているため、setsを先に投入する
   const setRows = [...setsByCode.entries()].map(([set_code, set_name]) => ({ set_code, set_name }));
