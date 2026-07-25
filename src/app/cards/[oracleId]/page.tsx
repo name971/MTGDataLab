@@ -210,21 +210,15 @@ export default async function CardDetailPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <p className="text-xl font-medium">{card.nameJa ?? card.nameEn}</p>
-        {card.nameJa && <p className="text-sm text-neutral-500">{card.nameEn}</p>}
-        {card.typeLine && <p className="mt-2 text-sm text-neutral-600">{card.typeLine}</p>}
-        {card.oracleText && (
-          <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-neutral-700">{card.oracleText}</p>
-        )}
-      </div>
-
       <CardHero
         oracleId={oracleId}
         defaultPrint={{
           scryfallId: null,
           imageUrl: card.imageUrl,
+          nameJa: card.nameJa,
           nameEn: card.nameEn,
+          typeLine: card.typeLine,
+          oracleText: card.oracleText,
           setName: card.setName,
           setCode: card.setCode,
           collectorNumber: card.collectorNumber,

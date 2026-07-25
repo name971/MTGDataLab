@@ -14,7 +14,10 @@ const VISIBLE_COUNT = 20;
 interface DefaultPrint {
   scryfallId: string | null;
   imageUrl: string | null;
+  nameJa: string | null;
   nameEn: string;
+  typeLine: string | null;
+  oracleText: string | null;
   setName: string;
   setCode: string;
   collectorNumber: string;
@@ -91,9 +94,20 @@ export default function CardHero({
             />
           )}
           <div className="flex-1">
+            <p className="text-xl font-medium">{defaultPrint.nameJa ?? defaultPrint.nameEn}</p>
+            {defaultPrint.nameJa && <p className="text-sm text-neutral-500">{defaultPrint.nameEn}</p>}
+            {defaultPrint.typeLine && (
+              <p className="mt-2 text-sm text-neutral-600">{defaultPrint.typeLine}</p>
+            )}
+            {defaultPrint.oracleText && (
+              <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-neutral-700">
+                {defaultPrint.oracleText}
+              </p>
+            )}
+
             {isAlternate ? (
               <>
-                <p className="text-sm text-neutral-500">
+                <p className="mt-3 text-sm text-neutral-500">
                   {setName} (#{collectorNumber})
                 </p>
                 <button
@@ -104,7 +118,7 @@ export default function CardHero({
                 </button>
               </>
             ) : (
-              <p className="text-sm text-neutral-500">
+              <p className="mt-3 text-sm text-neutral-500">
                 {defaultPrint.setName} ・ {defaultPrint.rarityLabel}
               </p>
             )}
