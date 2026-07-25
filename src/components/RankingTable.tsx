@@ -25,7 +25,7 @@ export default function RankingTable({ rows }: { rows: RankingRow[] }) {
 
   const filtered = useMemo(() => {
     if (colorFilter.size === 0) return rows;
-    return rows.filter((r) => r.colors?.some((c) => colorFilter.has(c)));
+    return rows.filter((r) => r.colors && r.colors.length > 0 && r.colors.every((c) => colorFilter.has(c)));
   }, [rows, colorFilter]);
 
   const sorted = useMemo(
