@@ -21,19 +21,27 @@ const STATUS_CLASS: Record<string, string> = {
   restricted: "text-amber-800",
 };
 
-export default function LegalityGrid({ legalities }: { legalities: Record<string, string> }) {
+export default function LegalityGrid({
+  legalities,
+  disabled = false,
+}: {
+  legalities: Record<string, string>;
+  /** 金縁・銀縁等の特殊プリントを選択中は、オラクルの合法性に関わらず
+   * このプリント自体はどのフォーマットでも使用できないため、全項目を使用不可表示にする */
+  disabled?: boolean;
+}) {
   return (
     <dl className="grid grid-cols-1 gap-y-1.5 text-sm">
       {FORMATS.map((format) => {
-        const status = legalities[formatSlug(format)] ?? "not_legal";
+        const status = disabled ? "print_not_legal" : (legalities[formatSlug(format)] ?? "not_legal");
         return (
           <div key={format} className="flex items-center justify-between">
             <dt className="text-neutral-600">{format}</dt>
             <dd
-              className={`font-semibold ${STATUS_CLASS[status] ?? "text-neutral-400"}`}
-              title={STATUS_TITLE[status] ?? status}
+              className={`font-semibold ${disabled ? "text-red-800" : (STATUS_CLASS[status] ?? "text-neutral-400")}`}
+              title={disabled ? "このプリントは使用不可" : (STATUS_TITLE[status] ?? status)}
             >
-              {STATUS_LABEL[status] ?? status}
+              {disabled ? "✕" : (STATUS_LABEL[status] ?? status)}
             </dd>
           </div>
         );

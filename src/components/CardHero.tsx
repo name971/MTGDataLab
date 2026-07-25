@@ -5,6 +5,7 @@ import { useState } from "react";
 import type { CardPrint } from "@/lib/dbCardPrints";
 import type { PricePoint } from "@/lib/dbPriceHistory";
 import PriceHistoryChart from "./PriceHistoryChart";
+import LegalityGrid from "./LegalityGrid";
 
 // 実物が角丸ではない（角が四角い）ことで知られるセットの一覧。角丸カードかどうかを毎回
 // 判定するより、角が四角い方が少数派で既知のセットに限られるため、こちらを列挙する方が楽。
@@ -35,6 +36,7 @@ export default function CardHero({
   defaultJaHistory,
   otherPrints,
   pricesByScryfallId,
+  legalities,
 }: {
   oracleId: string;
   defaultPrint: DefaultPrint;
@@ -42,6 +44,7 @@ export default function CardHero({
   defaultJaHistory: PricePoint[];
   otherPrints: CardPrint[];
   pricesByScryfallId: Record<string, number>;
+  legalities: Record<string, string>;
 }) {
   // 代表プリントも「一覧の中の1件」として扱い、選ばれているものだけ一覧から外して
   // メイン表示側に出す（クリックすると入れ替わる＝スワップの見た目にする）。
@@ -94,7 +97,8 @@ export default function CardHero({
   const enHistory = isAlternate ? (selectedHistory ?? []) : defaultEnHistory;
 
   return (
-    <div className="flex flex-col gap-6 sm:flex-row">
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-6 sm:flex-row">
       <div className="flex flex-1 flex-col gap-4">
         <div className="flex flex-col gap-6 sm:flex-row">
           {current.imageUrl && (
@@ -236,6 +240,12 @@ export default function CardHero({
         ) : (
           <p className="text-sm text-neutral-500">他のプリントは見つかりませんでした。</p>
         )}
+      </div>
+      </div>
+
+      <div className="rounded-lg border border-neutral-200 p-4 sm:max-w-md">
+        <h2 className="mb-3 text-sm font-medium text-neutral-500">フォーマットリーガル</h2>
+        <LegalityGrid legalities={legalities} disabled={current.notTournamentLegal} />
       </div>
     </div>
   );

@@ -28,7 +28,6 @@ import {
   fetchPriceByScryfallId,
   type DbCardDetail,
 } from "@/lib/cardData";
-import LegalityGrid from "@/components/LegalityGrid";
 
 interface ResolvedCard {
   oracleId: string | null;
@@ -235,14 +234,10 @@ export default async function CardDetailPage({
         defaultJaHistory={jaPriceHistory}
         otherPrints={otherPrints}
         pricesByScryfallId={Object.fromEntries(otherPrintPrices)}
+        legalities={card.legalities}
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="rounded-lg border border-neutral-200 p-4">
-          <h2 className="mb-3 text-sm font-medium text-neutral-500">フォーマットリーガル</h2>
-          <LegalityGrid legalities={card.legalities} />
-        </div>
-
+      <div className="grid grid-cols-1 gap-4 sm:max-w-md">
         <div className="rounded-lg border border-neutral-200 p-4">
           <h2 className="mb-2 text-sm font-medium text-neutral-500">使用デッキ</h2>
           <div className="mb-3 flex items-center gap-1">
