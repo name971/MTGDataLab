@@ -17,6 +17,7 @@ import { SAMPLE_CARD_SLUGS } from "@/lib/sampleCards";
 import { getArchetypesUsingCard } from "@/lib/sampleDeckDetail";
 import { getFormatUsageCountsForCard } from "@/lib/dbCardUsageByFormat";
 import { getPriceHistoryForCard, type PricePoint } from "@/lib/dbPriceHistory";
+import { getOtherPrintsForCard } from "@/lib/dbCardPrints";
 import PriceHistoryChart from "@/components/PriceHistoryChart";
 import {
   getCardDetailFromDb,
@@ -32,6 +33,8 @@ interface ResolvedCard {
   nameJa: string | null;
   nameEn: string;
   setName: string;
+  setCode: string;
+  collectorNumber: string;
   rarity: string;
   typeLine: string | null;
   legalities: Record<string, string>;
@@ -57,6 +60,8 @@ async function resolveCardFromDbDetail(dbResult: DbCardDetail): Promise<Resolved
     nameJa: jaCard?.printed_name_ja ?? enCard.printed_name_ja ?? oracle.printed_name_ja,
     nameEn: enCard.name,
     setName: enCard.set_name,
+    setCode: enCard.set_code,
+    collectorNumber: enCard.collector_number,
     rarity: enCard.rarity,
     typeLine: (jaCard?.type_line || enCard.type_line) ?? null,
     legalities: enCard.legalities,
@@ -93,6 +98,8 @@ async function resolveCard(searchName: string): Promise<ResolvedCard | null> {
     nameJa: displayName.sub ? displayName.main : null,
     nameEn: enFrontName,
     setName: enCard.set_name,
+    setCode: enCard.set,
+    collectorNumber: enCard.collector_number,
     rarity: enCard.rarity,
     typeLine:
       (jaCard && resolveFrontFacePrintedTypeLine(jaCard)) ??
@@ -182,6 +189,12 @@ export default async function CardDetailPage({
       ])
     : [[], []];
   const priceExtremes = getPriceExtremes(enPriceHistory);
+  const otherPrints = card.oracleId
+    ? await getOtherPrintsForCard(card.oracleId, {
+        setCode: card.setCode,
+        collectorNumber: card.collectorNumber,
+      })
+    : [];
 
   return (
     <div className="flex flex-col gap-6">
@@ -306,9 +319,41 @@ export default async function CardDetailPage({
 
         <div className="rounded-lg border border-neutral-200 p-4">
           <h2 className="mb-3 text-sm font-medium text-neutral-500">その他のプリント</h2>
-          <p className="text-sm text-neutral-500">
+          <p className="mb-3 text-xs text-neutral-400">
             価格・画像は代表プリントのみ追跡しています（データ肥大化対策、db/schema.sql 8章参照）。
           </p>
+          {otherPrints.length > 0 ? (
+            <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+              {otherPrints.map((p) => (
+                <li key={p.scryfallId}>
+                  <a
+                    href={`https://scryfall.com/card/${p.setCode}/${p.collectorNumber}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex flex-col gap-1 hover:opacity-80"
+                  >
+                    {p.imageUrl ? (
+                      <Image
+                        src={p.imageUrl}
+                        alt={p.setName}
+                        width={146}
+                        height={204}
+                        className="w-full rounded"
+                      />
+                    ) : (
+                      <div className="flex aspect-[5/7] w-full items-center justify-center rounded bg-neutral-100 text-xs text-neutral-400">
+                        画像なし
+                      </div>
+                    )}
+                    <span className="truncate text-xs text-neutral-600">{p.setName}</span>
+                    <span className="text-xs text-neutral-400">{p.releasedAt?.slice(0, 4) ?? "-"}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-neutral-500">他のプリントは見つかりませんでした。</p>
+          )}
         </div>
       </div>
     </div>

@@ -78,6 +78,24 @@ CREATE INDEX idx_cards_set_code ON cards (set_code);
 -- 「代表プリント」を1枚選ぶためのビュー的な考え方はアプリ側で実装
 -- （直近セットの再録 or 一番安いプリントを代表として採用、等）
 
+-- カード詳細ページ「その他のプリント」欄用。cardsテーブルは代表プリント1枚だけを保持する
+-- 設計（データ肥大化対策）のため、表示専用の軽量な全プリント一覧を別テーブルに持つ。
+-- 価格は追跡しない（画像・セット名・発売年のみ）。scripts/rebuild-card-prints.mjsが
+-- Scryfallバルクデータから英語版nonfoil/非デジタルのプリントのみを対象に生成する
+-- （新セット追加時など、代表プリントが変わりうるタイミングで再実行すれば十分。日次不要）。
+CREATE TABLE card_prints (
+  scryfall_id      UUID PRIMARY KEY,
+  oracle_id        UUID NOT NULL REFERENCES card_oracles (oracle_id),
+  set_code         TEXT NOT NULL,
+  set_name         TEXT NOT NULL,
+  collector_number TEXT NOT NULL,
+  released_at      DATE,
+  image_uri_normal TEXT,
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_card_prints_oracle_id ON card_prints (oracle_id);
+
 
 -- ════════════════════════════════════════════
 -- 2. 価格データ（日次スナップショット）
