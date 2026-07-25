@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
@@ -14,15 +13,14 @@ import {
   resolveImageUris,
   RARITY_LABEL_JA,
 } from "@/lib/scryfall";
-import { fetchExchangeRates, toJpy, formatJpy } from "@/lib/fx";
+import { fetchExchangeRates, toJpy } from "@/lib/fx";
 import { SAMPLE_CARD_SLUGS } from "@/lib/sampleCards";
 import { getArchetypesUsingCard } from "@/lib/sampleDeckDetail";
 import { getFormatUsageCountsForCard } from "@/lib/dbCardUsageByFormat";
 import { getPriceHistoryForCard, type PricePoint } from "@/lib/dbPriceHistory";
 import { getOtherPrintsForCard } from "@/lib/dbCardPrints";
 import { getLatestPricesForPrints } from "@/lib/dbCardPrintPrices";
-import PriceHistoryChart from "@/components/PriceHistoryChart";
-import OtherPrintsGrid from "@/components/OtherPrintsGrid";
+import CardHero from "@/components/CardHero";
 import {
   getCardDetailFromDb,
   getCardDetailByOracleId,
@@ -166,10 +164,6 @@ function getPriceExtremes(
   return { maxJpy: max.jpy, maxDate: max.date, minJpy: min.jpy, minDate: min.date };
 }
 
-// 実物が角丸ではない（角が四角い）ことで知られるセットの一覧。角丸カードかどうかを毎回
-// 判定するより、角が四角い方が少数派で既知のセットに限られるため、こちらを列挙する方が楽。
-const SQUARE_CORNER_SET_CODES = new Set(["ced", "cei"]);
-
 /** "2026-07-25" -> "2026/7/25" */
 function formatDateSlash(isoDate: string): string {
   const [y, m, d] = isoDate.split("-");
@@ -210,89 +204,41 @@ export default async function CardDetailPage({
     : [];
   const otherPrintPrices = await getLatestPricesForPrints(otherPrints.map((p) => p.scryfallId));
 
+  const priceExtremesText = priceExtremes
+    ? `最高値: ¥${priceExtremes.maxJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}（${formatDateSlash(priceExtremes.maxDate)}） ／ 最安値: ¥${priceExtremes.minJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}（${formatDateSlash(priceExtremes.minDate)}）\n※日次スナップショットの記録が残っている範囲内での最高値・最安値です`
+    : null;
+
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-6 sm:flex-row">
-        <div className="flex flex-1 flex-col gap-4">
-          <div className="flex flex-col gap-6 sm:flex-row">
-            {card.imageUrl && (
-              <Image
-                src={card.imageUrl}
-                alt={card.nameEn}
-                width={223}
-                height={311}
-                className={`h-fit w-[180px] shrink-0 border border-neutral-200 object-cover ${
-                  SQUARE_CORNER_SET_CODES.has(card.setCode) ? "" : "rounded-xl"
-                }`}
-              />
-            )}
-            <div className="flex-1">
-              <p className="text-xl font-medium">{card.nameJa ?? card.nameEn}</p>
-              {card.nameJa && <p className="text-sm text-neutral-500">{card.nameEn}</p>}
-              {card.typeLine && <p className="mt-2 text-sm text-neutral-600">{card.typeLine}</p>}
-              {card.oracleText && (
-                <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-neutral-700">
-                  {card.oracleText}
-                </p>
-              )}
-              {jpyPrice !== null ? (
-                <>
-                  <p className="mt-5 text-2xl font-medium">{formatJpy(jpyPrice)}</p>
-                  <p className="text-xs text-neutral-400">
-                    為替換算の参考値（${card.usdPrice?.toFixed(2)} × {rates.usdToJpy.toFixed(2)}円/$）
-                  </p>
-                </>
-              ) : (
-                <p className="mt-4 text-sm text-neutral-500">価格データなし</p>
-              )}
-              {priceExtremes && (
-                <p className="mt-2 text-xs text-neutral-500">
-                  最高値: ¥{priceExtremes.maxJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
-                  （{formatDateSlash(priceExtremes.maxDate)}） ／ 最安値: ¥
-                  {priceExtremes.minJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
-                  （{formatDateSlash(priceExtremes.minDate)}）
-                  <br />
-                  <span className="text-neutral-400">
-                    ※日次スナップショットの記録が残っている範囲内での最高値・最安値です
-                  </span>
-                </p>
-              )}
-            </div>
-          </div>
-
-          <PriceHistoryChart enHistory={enPriceHistory} jaHistory={jaPriceHistory} />
-        </div>
-
-        <div className="rounded-lg border border-neutral-200 p-4 sm:w-80 sm:shrink-0">
-          <div className="mb-3 flex items-center gap-2 rounded-lg bg-neutral-800 px-3 py-2.5 text-white">
-            {/* eslint-disable-next-line @next/next/no-img-element -- ScryfallのSVGアイコンCDN、next/imageの最適化対象外の小さな外部SVG */}
-            <img
-              src={`https://svgs.scryfall.io/sets/${card.setCode}.svg`}
-              alt=""
-              width={22}
-              height={22}
-              className="shrink-0 invert"
-            />
-            <div className="min-w-0">
-              <p className="truncate text-sm leading-snug font-semibold">
-                {card.setName} ({card.setCode.toUpperCase()})
-              </p>
-              <p className="text-xs leading-snug text-neutral-300">
-                #{card.collectorNumber} ・ {RARITY_LABEL_JA[card.rarity] ?? card.rarity}
-              </p>
-            </div>
-          </div>
-          {otherPrints.length > 0 ? (
-            <OtherPrintsGrid
-              oracleId={oracleId}
-              prints={otherPrints}
-              pricesByScryfallId={Object.fromEntries(otherPrintPrices)}
-            />
-          ) : (
-            <p className="text-sm text-neutral-500">他のプリントは見つかりませんでした。</p>
-          )}
-        </div>
+      <div>
+        <p className="text-xl font-medium">{card.nameJa ?? card.nameEn}</p>
+        {card.nameJa && <p className="text-sm text-neutral-500">{card.nameEn}</p>}
+        {card.typeLine && <p className="mt-2 text-sm text-neutral-600">{card.typeLine}</p>}
+        {card.oracleText && (
+          <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-neutral-700">{card.oracleText}</p>
+        )}
       </div>
+
+      <CardHero
+        oracleId={oracleId}
+        defaultPrint={{
+          scryfallId: null,
+          imageUrl: card.imageUrl,
+          nameEn: card.nameEn,
+          setName: card.setName,
+          setCode: card.setCode,
+          collectorNumber: card.collectorNumber,
+          rarityLabel: RARITY_LABEL_JA[card.rarity] ?? card.rarity,
+          jpyPrice,
+          usdPrice: card.usdPrice,
+          usdToJpyRate: rates.usdToJpy,
+          priceExtremesText,
+        }}
+        defaultEnHistory={enPriceHistory}
+        defaultJaHistory={jaPriceHistory}
+        otherPrints={otherPrints}
+        pricesByScryfallId={Object.fromEntries(otherPrintPrices)}
+      />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="rounded-lg border border-neutral-200 p-4">
