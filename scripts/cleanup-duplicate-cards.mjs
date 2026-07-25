@@ -20,7 +20,7 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 }
 
 const PAGE_SIZE = 1000;
-const DELETE_CHUNK = 200; // in.()のURL長を抑えるため小分けにする
+const DELETE_CHUNK = 50; // 大きすぎるとcard_price_snapshots側のDELETEがタイムアウトするため小分けにする
 
 async function supabaseGet(path) {
   const rows = [];

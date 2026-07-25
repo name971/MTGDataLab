@@ -5,7 +5,7 @@
  * 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... node scripts/backfill-printed-text.mjs
  */
 
-import { ensureBulkData, forEachJsonArrayObject, DATA_FILE, combinedPrintedText } from "./lib/scryfallBulk.mjs";
+import { ensureBulkData, forEachJsonArrayObject, DATA_FILE, toCardRow } from "./lib/scryfallBulk.mjs";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -57,15 +57,18 @@ async function supabaseUpsert(table, rows, conflictColumn) {
 async function main() {
   await ensureBulkData();
 
-  const jaCards = await supabaseGet("cards?select=scryfall_id,printed_text_ja&lang=eq.ja");
-  const missingIds = new Set(jaCards.filter((c) => !c.printed_text_ja).map((c) => c.scryfall_id));
-  console.log(`ja cards: ${jaCards.length}件中 printed_text_ja欠落: ${missingIds.size}件`);
+  const jaCards = await supabaseGet("cards?select=scryfall_id,oracle_id,printed_text_ja&lang=eq.ja");
+  const missing = jaCards.filter((c) => !c.printed_text_ja);
+  const oracleByScryfallId = new Map(missing.map((c) => [c.scryfall_id, c.oracle_id]));
+  console.log(`ja cards: ${jaCards.length}件中 printed_text_ja欠落: ${missing.length}件`);
 
+  // 単に{scryfall_id, printed_text_ja}だけ送るとNOT NULL制約のある他カラムがnullのまま
+  // INSERT扱いされて失敗するため（PostgRESTのupsertはON CONFLICT前にINSERTの制約検証が走る）、
+  // toCardRowで行全体を組み立てて送る（既存の他カラムは同じ値で上書きされるだけで実害はない）。
   const updateRows = [];
   await forEachJsonArrayObject(DATA_FILE, (raw) => {
-    if (raw.lang !== "ja" || !missingIds.has(raw.id)) return;
-    const text = combinedPrintedText(raw);
-    if (text) updateRows.push({ scryfall_id: raw.id, printed_text_ja: text });
+    if (raw.lang !== "ja" || !oracleByScryfallId.has(raw.id)) return;
+    updateRows.push(toCardRow(raw, oracleByScryfallId.get(raw.id)));
   });
   console.log(`解決: ${updateRows.length}件`);
 

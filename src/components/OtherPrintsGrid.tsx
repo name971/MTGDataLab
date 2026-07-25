@@ -28,10 +28,10 @@ export default function OtherPrintsGrid({
             const jpy = pricesByScryfallId[p.scryfallId];
             return (
               <tr key={p.scryfallId} className="border-b border-neutral-100 last:border-0">
-                <td className="py-1.5 pr-2">
+                <td className="py-2 pr-2">
                   <Link
                     href={`/cards/${oracleId}/prints/${p.scryfallId}`}
-                    className="flex items-center gap-1.5 text-neutral-700 hover:underline"
+                    className="flex items-center gap-2 text-neutral-700 hover:underline"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element -- ScryfallのSVGアイコンCDN、next/imageの最適化対象外の小さな外部SVG */}
                     <img
@@ -44,7 +44,7 @@ export default function OtherPrintsGrid({
                     <span className="truncate">{p.setName}</span>
                   </Link>
                 </td>
-                <td className="py-1.5 text-right whitespace-nowrap tabular-nums text-neutral-700">
+                <td className="py-2 text-right whitespace-nowrap tabular-nums text-neutral-700">
                   {jpy !== undefined ? `¥${jpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}` : "-"}
                 </td>
               </tr>

@@ -230,11 +230,13 @@ export default async function CardDetailPage({
             {card.nameJa && <p className="text-sm text-neutral-500">{card.nameEn}</p>}
             {card.typeLine && <p className="mt-2 text-sm text-neutral-600">{card.typeLine}</p>}
             {card.oracleText && (
-              <p className="mt-2 whitespace-pre-line text-sm text-neutral-700">{card.oracleText}</p>
+              <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-neutral-700">
+                {card.oracleText}
+              </p>
             )}
             {jpyPrice !== null ? (
               <>
-                <p className="mt-4 text-2xl font-medium">{formatJpy(jpyPrice)}</p>
+                <p className="mt-5 text-2xl font-medium">{formatJpy(jpyPrice)}</p>
                 <p className="text-xs text-neutral-400">
                   為替換算の参考値（${card.usdPrice?.toFixed(2)} × {rates.usdToJpy.toFixed(2)}円/$）
                 </p>
