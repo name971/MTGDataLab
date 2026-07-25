@@ -12,6 +12,10 @@ function formatDateSlash(isoDate: string): string {
   return `${y}/${Number(m)}/${Number(d)}`;
 }
 
+// 実物が角丸ではない（角が四角い）ことで知られるセットの一覧。角丸カードかどうかを毎回
+// 判定するより、角が四角い方が少数派で既知のセットに限られるため、こちらを列挙する方が楽。
+const SQUARE_CORNER_SET_CODES = new Set(["ced", "cei"]);
+
 export default async function CardPrintDetailPage({
   params,
 }: {
@@ -50,7 +54,9 @@ export default async function CardPrintDetailPage({
             alt={nameEn}
             width={223}
             height={311}
-            className="h-fit w-[180px] shrink-0 rounded-xl border border-neutral-200 object-cover"
+            className={`h-fit w-[180px] shrink-0 border border-neutral-200 object-cover ${
+              SQUARE_CORNER_SET_CODES.has(print.setCode) ? "" : "rounded-xl"
+            }`}
           />
         )}
         <div className="flex flex-1 flex-col gap-4">

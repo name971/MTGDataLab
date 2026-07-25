@@ -157,6 +157,10 @@ function getPriceExtremes(
   return { maxJpy: max.jpy, maxDate: max.date, minJpy: min.jpy, minDate: min.date };
 }
 
+// 実物が角丸ではない（角が四角い）ことで知られるセットの一覧。角丸カードかどうかを毎回
+// 判定するより、角が四角い方が少数派で既知のセットに限られるため、こちらを列挙する方が楽。
+const SQUARE_CORNER_SET_CODES = new Set(["ced", "cei"]);
+
 /** "2026-07-25" -> "2026/7/25" */
 function formatDateSlash(isoDate: string): string {
   const [y, m, d] = isoDate.split("-");
@@ -205,7 +209,9 @@ export default async function CardDetailPage({
             alt={card.nameEn}
             width={223}
             height={311}
-            className="h-fit w-[180px] shrink-0 rounded-xl border border-neutral-200 object-cover"
+            className={`h-fit w-[180px] shrink-0 border border-neutral-200 object-cover ${
+              SQUARE_CORNER_SET_CODES.has(card.setCode) ? "" : "rounded-xl"
+            }`}
           />
         )}
         <div className="flex flex-1 flex-col gap-4">
@@ -336,7 +342,7 @@ export default async function CardDetailPage({
                         alt={p.setName}
                         width={146}
                         height={204}
-                        className="w-full rounded"
+                        className={`w-full ${SQUARE_CORNER_SET_CODES.has(p.setCode) ? "" : "rounded"}`}
                       />
                     ) : (
                       <div className="flex aspect-[5/7] w-full items-center justify-center rounded bg-neutral-100 text-xs text-neutral-400">
