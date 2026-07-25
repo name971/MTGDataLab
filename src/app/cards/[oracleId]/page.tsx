@@ -280,7 +280,7 @@ export default async function CardDetailPage({
             </ul>
           ) : null}
           {formatUsageCounts.some((f) => f.changePct !== null) && (
-            <p className="mt-2 text-xs text-neutral-400">※（）は直前の同じ期間との比較（前期間比）</p>
+            <p className="mt-2 text-xs text-neutral-400">※（）は直前の同じ期間との比較</p>
           )}
           {formatUsageCounts.length === 0 &&
             (relatedArchetypes.length > 0 ? (

@@ -231,7 +231,7 @@ export const NON_TOURNAMENT_SET_TYPES = new Set(["memorabilia", "token", "art_se
  * 3. それでも同条件なら一番安いプリントを優先（ユーザーが実際に買い揃えるコストの目安に
  *    近いのは「最新リリース」より「最安値」のため）
  */
-function isBetterRepresentative(candidate, current) {
+export function isBetterRepresentative(candidate, current) {
   if (!current) return true;
   const candidatePreferred = !candidate.promo && !candidate.digital && !NON_TOURNAMENT_SET_TYPES.has(candidate.set_type);
   const currentPreferred = !current.promo && !current.digital && !NON_TOURNAMENT_SET_TYPES.has(current.set_type);
@@ -372,8 +372,12 @@ export function findJapanesePrint(index, oracleId, enSetCode, enCollectorNumber)
 export function findAnyJapaneseName(index, oracleId) {
   const byPrint = index.byOracleIdJa.get(oracleId);
   if (!byPrint) return null;
+  // printed_nameが欠落しているプリント（Scryfall側のデータ欠け。例: Kamigawa: Neon Dynastyの
+  // 一部showcase版で日本語名テキストが登録されていないケースがある）を代表に選んでしまうと
+  // 名前がnullのまま返ってしまうため、実際に名前を持つプリントの中からのみ選ぶ。
   let best = null;
   for (const card of byPrint.values()) {
+    if (!frontFacePrintedName(card)) continue;
     if (!best || isBetterRepresentative(card, best)) best = card;
   }
   return best ? frontFacePrintedName(best) : null;
