@@ -271,7 +271,7 @@ export default async function CardDetailPage({
                         className={`ml-1 text-xs ${f.changePct < 0 ? "text-red-800" : "text-teal-800"}`}
                       >
                         （{f.changePct >= 0 ? "+" : ""}
-                        {f.changePct}%/前期間比）
+                        {f.changePct}%）
                       </span>
                     )}
                   </span>
@@ -279,6 +279,9 @@ export default async function CardDetailPage({
               ))}
             </ul>
           ) : null}
+          {formatUsageCounts.some((f) => f.changePct !== null) && (
+            <p className="mt-2 text-xs text-neutral-400">※（）は直前の同じ期間との比較（前期間比）</p>
+          )}
           {formatUsageCounts.length === 0 &&
             (relatedArchetypes.length > 0 ? (
               <ul className="flex flex-col gap-1.5 text-sm">
