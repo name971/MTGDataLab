@@ -19,13 +19,7 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
 const COLOR_FILTER_OPTIONS = ["W", "U", "B", "R", "G"] as const;
 const VISIBLE_COUNT = 20;
 
-export default function RankingTable({
-  rows,
-  showArenaPrice,
-}: {
-  rows: RankingRow[];
-  showArenaPrice: boolean;
-}) {
+export default function RankingTable({ rows }: { rows: RankingRow[] }) {
   const [sortKey, setSortKey] = useState<SortKey>("priceChangePct");
   const [colorFilter, setColorFilter] = useState<Set<string>>(new Set());
 
@@ -109,7 +103,6 @@ export default function RankingTable({
             key={row.oracleId}
             row={row}
             rank={index + 1}
-            showArenaPrice={showArenaPrice}
             priceHighlight={
               row.priceJpy === maxPrice ? "max" : row.priceJpy === minPrice ? "min" : null
             }
@@ -135,13 +128,11 @@ const USAGE_TIER_CLASS: Record<"high" | "mid" | "low", string> = {
 function CardRankRow({
   row,
   rank,
-  showArenaPrice,
   priceHighlight,
   usageTier,
 }: {
   row: RankingRow;
   rank: number;
-  showArenaPrice: boolean;
   priceHighlight: "max" | "min" | null;
   usageTier: "high" | "mid" | "low";
 }) {
@@ -190,11 +181,6 @@ function CardRankRow({
           }`}
         >
           ¥{row.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
-          {showArenaPrice && row.arenaPriceJpy !== undefined && (
-            <span className="ml-1 text-xs font-normal text-neutral-500">
-              / ¥{row.arenaPriceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
-            </span>
-          )}
         </p>
       </div>
     </Link>

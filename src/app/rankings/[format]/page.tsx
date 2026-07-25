@@ -1,9 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { FORMATS, formatSlug, type Format } from "@/lib/formats";
-import { getSampleRanking } from "@/lib/sampleRankingData";
 import { getFormatSettings } from "@/lib/formatSettings";
-import { applyDbPrices, applyDbUsageRates } from "@/lib/applyDbPrices";
 import { getCardRankingFromDb } from "@/lib/dbCardRanking";
 import RankingTable from "@/components/RankingTable";
 
@@ -44,11 +42,7 @@ export default async function FormatRankingPage({
   const periodDays = resolvePeriod(period);
 
   const { caveatNote } = await getFormatSettings(format);
-  const dbRows = await getCardRankingFromDb(format, periodDays);
-  const rows =
-    dbRows.length > 0
-      ? dbRows
-      : await applyDbUsageRates(await applyDbPrices(getSampleRanking(format)), format);
+  const rows = await getCardRankingFromDb(format, periodDays);
 
   return (
     <div className="flex flex-col gap-4">
@@ -88,7 +82,13 @@ export default async function FormatRankingPage({
       </div>
       {caveatNote && <p className="text-xs text-neutral-400">{caveatNote}</p>}
 
-      <RankingTable rows={rows} showArenaPrice={format === "Standard"} />
+      {rows.length > 0 ? (
+        <RankingTable rows={rows} />
+      ) : (
+        <p className="py-6 text-center text-sm text-neutral-500">
+          この期間・フォーマットではまだ実データがありません。期間タブを変えてみてください。
+        </p>
+      )}
     </div>
   );
 }
