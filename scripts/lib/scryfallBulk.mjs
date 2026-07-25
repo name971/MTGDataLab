@@ -175,6 +175,7 @@ function slimFace(face) {
     mana_cost: face.mana_cost,
     type_line: face.type_line,
     oracle_text: face.oracle_text,
+    printed_text: face.printed_text,
     image_uris: face.image_uris
       ? { normal: face.image_uris.normal, art_crop: face.image_uris.art_crop }
       : undefined,
@@ -202,6 +203,7 @@ function slimCard(card) {
     mana_cost: card.mana_cost,
     type_line: card.type_line,
     oracle_text: card.oracle_text,
+    printed_text: card.printed_text,
     legalities: card.legalities,
     released_at: card.released_at,
     finishes: card.finishes,
@@ -449,6 +451,18 @@ export function combinedOracleText(card) {
   return card.oracle_text ?? null;
 }
 
+/**
+ * ルールテキストの日本語訳（printed_text）。日本語版プリントの一部にしか無い。
+ * oracle_textと同様、両面カードは表裏を連結する。
+ */
+export function combinedPrintedText(card) {
+  if (card.card_faces?.length) {
+    const texts = card.card_faces.map((f) => stripFurigana(f.printed_text)).filter(Boolean);
+    return texts.length > 0 ? texts.join("\n//\n") : null;
+  }
+  return card.printed_text ? stripFurigana(card.printed_text) : null;
+}
+
 export function imageUris(card) {
   return card.image_uris ?? card.card_faces?.[0]?.image_uris ?? null;
 }
@@ -460,6 +474,7 @@ export function toCardRow(card, oracleId) {
     oracle_id: oracleId,
     name: frontFaceName(card),
     printed_name_ja: frontFacePrintedName(card),
+    printed_text_ja: combinedPrintedText(card),
     set_code: card.set,
     set_name: card.set_name,
     rarity: card.rarity,

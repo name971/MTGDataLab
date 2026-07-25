@@ -23,6 +23,7 @@ CREATE TABLE cards (
   oracle_id           UUID NOT NULL REFERENCES card_oracles (oracle_id),
   name                TEXT NOT NULL,
   printed_name_ja     TEXT,
+  printed_text_ja     TEXT, -- ルールテキストの日本語訳（日本語版プリントのみ）
   set_code            TEXT NOT NULL,
   set_name            TEXT NOT NULL,
   rarity              TEXT NOT NULL,             -- common/uncommon/rare/mythic

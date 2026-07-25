@@ -35,6 +35,7 @@ export interface ScryfallCard {
   mana_cost?: string;
   type_line?: string;
   oracle_text?: string;
+  printed_text?: string;
   legalities: Record<string, string>;
   finishes: string[];
   image_uris?: {
@@ -49,6 +50,7 @@ export interface ScryfallCard {
     mana_cost?: string;
     type_line?: string;
     oracle_text?: string;
+    printed_text?: string;
     image_uris?: {
       normal: string;
       art_crop: string;
@@ -106,6 +108,17 @@ export function resolveCombinedOracleText(
     return texts.length > 0 ? texts.join("\n//\n") : null;
   }
   return card.oracle_text ?? null;
+}
+
+/** ルールテキストの日本語訳（printed_text）。日本語版プリントの一部にしか無い */
+export function resolveCombinedPrintedText(
+  card: Pick<ScryfallCard, "printed_text" | "card_faces">,
+): string | null {
+  if (card.card_faces?.length) {
+    const texts = card.card_faces.map((f) => f.printed_text).filter(Boolean);
+    return texts.length > 0 ? texts.join("\n//\n") : null;
+  }
+  return card.printed_text ?? null;
 }
 
 export const RARITY_LABEL_JA: Record<string, string> = {

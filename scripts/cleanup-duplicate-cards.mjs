@@ -5,6 +5,9 @@
  * 各(oracle_id, lang)ペアについて、最も新しくupdated_atされた行（＝最新の選定ロジックで
  * 確定した代表プリント）だけを残し、それ以外を削除する（先に外部キーのcard_price_snapshotsを消す）。
  *
+ * 1件ずつDELETEすると重複数が多いとき（1万件超）に非常に遅い（実際に数十分〜時間規模になった）ため、
+ * 削除対象のscryfall_idをまとめてin.()で一括削除する。
+ *
  * 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... node scripts/cleanup-duplicate-cards.mjs
  */
 
@@ -17,6 +20,7 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 }
 
 const PAGE_SIZE = 1000;
+const DELETE_CHUNK = 200; // in.()のURL長を抑えるため小分けにする
 
 async function supabaseGet(path) {
   const rows = [];
@@ -46,6 +50,17 @@ async function supabaseDelete(path) {
   if (!res.ok) throw new Error(`DELETE ${path} failed: ${res.status} ${await res.text()}`);
 }
 
+async function runWithConcurrency(items, limit, worker) {
+  let index = 0;
+  async function runNext() {
+    while (index < items.length) {
+      const i = index++;
+      await worker(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, runNext));
+}
+
 async function main() {
   const cards = await supabaseGet("cards?select=scryfall_id,oracle_id,lang,updated_at");
   console.log(`cards: ${cards.length}件`);
@@ -60,20 +75,27 @@ async function main() {
   const duplicateGroups = [...byKey.values()].filter((group) => group.length > 1);
   console.log(`重複グループ: ${duplicateGroups.length}件`);
 
-  let deleted = 0;
+  const staleIds = [];
   for (const group of duplicateGroups) {
     group.sort((a, b) => (b.updated_at ?? "").localeCompare(a.updated_at ?? ""));
     const [, ...stale] = group; // 先頭（最新updated_at）だけ残す
-    for (const row of stale) {
-      await supabaseDelete(
-        `card_price_snapshots?oracle_id=eq.${row.oracle_id}&series=eq.${row.lang}&scryfall_id=eq.${row.scryfall_id}`,
-      );
-      await supabaseDelete(`cards?scryfall_id=eq.${row.scryfall_id}`);
-      deleted++;
-    }
+    staleIds.push(...stale.map((r) => r.scryfall_id));
   }
+  console.log(`削除対象: ${staleIds.length}件`);
 
-  console.log(`\n完了: ${deleted}件の重複行を削除`);
+  const chunks = [];
+  for (let i = 0; i < staleIds.length; i += DELETE_CHUNK) chunks.push(staleIds.slice(i, i + DELETE_CHUNK));
+
+  let done = 0;
+  await runWithConcurrency(chunks, 8, async (chunk) => {
+    const idsParam = chunk.join(",");
+    await supabaseDelete(`card_price_snapshots?scryfall_id=in.(${idsParam})`);
+    await supabaseDelete(`cards?scryfall_id=in.(${idsParam})`);
+    done += chunk.length;
+    console.log(`  ...${done}/${staleIds.length}件削除済み`);
+  });
+
+  console.log(`\n完了: ${staleIds.length}件の重複行を削除`);
 }
 
 main().catch((err) => {

@@ -10,6 +10,7 @@ import {
   resolveFrontFacePrintedTypeLine,
   resolveFrontFaceTypeLine,
   resolveCombinedOracleText,
+  resolveCombinedPrintedText,
   resolveImageUris,
   RARITY_LABEL_JA,
 } from "@/lib/scryfall";
@@ -68,7 +69,9 @@ async function resolveCardFromDbDetail(dbResult: DbCardDetail): Promise<Resolved
     collectorNumber: enCard.collector_number,
     rarity: enCard.rarity,
     typeLine: (jaCard?.type_line || enCard.type_line) ?? null,
-    oracleText: oracle.oracle_text,
+    // 日本語版プリントのルールテキスト訳（printed_text_ja）があればそちらを優先し、
+    // 無ければ英語のoracle_text（card_oracles、常に取得済み）にフォールバックする。
+    oracleText: jaCard?.printed_text_ja ?? oracle.oracle_text,
     legalities: enCard.legalities,
     imageUrl: jaCard?.image_uri_normal ?? enCard.image_uri_normal,
     usdPrice,
@@ -110,7 +113,7 @@ async function resolveCard(searchName: string): Promise<ResolvedCard | null> {
       (jaCard && resolveFrontFacePrintedTypeLine(jaCard)) ??
       resolveFrontFaceTypeLine(enCard) ??
       null,
-    oracleText: resolveCombinedOracleText(enCard),
+    oracleText: (jaCard && resolveCombinedPrintedText(jaCard)) ?? resolveCombinedOracleText(enCard),
     legalities: enCard.legalities,
     imageUrl:
       (jaCard && resolveImageUris(jaCard)?.normal) ?? resolveImageUris(enCard)?.normal ?? null,

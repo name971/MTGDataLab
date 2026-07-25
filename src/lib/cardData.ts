@@ -12,6 +12,7 @@ export interface CardRow {
   oracle_id: string;
   name: string;
   printed_name_ja: string | null;
+  printed_text_ja: string | null;
   set_code: string;
   set_name: string;
   rarity: string;
@@ -46,7 +47,7 @@ export async function getCardDetailFromDb(englishName: string): Promise<DbCardDe
   const { data: cards, error: cardsError } = await supabase
     .from("cards")
     .select(
-      "scryfall_id, oracle_id, name, printed_name_ja, set_code, set_name, rarity, lang, image_uri_normal, image_uri_art_crop, mana_cost, type_line, legalities",
+      "scryfall_id, oracle_id, name, printed_name_ja, printed_text_ja, set_code, set_name, rarity, lang, image_uri_normal, image_uri_art_crop, mana_cost, type_line, legalities",
     )
     .eq("oracle_id", oracle.oracle_id);
 
@@ -75,7 +76,7 @@ export async function getCardDetailByOracleId(oracleId: string): Promise<DbCardD
   const { data: cards, error: cardsError } = await supabase
     .from("cards")
     .select(
-      "scryfall_id, oracle_id, name, printed_name_ja, set_code, set_name, rarity, lang, image_uri_normal, image_uri_art_crop, mana_cost, type_line, legalities",
+      "scryfall_id, oracle_id, name, printed_name_ja, printed_text_ja, set_code, set_name, rarity, lang, image_uri_normal, image_uri_art_crop, mana_cost, type_line, legalities",
     )
     .eq("oracle_id", oracle.oracle_id);
 
