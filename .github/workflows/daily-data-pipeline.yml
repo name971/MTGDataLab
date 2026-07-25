@@ -32,8 +32,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Import tournaments (TopDeck.gg)
-        run: node scripts/import-tournaments.mjs
+      # import-tournaments.mjsは引数無しだとStandardのみ取得する。Commanderはmtgo.comに
+      # 無い形式でTopDeck.gg取り込みだけが頼りのため、明示的に別ステップで呼ぶ
+      # （呼び忘れると採用率/使用デッキが古いまま静かに止まる。実際に約2週間気づかず止まっていた）。
+      - name: Import tournaments (TopDeck.gg, Standard)
+        run: node scripts/import-tournaments.mjs Standard
+
+      - name: Import tournaments (TopDeck.gg, Commander)
+        run: node scripts/import-tournaments.mjs Commander
 
       # import-mtgo-decklists.mjsは引数無しだとPioneerのみ取得する。mtgo.com/decklistsには
       # Standard/Modern/Legacy/Vintageの分もあるため、対応フォーマット全部を個別に呼ぶ

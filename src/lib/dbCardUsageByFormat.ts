@@ -36,10 +36,19 @@ export async function getFormatUsageCountsForCard(
   oracleId: string,
   periodDays: number = 7,
 ): Promise<FormatUsageCount[]> {
+  // 絞り込み無しで全期間を取得すると、採用数の多いカード（例: 全期間で1000件超のデッキに
+  // 入っているカード）でSupabase/PostgRESTのデフォルト上限（1000行）に達し、直近分（＝この
+  // 集計に必要な分）が並び順によっては黙って切り捨てられる。今回必要な範囲
+  // （前期間の開始日〜今期間の終了日）だけをサーバー側で絞り込んでから取得する。
+  const currentWindow = periodWindow(periodDays, 0);
+  const prevWindow = periodWindow(periodDays, periodDays);
+
   const { data, error } = await supabase
     .from("deck_cards")
-    .select("deck_id, decks(tournaments(format, event_date))")
+    .select("deck_id, decks!inner(tournaments!inner(format, event_date))")
     .eq("oracle_id", oracleId)
+    .gte("decks.tournaments.event_date", prevWindow.start)
+    .lte("decks.tournaments.event_date", currentWindow.end)
     .returns<DeckCardEmbedRow[]>();
   if (error || !data) return [];
 
@@ -54,8 +63,6 @@ export async function getFormatUsageCountsForCard(
   }
   const entries = [...entryByDeckId.values()];
 
-  const currentWindow = periodWindow(periodDays, 0);
-  const prevWindow = periodWindow(periodDays, periodDays);
   const countInWindow = (format: string, w: { start: string; end: string }) =>
     entries.filter((e) => e.format === format && e.eventDate >= w.start && e.eventDate <= w.end).length;
 
