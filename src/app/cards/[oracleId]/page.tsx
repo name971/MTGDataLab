@@ -16,7 +16,7 @@ import { fetchExchangeRates, toJpy, formatJpy } from "@/lib/fx";
 import { SAMPLE_CARD_SLUGS } from "@/lib/sampleCards";
 import { getArchetypesUsingCard } from "@/lib/sampleDeckDetail";
 import { getFormatUsageCountsForCard } from "@/lib/dbCardUsageByFormat";
-import { getPriceHistoryForCard } from "@/lib/dbPriceHistory";
+import { getPriceHistoryForCard, type PricePoint } from "@/lib/dbPriceHistory";
 import PriceHistoryChart from "@/components/PriceHistoryChart";
 import {
   getCardDetailFromDb,
@@ -136,6 +136,26 @@ function resolveUsagePeriod(raw: string | undefined): UsagePeriodDays {
   return (USAGE_PERIOD_OPTIONS as readonly number[]).includes(n) ? (n as UsagePeriodDays) : 7;
 }
 
+/** スナップショット履歴（記録が残っている範囲）内での最高値・最安値とその日付 */
+function getPriceExtremes(
+  history: PricePoint[],
+): { maxJpy: number; maxDate: string; minJpy: number; minDate: string } | null {
+  if (history.length === 0) return null;
+  let max = history[0];
+  let min = history[0];
+  for (const p of history) {
+    if (p.jpy > max.jpy) max = p;
+    if (p.jpy < min.jpy) min = p;
+  }
+  return { maxJpy: max.jpy, maxDate: max.date, minJpy: min.jpy, minDate: min.date };
+}
+
+/** "2026-07-25" -> "2026/7/25" */
+function formatDateSlash(isoDate: string): string {
+  const [y, m, d] = isoDate.split("-");
+  return `${y}/${Number(m)}/${Number(d)}`;
+}
+
 export default async function CardDetailPage({
   params,
   searchParams,
@@ -161,6 +181,7 @@ export default async function CardDetailPage({
         getPriceHistoryForCard(card.oracleId, "ja"),
       ])
     : [[], []];
+  const priceExtremes = getPriceExtremes(enPriceHistory);
 
   return (
     <div className="flex flex-col gap-6">
@@ -191,6 +212,18 @@ export default async function CardDetailPage({
               </>
             ) : (
               <p className="mt-4 text-sm text-neutral-500">価格データなし</p>
+            )}
+            {priceExtremes && (
+              <p className="mt-2 text-xs text-neutral-500">
+                最高値: ¥{priceExtremes.maxJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
+                （{formatDateSlash(priceExtremes.maxDate)}） ／ 最安値: ¥
+                {priceExtremes.minJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
+                （{formatDateSlash(priceExtremes.minDate)}）
+                <br />
+                <span className="text-neutral-400">
+                  ※日次スナップショットの記録が残っている範囲内での最高値・最安値です
+                </span>
+              </p>
             )}
           </div>
 
