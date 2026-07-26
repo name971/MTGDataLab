@@ -6,6 +6,7 @@ import type { CardPrint } from "@/lib/dbCardPrints";
 import type { PricePoint } from "@/lib/dbPriceHistory";
 import PriceHistoryChart from "./PriceHistoryChart";
 import LegalityGrid from "./LegalityGrid";
+import ManaText from "./ManaText";
 
 // 実物が角丸ではない（角が四角い）ことで知られるセットの一覧。角丸カードかどうかを毎回
 // 判定するより、角が四角い方が少数派で既知のセットに限られるため、こちらを列挙する方が楽。
@@ -158,7 +159,7 @@ export default function CardHero({
             )}
             {defaultPrint.oracleText && (
               <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-neutral-700">
-                {defaultPrint.oracleText}
+                <ManaText text={defaultPrint.oracleText} />
               </p>
             )}
 

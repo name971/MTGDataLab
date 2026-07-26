@@ -42,14 +42,25 @@ export async function getPrintPriceHistory(scryfallId: string): Promise<PricePoi
  * 「その他のプリント」一覧のテーブル表示用に、複数プリントの最新価格(JPY)をまとめて取得する。
  * 1件ずつ問い合わせるとN+1になるため、対象プリント分だけ一括取得する。
  */
+// .in()にUUIDを一度に大量（数百件超）に並べるとURLが長すぎてPostgRESTが400 Bad Requestを返す
+// （基本土地のように「その他のプリント」が700件を超えるカードで実際に発生し、価格が全件
+// サイレントに空欄になっていた）。チャンクに分割して問い合わせる。
+const SCRYFALL_ID_CHUNK = 150;
+
 export async function getLatestPricesForPrints(scryfallIds: string[]): Promise<Map<string, number>> {
   if (scryfallIds.length === 0) return new Map();
 
-  const { data, error } = await supabase
-    .from("card_print_prices")
-    .select("scryfall_id, prices")
-    .in("scryfall_id", scryfallIds);
-  if (error || !data) return new Map();
+  const data: { scryfall_id: string; prices: unknown }[] = [];
+  for (let i = 0; i < scryfallIds.length; i += SCRYFALL_ID_CHUNK) {
+    const chunk = scryfallIds.slice(i, i + SCRYFALL_ID_CHUNK);
+    const { data: page, error } = await supabase
+      .from("card_print_prices")
+      .select("scryfall_id, prices")
+      .in("scryfall_id", chunk);
+    if (error) continue; // 1チャンク失敗しても他のプリントの価格は表示できるよう続行する
+    if (page) data.push(...page);
+  }
+  if (data.length === 0) return new Map();
 
   // 全プリントで使われている日付だけ集めて、レートの問い合わせを1回で済ませる
   const latestByPrint = new Map<string, { date: string; usd: number }>();
