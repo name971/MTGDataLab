@@ -81,7 +81,7 @@ async function main() {
   await ensureBulkData();
   const index = await loadIndex();
 
-  const oracles = await supabaseGet("card_oracles?select=oracle_id,name,printed_name_ja,oracle_text");
+  const oracles = await supabaseGet("card_oracles?select=oracle_id,name,printed_name_ja,oracle_text&order=oracle_id.asc");
   console.log(`card_oracles: ${oracles.length}件を再構築`);
 
   let updated = 0;

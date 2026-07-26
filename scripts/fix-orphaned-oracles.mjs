@@ -78,8 +78,8 @@ async function supabaseUpsert(table, rows, conflictColumn) {
 async function main() {
   await ensureBulkData();
 
-  const oracles = await supabaseGet("card_oracles?select=oracle_id,name");
-  const cardsRows = await supabaseGet("cards?select=oracle_id&lang=eq.en");
+  const oracles = await supabaseGet("card_oracles?select=oracle_id,name&order=oracle_id.asc");
+  const cardsRows = await supabaseGet("cards?select=oracle_id&lang=eq.en&order=oracle_id.asc");
   const withCards = new Set(cardsRows.map((c) => c.oracle_id));
   const orphanedIds = new Set(oracles.filter((o) => !withCards.has(o.oracle_id)).map((o) => o.oracle_id));
   console.log(`card_oracles: ${oracles.length}件中 cards欠落: ${orphanedIds.size}件`);

@@ -74,7 +74,11 @@ async function main() {
   const index = await loadIndex();
 
   // 3. cardsテーブルの登録済みプリント一覧を取得
-  const cards = await supabaseSelect("cards", "select=scryfall_id,oracle_id,lang,name");
+  // order句が無いとページング中の並び順が不安定になり、直前に大量の書き込みがあった直後などは
+  // 行の物理的な並びが揺れて一部の行がページ取得から漏れることがある（実際にFable of the
+  // Mirror-Breakerで発生: 対象カード数は一致するのにこの1件だけスナップショットが作られなかった）。
+  // 安定した一意キーであるscryfall_idで並べる。
+  const cards = await supabaseSelect("cards", "select=scryfall_id,oracle_id,lang,name&order=scryfall_id.asc");
   console.log(`対象カード: ${cards.length}件`);
 
   const snapshots = [];

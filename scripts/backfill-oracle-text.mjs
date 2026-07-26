@@ -67,7 +67,7 @@ async function supabaseUpsert(table, rows, conflictColumn) {
 async function main() {
   await ensureBulkData();
 
-  const oracles = await supabaseGet("card_oracles?select=oracle_id,name,printed_name_ja,oracle_text");
+  const oracles = await supabaseGet("card_oracles?select=oracle_id,name,printed_name_ja,oracle_text&order=oracle_id.asc");
   const missing = oracles.filter((o) => !o.oracle_text);
   const missingIds = new Set(missing.map((o) => o.oracle_id));
   console.log(`card_oracles: ${oracles.length}件中 oracle_text欠落: ${missing.length}件`);

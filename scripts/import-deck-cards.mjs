@@ -118,7 +118,7 @@ async function main() {
   await ensureBulkData();
   const index = await loadIndex();
 
-  const unresolved = await supabaseGet("deck_cards?select=card_name&oracle_id=is.null");
+  const unresolved = await supabaseGet("deck_cards?select=card_name&oracle_id=is.null&order=id.asc");
   const names = [...new Set(unresolved.map((r) => r.card_name))];
   console.log(`未解決カード名: ${names.length}件`);
 

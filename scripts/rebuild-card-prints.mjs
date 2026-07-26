@@ -78,7 +78,7 @@ async function supabaseUpsert(table, rows, conflictColumn) {
 async function main() {
   await ensureBulkData();
 
-  const oracles = await supabaseGet("card_oracles?select=oracle_id");
+  const oracles = await supabaseGet("card_oracles?select=oracle_id&order=oracle_id.asc");
   const knownOracleIds = new Set(oracles.map((o) => o.oracle_id));
   console.log(`対象oracle_id: ${knownOracleIds.size}件`);
 

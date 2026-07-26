@@ -76,7 +76,7 @@ async function main() {
   await ensureBulkData();
   const index = await loadIndex();
 
-  const enCards = await supabaseGet("cards?select=scryfall_id,oracle_id,name,set_code&lang=eq.en");
+  const enCards = await supabaseGet("cards?select=scryfall_id,oracle_id,name,set_code&lang=eq.en&order=scryfall_id.asc");
   console.log(`英語代表プリント: ${enCards.length}件を調査`);
 
   let fixed = 0;

@@ -62,12 +62,12 @@ async function main() {
   await ensureBulkData();
   const index = await loadIndex();
 
-  const prints = await supabaseGet("card_prints?select=scryfall_id,oracle_id");
+  const prints = await supabaseGet("card_prints?select=scryfall_id,oracle_id&order=scryfall_id.asc");
   console.log(`対象プリント: ${prints.length}件`);
 
   // 既存のJSONB（これまでの日付分）を取得し、今日分を追記した上で丸ごと上書きする
   // （PostgRESTのupsertはJSONBの部分マージができないため、クライアント側でマージする）
-  const existing = await supabaseGet("card_print_prices?select=scryfall_id,prices");
+  const existing = await supabaseGet("card_print_prices?select=scryfall_id,prices&order=scryfall_id.asc");
   const pricesByScryfallId = new Map(existing.map((r) => [r.scryfall_id, r.prices ?? {}]));
 
   const rows = [];

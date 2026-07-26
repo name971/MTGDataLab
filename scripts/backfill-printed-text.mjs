@@ -57,7 +57,7 @@ async function supabaseUpsert(table, rows, conflictColumn) {
 async function main() {
   await ensureBulkData();
 
-  const jaCards = await supabaseGet("cards?select=scryfall_id,oracle_id,printed_text_ja&lang=eq.ja");
+  const jaCards = await supabaseGet("cards?select=scryfall_id,oracle_id,printed_text_ja&lang=eq.ja&order=scryfall_id.asc");
   const missing = jaCards.filter((c) => !c.printed_text_ja);
   const oracleByScryfallId = new Map(missing.map((c) => [c.scryfall_id, c.oracle_id]));
   console.log(`ja cards: ${jaCards.length}件中 printed_text_ja欠落: ${missing.length}件`);
