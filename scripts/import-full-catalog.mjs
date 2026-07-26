@@ -90,6 +90,12 @@ async function main() {
     if (raw.digital) return;
     if (raw.lang !== "en" && raw.lang !== "ja") return;
     if (!raw.oracle_id) return;
+    // アートカード(art_series)・トークン(token)・記念グッズ(memorabilia)・ミニゲーム(minigame)は
+    // ルールテキストを持つ本物のカードではなく、同名の実カードとは別oracle_idで存在するため、
+    // 取り込むと検索・ランキングに「同名の別カード」としてノイズが混入する（例: Brainstormの
+    // Art Series版が実カードとは別のcard_oraclesの行として登録されてしまっていた）。
+    // funnyだけは除外しない: Unfinity以降は同じset内に普通に使用可能なカードが混在するため。
+    if (raw.set_type !== "funny" && NON_TOURNAMENT_SET_TYPES.has(raw.set_type)) return;
 
     const printKeyAll = `${raw.oracle_id}|${raw.set}|${raw.collector_number}`;
     const currentPrint = allPrintsByKey.get(printKeyAll);
