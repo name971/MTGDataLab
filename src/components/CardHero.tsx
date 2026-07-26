@@ -19,6 +19,7 @@ interface DefaultPrint {
   nameJa: string | null;
   nameEn: string;
   typeLine: string | null;
+  manaCost: string | null;
   oracleText: string | null;
   setName: string;
   setCode: string;
@@ -131,7 +132,10 @@ export default function CardHero({
           <div className="flex-1">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-xl font-medium">{defaultPrint.nameJa ?? defaultPrint.nameEn}</p>
+                <p className="flex flex-wrap items-center gap-x-2 text-xl font-medium">
+                  <span>{defaultPrint.nameJa ?? defaultPrint.nameEn}</span>
+                  {defaultPrint.manaCost && <ManaText text={defaultPrint.manaCost} className="text-base" />}
+                </p>
                 {defaultPrint.nameJa && (
                   <p className="text-sm text-neutral-500">{defaultPrint.nameEn}</p>
                 )}
