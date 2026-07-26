@@ -19,13 +19,19 @@
 
 import { ensureBulkData, forEachJsonArrayObject, DATA_FILE, NON_TOURNAMENT_SET_TYPES } from "./lib/scryfallBulk.mjs";
 
-// 黒/白以外の縁は金縁(World Championship Decks等)・銀縁(Un-set)で、オラクルとしては合法でも
-// この物理プリント自体はどのフォーマットでも使用不可（Scryfallのlegalitiesには反映されない）。
+// 金縁(World Championship Decks等)は、オラクルとしては合法でもこの物理プリント自体は
+// どのフォーマットでも使用不可（Scryfallのlegalitiesには反映されない）。実際に確認したところ
+// 金縁の印刷は必ずset_type="memorabilia"（NON_TOURNAMENT_SET_TYPESに含む）なので、border_colorの
+// チェックは実質冗長だが、念のため残す。
+//
+// 注意: Un-set（set_type="funny"）はUnfinity以降、同じセット内に使用可能カードと使用不可カードが
+// 混在する（例: Unfinityの"A Good Day to Pie"はborder_color="black"の通常合法カード、
+// "Aardwolf's Advantage"はborder_color="black"だが使用不可）。border_colorでは区別できず、
+// set_type="funny"で一律に弾くと合法カードまで巻き添えで使用不可扱いにしてしまう誤検知が起きるため、
+// Un-set限定でトーナメント不可な印刷にだけ付与されるsecurity_stamp="acorn"で判定する。
 function isNotTournamentLegal(raw) {
-  return (
-    (raw.border_color !== "black" && raw.border_color !== "white" && raw.border_color !== "borderless") ||
-    NON_TOURNAMENT_SET_TYPES.has(raw.set_type)
-  );
+  if (raw.set_type === "funny") return raw.security_stamp === "acorn";
+  return raw.border_color === "gold" || raw.border_color === "silver" || NON_TOURNAMENT_SET_TYPES.has(raw.set_type);
 }
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
