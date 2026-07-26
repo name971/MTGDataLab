@@ -3,6 +3,8 @@ import { FORMATS, formatSlug } from "@/lib/formats";
 import TrendingCard, { type TrendingCardData } from "@/components/TrendingCard";
 import { applyDbPrices } from "@/lib/applyDbPrices";
 import { getTrendingCardsFromDb } from "@/lib/dbTrendingCards";
+import { getTrendingRankingFromDb } from "@/lib/dbTrendingRanking";
+import TrendingRankingList from "@/components/TrendingRankingList";
 
 /** trending_scoresがまだ空（3日分蓄積前等）の間だけ使うフォールバック */
 const SAMPLE_TRENDING_CARDS: TrendingCardData[] = [
@@ -53,7 +55,10 @@ const SAMPLE_TRENDING_CARDS: TrendingCardData[] = [
 ];
 
 export default async function TopPage() {
-  const dbTrendingCards = await getTrendingCardsFromDb();
+  const [dbTrendingCards, trendingRanking] = await Promise.all([
+    getTrendingCardsFromDb(),
+    getTrendingRankingFromDb(),
+  ]);
   const trendingCards =
     dbTrendingCards.length > 0 ? dbTrendingCards : await applyDbPrices(SAMPLE_TRENDING_CARDS);
 
@@ -68,12 +73,12 @@ export default async function TopPage() {
         </div>
       </section>
 
-      <section>
-        <h2 className="mb-3 text-sm font-medium text-neutral-500">注目カードランキング</h2>
-        <div className="rounded-lg border border-dashed border-neutral-300 p-6 text-sm text-neutral-500">
-          TODO: 価格・採用率の3日変化を合成したスコア順（取引量は無料データソースがないためlaunchでは対象外。docs/spec.md 2章参照）。
-        </div>
-      </section>
+      {trendingRanking.length > 0 && (
+        <section>
+          <h2 className="mb-3 text-sm font-medium text-neutral-500">注目カードランキング</h2>
+          <TrendingRankingList rows={trendingRanking} />
+        </section>
+      )}
 
       <section>
         <h2 className="mb-3 text-sm font-medium text-neutral-500">フォーマットランキング</h2>
