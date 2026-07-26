@@ -47,6 +47,14 @@ async function supabaseGet(path) {
   return rows;
 }
 
+async function supabaseDelete(path) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    method: "DELETE",
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+  });
+  if (!res.ok) throw new Error(`DELETE ${path} failed: ${res.status} ${await res.text()}`);
+}
+
 async function supabaseUpsert(table, rows, conflictColumn) {
   if (rows.length === 0) return;
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?on_conflict=${conflictColumn}`, {
@@ -187,6 +195,11 @@ async function main() {
     });
   }
 
+  // upsertは新規/更新のみで、今回trip10から外れた（=今回のrowsに含まれない）oracle_id×format×category
+  // の古い行は消されずに残り続けてしまう（実際に、値上がり率が下がって順位から落ちたカードの
+  // 古いスコアが別フォーマットの行に残り続ける事故が発生した）。当日分は毎回作り直すものなので、
+  // 保存前に当日分を一度全部消してから入れ直し、古い行が残らないようにする。
+  await supabaseDelete(`trending_scores?calculated_date=eq.${todayStr}`);
   await supabaseUpsert("trending_scores", rows, "oracle_id,format,calculated_date,category");
   console.log(`trending_scores 保存: ${rows.length}件（${formats.length}フォーマット分）`);
 }
