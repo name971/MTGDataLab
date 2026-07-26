@@ -131,7 +131,12 @@ async function main() {
   const rows = [];
 
   for (const format of formats) {
-    const formatOracleIds = usageToday.filter((r) => r.format === format).map((r) => r.oracle_id);
+    // card_usage_statsは7/30/90日分など複数期間分の行を持つため、同じoracle_idが
+    // 複数回出てくることがある。重複したままだと同一upsertバッチ内でON CONFLICTが
+    // 同じ行に2回作用してエラーになるため、フォーマット内でoracle_id単位に重複除去する。
+    const formatOracleIds = [
+      ...new Set(usageToday.filter((r) => r.format === format).map((r) => r.oracle_id)),
+    ];
 
     // price category: このフォーマットで使われているカードのうち価格変化が分かるものを変化幅順に
     const priceMovers = formatOracleIds
