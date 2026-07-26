@@ -51,7 +51,9 @@ export default function ManaText({
             alt={`{${part.symbol}}`}
             width={symbolSize}
             height={symbolSize}
-            className={`mx-px inline-block ${align === "middle" ? "align-middle" : "align-text-bottom"}`}
+            className={`mx-px inline-block ${
+              align === "middle" ? "align-middle -translate-y-[1.7px]" : "align-text-bottom"
+            }`}
           />
         ),
       )}
