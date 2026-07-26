@@ -38,9 +38,10 @@ export interface TrendingRankingRow {
  * 同じ値がフォーマットごとに重複して保存されているため1件に潰す。usage_change_3d_ptは
  * フォーマットごとに別値なので、oracle単位では最も変化幅が大きいフォーマットを代表として使う。
  *
- * 単位が違う（%とpt）ため単純合算はできない。今回取得した候補内での絶対値最大で
- * それぞれ-1〜+1に正規化してから足し合わせ、絶対値が大きい順（値上がり/値下がり・
- * 採用率上昇/下降のどちらも「注目」とみなす）に並べる。
+ * 値下がり・採用率低下はカードの評価が上がったことを意味しないため、プラスの変化のみを
+ * スコアに採用する（マイナスの変化は無視し、0点扱い＝表示もしない）。
+ * 単位が違う（%とpt）ため単純合算はできない。今回取得した候補内でのプラス値の最大で
+ * それぞれ0〜1に正規化してから足し合わせ、スコアが大きい順に並べる。
  * データがまだ無い場合は空配列を返す（呼び出し側でTODO表示のままにする想定）。
  */
 export async function getTrendingRankingFromDb(): Promise<TrendingRankingRow[]> {
@@ -58,15 +59,20 @@ export async function getTrendingRankingFromDb(): Promise<TrendingRankingRow[]> 
     .eq("calculated_date", latestRow.calculated_date);
   if (error || !scoreRows || scoreRows.length === 0) return [];
 
+  // 値下がり・採用率低下はプラス評価にならないため、プラスの変化だけを候補として拾う
   const priceByOracle = new Map<string, number>();
   const usageByOracle = new Map<string, { pt: number; format: string }>();
   for (const row of scoreRows) {
     if (row.category === "price" && row.price_change_3d_pct != null) {
-      priceByOracle.set(row.oracle_id, Number(row.price_change_3d_pct));
+      const pct = Number(row.price_change_3d_pct);
+      if (pct <= 0) continue;
+      const existing = priceByOracle.get(row.oracle_id);
+      if (existing == null || pct > existing) priceByOracle.set(row.oracle_id, pct);
     } else if (row.category === "usage" && row.usage_change_3d_pt != null) {
       const pt = Number(row.usage_change_3d_pt);
+      if (pt <= 0) continue;
       const existing = usageByOracle.get(row.oracle_id);
-      if (!existing || Math.abs(pt) > Math.abs(existing.pt)) {
+      if (!existing || pt > existing.pt) {
         usageByOracle.set(row.oracle_id, { pt, format: row.format });
       }
     }
@@ -83,14 +89,14 @@ export async function getTrendingRankingFromDb(): Promise<TrendingRankingRow[]> 
   );
   if (oracleIds.size === 0) return [];
 
-  const maxAbsPrice = Math.max(0, ...[...priceByOracle.values()].map((v) => Math.abs(v)));
-  const maxAbsUsage = Math.max(0, ...[...usageByOracle.values()].map((v) => Math.abs(v.pt)));
+  const maxPrice = Math.max(0, ...priceByOracle.values());
+  const maxUsage = Math.max(0, ...[...usageByOracle.values()].map((v) => v.pt));
 
   const candidates = [...oracleIds].map((oracleId) => {
     const priceChangePct = priceByOracle.get(oracleId) ?? null;
     const usage = usageByOracle.get(oracleId) ?? null;
-    const priceNorm = priceChangePct != null && maxAbsPrice > 0 ? priceChangePct / maxAbsPrice : 0;
-    const usageNorm = usage != null && maxAbsUsage > 0 ? usage.pt / maxAbsUsage : 0;
+    const priceNorm = priceChangePct != null && maxPrice > 0 ? priceChangePct / maxPrice : 0;
+    const usageNorm = usage != null && maxUsage > 0 ? usage.pt / maxUsage : 0;
     return {
       oracleId,
       priceChangePct,
@@ -100,9 +106,7 @@ export async function getTrendingRankingFromDb(): Promise<TrendingRankingRow[]> 
     };
   });
 
-  const top = candidates
-    .sort((a, b) => Math.abs(b.compositeScore) - Math.abs(a.compositeScore))
-    .slice(0, RANKING_SIZE);
+  const top = candidates.sort((a, b) => b.compositeScore - a.compositeScore).slice(0, RANKING_SIZE);
   if (top.length === 0) return [];
 
   const topOracleIds = top.map((c) => c.oracleId);
