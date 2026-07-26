@@ -40,6 +40,8 @@ interface ResolvedCard {
   rarity: string;
   typeLine: string | null;
   manaCost: string | null;
+  power: string | null;
+  toughness: string | null;
   oracleText: string | null;
   legalities: Record<string, string>;
   imageUrl: string | null;
@@ -72,6 +74,8 @@ async function resolveCardFromDbDetail(dbResult: DbCardDetail): Promise<Resolved
     rarity: enCard.rarity,
     typeLine: (jaCard?.type_line || enCard.type_line) ?? null,
     manaCost: enCard.mana_cost,
+    power: enCard.power,
+    toughness: enCard.toughness,
     // 日本語版プリントのルールテキスト訳（printed_text_ja）があればそちらを優先し、
     // 無ければ英語のoracle_text（card_oracles、常に取得済み）にフォールバックする。
     oracleText: jaCard?.printed_text_ja ?? oracle.oracle_text,
@@ -122,6 +126,8 @@ async function resolveCard(searchName: string): Promise<ResolvedCard | null> {
       resolveFrontFaceTypeLine(enCard) ??
       null,
     manaCost: enCard.mana_cost ?? enCard.card_faces?.[0]?.mana_cost ?? null,
+    power: enCard.power ?? enCard.card_faces?.[0]?.power ?? null,
+    toughness: enCard.toughness ?? enCard.card_faces?.[0]?.toughness ?? null,
     oracleText: (jaCard && resolveCombinedPrintedText(jaCard)) ?? resolveCombinedOracleText(enCard),
     legalities: enCard.legalities,
     imageUrl:
@@ -238,6 +244,8 @@ export default async function CardDetailPage({
           nameEn: card.nameEn,
           typeLine: card.typeLine,
           manaCost: card.manaCost,
+          power: card.power,
+          toughness: card.toughness,
           oracleText: card.oracleText,
           setName: card.setName,
           setCode: card.setCode,

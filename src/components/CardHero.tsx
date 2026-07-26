@@ -20,6 +20,8 @@ interface DefaultPrint {
   nameEn: string;
   typeLine: string | null;
   manaCost: string | null;
+  power: string | null;
+  toughness: string | null;
   oracleText: string | null;
   setName: string;
   setCode: string;
@@ -134,7 +136,9 @@ export default function CardHero({
               <div className="min-w-0">
                 <p className="flex flex-wrap items-center gap-x-2 text-xl font-medium">
                   <span>{defaultPrint.nameJa ?? defaultPrint.nameEn}</span>
-                  {defaultPrint.manaCost && <ManaText text={defaultPrint.manaCost} className="text-base" />}
+                  {defaultPrint.manaCost && (
+                    <ManaText text={defaultPrint.manaCost} symbolSize={20} align="middle" />
+                  )}
                 </p>
                 {defaultPrint.nameJa && (
                   <p className="text-sm text-neutral-500">{defaultPrint.nameEn}</p>
@@ -164,6 +168,11 @@ export default function CardHero({
             {defaultPrint.oracleText && (
               <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-neutral-700">
                 <ManaText text={defaultPrint.oracleText} />
+              </p>
+            )}
+            {defaultPrint.power !== null && defaultPrint.toughness !== null && (
+              <p className="mt-2 text-sm font-medium text-neutral-700">
+                {defaultPrint.power}/{defaultPrint.toughness}
               </p>
             )}
 

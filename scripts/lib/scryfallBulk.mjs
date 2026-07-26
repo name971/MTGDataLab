@@ -485,6 +485,8 @@ export function toCardRow(card, oracleId) {
     image_uri_art_crop: img?.art_crop ?? null,
     mana_cost: card.mana_cost ?? card.card_faces?.[0]?.mana_cost ?? null,
     type_line: card.type_line ?? card.card_faces?.[0]?.type_line ?? null,
+    power: card.power ?? card.card_faces?.[0]?.power ?? null,
+    toughness: card.toughness ?? card.card_faces?.[0]?.toughness ?? null,
     legalities: card.legalities ?? {},
     released_at: card.released_at ?? null,
     finishes: card.finishes ?? [],

@@ -11,7 +11,23 @@ function symbolImageUrl(inner: string): string {
   return `https://svgs.scryfall.io/card-symbols/${inner.replace(/\//g, "")}.svg`;
 }
 
-export default function ManaText({ text, className }: { text: string; className?: string }) {
+export default function ManaText({
+  text,
+  className,
+  symbolSize = 14,
+  align = "text-bottom",
+}: {
+  text: string;
+  className?: string;
+  /** シンボル画像の一辺のサイズ(px)。カード名の横に出す時は本文中より大きくしたい等の用途向け */
+  symbolSize?: number;
+  /**
+   * "text-bottom"（デフォルト）は本文中でテキストのベースラインに揃う自然な見た目。
+   * カード名のような大きな文字の横に置く場合はテキストの下に寄って見えるため、
+   * 縦中央に揃えたい時は"middle"を使う。
+   */
+  align?: "text-bottom" | "middle";
+}) {
   const parts: (string | { symbol: string })[] = [];
   let lastIndex = 0;
   for (const match of text.matchAll(SYMBOL_PATTERN)) {
@@ -33,9 +49,9 @@ export default function ManaText({ text, className }: { text: string; className?
             key={i}
             src={symbolImageUrl(part.symbol)}
             alt={`{${part.symbol}}`}
-            width={14}
-            height={14}
-            className="mx-px inline-block align-text-bottom"
+            width={symbolSize}
+            height={symbolSize}
+            className={`mx-px inline-block ${align === "middle" ? "align-middle" : "align-text-bottom"}`}
           />
         ),
       )}

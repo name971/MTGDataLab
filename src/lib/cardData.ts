@@ -22,6 +22,8 @@ export interface CardRow {
   image_uri_art_crop: string | null;
   mana_cost: string | null;
   type_line: string | null;
+  power: string | null;
+  toughness: string | null;
   legalities: Record<string, string>;
 }
 
@@ -48,7 +50,7 @@ export async function getCardDetailFromDb(englishName: string): Promise<DbCardDe
   const { data: cards, error: cardsError } = await supabase
     .from("cards")
     .select(
-      "scryfall_id, oracle_id, name, printed_name_ja, printed_text_ja, set_code, set_name, rarity, collector_number, lang, image_uri_normal, image_uri_art_crop, mana_cost, type_line, legalities",
+      "scryfall_id, oracle_id, name, printed_name_ja, printed_text_ja, set_code, set_name, rarity, collector_number, lang, image_uri_normal, image_uri_art_crop, mana_cost, type_line, power, toughness, legalities",
     )
     .eq("oracle_id", oracle.oracle_id);
 
@@ -77,7 +79,7 @@ export async function getCardDetailByOracleId(oracleId: string): Promise<DbCardD
   const { data: cards, error: cardsError } = await supabase
     .from("cards")
     .select(
-      "scryfall_id, oracle_id, name, printed_name_ja, printed_text_ja, set_code, set_name, rarity, collector_number, lang, image_uri_normal, image_uri_art_crop, mana_cost, type_line, legalities",
+      "scryfall_id, oracle_id, name, printed_name_ja, printed_text_ja, set_code, set_name, rarity, collector_number, lang, image_uri_normal, image_uri_art_crop, mana_cost, type_line, power, toughness, legalities",
     )
     .eq("oracle_id", oracle.oracle_id);
 

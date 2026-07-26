@@ -33,6 +33,8 @@ CREATE TABLE cards (
   image_uri_art_crop  TEXT,
   mana_cost           TEXT,
   type_line            TEXT,
+  power               TEXT, -- "*"や"1+*"等の非数値もあるためTEXT（Scryfallの型に合わせる）。クリーチャー以外はNULL
+  toughness           TEXT,
   legalities          JSONB,                     -- {"modern": "legal", "standard": "not_legal", ...}
   released_at         DATE,                      -- このプリントの発売日（日本語名の「最新版採用」判定に使う）
   finishes             TEXT[],                    -- ['nonfoil','foil'] 等（Scryfallのfinishesをそのまま保存）

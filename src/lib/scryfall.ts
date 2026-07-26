@@ -34,6 +34,8 @@ export interface ScryfallCard {
   released_at: string;
   mana_cost?: string;
   type_line?: string;
+  power?: string;
+  toughness?: string;
   oracle_text?: string;
   printed_text?: string;
   legalities: Record<string, string>;
@@ -49,6 +51,8 @@ export interface ScryfallCard {
     printed_type_line?: string;
     mana_cost?: string;
     type_line?: string;
+    power?: string;
+    toughness?: string;
     oracle_text?: string;
     printed_text?: string;
     image_uris?: {
