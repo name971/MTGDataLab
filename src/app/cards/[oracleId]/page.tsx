@@ -43,6 +43,7 @@ interface ResolvedCard {
   legalities: Record<string, string>;
   imageUrl: string | null;
   usdPrice: number | null;
+  jpyPriceFoil: number | null;
   source: "db" | "live";
 }
 
@@ -74,6 +75,9 @@ async function resolveCardFromDbDetail(dbResult: DbCardDetail): Promise<Resolved
     legalities: enCard.legalities,
     imageUrl: jaCard?.image_uri_normal ?? enCard.image_uri_normal,
     usdPrice,
+    // Foilはscripts/snapshot-prices.mjsがcard_price_snapshotsに保存済みの円換算値をそのまま使う
+    // （ライブ取得フォールバックには対応しない。foil非対応プリントはnullのまま）。
+    jpyPriceFoil: snapshot?.jpyEstFoil ?? null,
     source: "db",
   };
 }
@@ -118,6 +122,7 @@ async function resolveCard(searchName: string): Promise<ResolvedCard | null> {
     imageUrl:
       (jaCard && resolveImageUris(jaCard)?.normal) ?? resolveImageUris(enCard)?.normal ?? null,
     usdPrice: enCard.prices.usd ? parseFloat(enCard.prices.usd) : null,
+    jpyPriceFoil: null,
     source: "live",
   };
 }
@@ -226,6 +231,7 @@ export default async function CardDetailPage({
           collectorNumber: card.collectorNumber,
           rarityLabel: RARITY_LABEL_JA[card.rarity] ?? card.rarity,
           jpyPrice,
+          jpyPriceFoil: card.jpyPriceFoil,
           usdPrice: card.usdPrice,
           usdToJpyRate: rates.usdToJpy,
           priceExtremesText,

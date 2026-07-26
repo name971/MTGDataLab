@@ -287,6 +287,7 @@ export async function loadIndex() {
       lang: raw.lang,
       usd: raw.prices?.usd ?? null,
       eur: raw.prices?.eur ?? null,
+      usd_foil: raw.prices?.usd_foil ?? null,
       set_type: raw.set_type,
     });
 

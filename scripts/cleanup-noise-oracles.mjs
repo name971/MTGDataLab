@@ -101,10 +101,19 @@ async function main() {
     return;
   }
 
+  // card_oracles(oracle_id)をFK参照している全テーブル（db/schema.sql参照）を先に消してからでないと
+  // 外部キー制約違反（23503）で削除できない。1回目の実行はcard_print_prices等一部を消し忘れて
+  // 409 Conflictで失敗していた。
   for (let i = 0; i < safeToDelete.length; i += 50) {
     const chunk = safeToDelete.slice(i, i + 50);
     const idsParam = chunk.join(",");
     await supabaseDelete(`card_price_snapshots?oracle_id=in.(${idsParam})`);
+    await supabaseDelete(`card_price_snapshots_weekly?oracle_id=in.(${idsParam})`);
+    await supabaseDelete(`card_price_snapshots_monthly?oracle_id=in.(${idsParam})`);
+    await supabaseDelete(`card_print_prices?oracle_id=in.(${idsParam})`);
+    await supabaseDelete(`language_premium_stats?oracle_id=in.(${idsParam})`);
+    await supabaseDelete(`favorite_cards?oracle_id=in.(${idsParam})`);
+    await supabaseDelete(`price_alerts?oracle_id=in.(${idsParam})`);
     await supabaseDelete(`card_usage_stats?oracle_id=in.(${idsParam})`);
     await supabaseDelete(`trending_scores?oracle_id=in.(${idsParam})`);
     await supabaseDelete(`card_prints?oracle_id=in.(${idsParam})`);

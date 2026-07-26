@@ -24,6 +24,7 @@ interface DefaultPrint {
   collectorNumber: string;
   rarityLabel: string;
   jpyPrice: number | null;
+  jpyPriceFoil: number | null;
   usdPrice: number | null;
   usdToJpyRate: number;
   priceExtremesText: string | null;
@@ -140,6 +141,13 @@ export default function CardHero({
               </p>
             ) : (
               <p className="mt-4 text-sm text-neutral-500">価格データなし</p>
+            )}
+            {/* Foilはこの代表プリントに対してだけ日次追跡している（他プリントの一覧には無い）ため、
+                代表プリント表示時のみ出す。foil仕様が無いプリントはjpyPriceFoilがnullなので出ない。 */}
+            {!isAlternate && defaultPrint.jpyPriceFoil !== null && (
+              <p className="text-sm text-neutral-600">
+                Foil: ¥{defaultPrint.jpyPriceFoil.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
+              </p>
             )}
             {!isAlternate && defaultPrint.usdPrice !== null && (
               <p className="text-xs text-neutral-400">

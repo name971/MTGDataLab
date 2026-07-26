@@ -96,6 +96,9 @@ async function main() {
     const usd = price.usd ? parseFloat(price.usd) : null;
     const eur = price.eur ? parseFloat(price.eur) : null;
     const jpyEst = usd !== null ? Math.round(usd * usdToJpy * 100) / 100 : null;
+    // foilが存在しないプリント（大半のカード）はScryfall側でusd_foilがnullのまま返ってくる
+    const usdFoil = price.usd_foil ? parseFloat(price.usd_foil) : null;
+    const jpyEstFoil = usdFoil !== null ? Math.round(usdFoil * usdToJpy * 100) / 100 : null;
 
     snapshots.push({
       oracle_id: card.oracle_id,
@@ -105,6 +108,8 @@ async function main() {
       usd,
       eur,
       jpy_est: jpyEst,
+      usd_foil: usdFoil,
+      jpy_est_foil: jpyEstFoil,
     });
     ok++;
   }

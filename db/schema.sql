@@ -152,6 +152,9 @@ CREATE TABLE card_price_snapshots (
   -- jpy_estはアプリ側でusd × exchange_rates.usd_to_jpyから算出してもよいが、
   -- 集計クエリの負荷軽減のためバッチ処理時点で計算して保存しておく
   jpy_est      NUMERIC(12, 2),
+  -- Foil価格（このプリントにfoil仕様が存在しない場合はNULL）。非Foil(usd/jpy_est)とは別軸の値。
+  usd_foil     NUMERIC(10, 2),
+  jpy_est_foil NUMERIC(12, 2),
   UNIQUE (oracle_id, series, date)
 );
 
