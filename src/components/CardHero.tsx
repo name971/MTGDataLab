@@ -74,6 +74,7 @@ export default function CardHero({
 
   const [currentScryfallId, setCurrentScryfallId] = useState(defaultPrint.scryfallId ?? "");
   const [selectedHistory, setSelectedHistory] = useState<PricePoint[] | null>(null);
+  const [selectedFoilHistory, setSelectedFoilHistory] = useState<PricePoint[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [finish, setFinish] = useState<"normal" | "foil">("normal");
@@ -90,29 +91,47 @@ export default function CardHero({
 
   async function selectPrint(p: CardPrint) {
     setCurrentScryfallId(p.scryfallId);
+    setFinish("normal"); // プリントを切り替えたら表示は通常価格から始める
     if (p.scryfallId === defaultPrint.scryfallId) {
       setSelectedHistory(null); // 代表プリントに戻る場合はdefaultEnHistoryをそのまま使う
+      setSelectedFoilHistory(null);
       return;
     }
     setSelectedHistory(null);
+    setSelectedFoilHistory(null);
     setLoading(true);
     try {
-      const res = await fetch(`/api/print-price?scryfallId=${p.scryfallId}`);
-      const data = await res.json();
-      setSelectedHistory(data.history ?? []);
+      const [normalRes, foilRes] = await Promise.all([
+        fetch(`/api/print-price?scryfallId=${p.scryfallId}`),
+        fetch(`/api/print-price?scryfallId=${p.scryfallId}&finish=foil`),
+      ]);
+      const [normalData, foilData] = await Promise.all([normalRes.json(), foilRes.json()]);
+      setSelectedHistory(normalData.history ?? []);
+      setSelectedFoilHistory(foilData.history ?? []);
     } catch {
       setSelectedHistory([]);
+      setSelectedFoilHistory([]);
     } finally {
       setLoading(false);
     }
   }
 
   const enHistory = isAlternate ? (selectedHistory ?? []) : defaultEnHistory;
-  // Foilは代表プリントのみ日次追跡している（他プリントの一覧には無い）ため、代表プリント表示中のみ切替可能にする
-  const canToggleFoil = !isAlternate && defaultPrint.jpyPriceFoil !== null;
-  const effectiveFinish = canToggleFoil ? finish : "normal";
+  const enFoilHistoryForChart = isAlternate ? (selectedFoilHistory ?? []) : defaultEnFoilHistory;
+  // 通常・Foil両方の価格が実際にある時だけ切り替えタブを出す。片方しか無いプリント
+  // （Foil専用プロモ等）はタブを出さず、存在する方をそのまま表示する。
+  const hasNormalPrice = isAlternate
+    ? allPrices[currentScryfallId] !== undefined
+    : defaultPrint.jpyPrice !== null;
+  const hasFoilPrice = isAlternate
+    ? foilPricesByScryfallId[currentScryfallId] !== undefined
+    : defaultPrint.jpyPriceFoil !== null;
+  const canToggleFoil = hasNormalPrice && hasFoilPrice;
+  const effectiveFinish = canToggleFoil ? finish : hasFoilPrice ? "foil" : "normal";
   const jpyPrice = isAlternate
-    ? (allPrices[currentScryfallId] ?? null)
+    ? effectiveFinish === "foil"
+      ? (foilPricesByScryfallId[currentScryfallId] ?? null)
+      : (allPrices[currentScryfallId] ?? null)
     : effectiveFinish === "foil"
       ? defaultPrint.jpyPriceFoil
       : defaultPrint.jpyPrice;
@@ -146,21 +165,38 @@ export default function CardHero({
                   <p className="text-sm text-neutral-500">{defaultPrint.nameEn}</p>
                 )}
               </div>
-              {canToggleFoil && (
+              {(hasNormalPrice || hasFoilPrice) && (
                 <div className="flex shrink-0 gap-1">
-                  {(["normal", "foil"] as const).map((f) => (
-                    <button
-                      key={f}
-                      onClick={() => setFinish(f)}
-                      className={`rounded-md border px-2 py-1 text-xs ${
-                        finish === f
-                          ? "border-neutral-500 bg-neutral-100 text-neutral-900"
-                          : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
-                      }`}
-                    >
-                      {f === "normal" ? "通常" : "Foil"}
-                    </button>
-                  ))}
+                  {(["normal", "foil"] as const).map((f) => {
+                    const available = f === "normal" ? hasNormalPrice : hasFoilPrice;
+                    return (
+                      <button
+                        key={f}
+                        onClick={() => available && setFinish(f)}
+                        disabled={!available}
+                        className={`relative rounded-md border px-2 py-1 text-xs ${
+                          !available
+                            ? "cursor-not-allowed border-neutral-200 text-neutral-300"
+                            : effectiveFinish === f
+                              ? "border-neutral-500 bg-neutral-100 text-neutral-900"
+                              : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
+                        }`}
+                      >
+                        {f === "normal" ? "通常" : "Foil"}
+                        {!available && (
+                          // ボタンの枠全体に対角線のバツ印を重ねて「この選択肢自体が存在しない」ことを見せる
+                          <svg
+                            viewBox="0 0 100 100"
+                            preserveAspectRatio="none"
+                            className="pointer-events-none absolute inset-0 h-full w-full text-neutral-300"
+                          >
+                            <line x1="4" y1="4" x2="96" y2="96" stroke="currentColor" strokeWidth="4" />
+                            <line x1="96" y1="4" x2="4" y2="96" stroke="currentColor" strokeWidth="4" />
+                          </svg>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -227,7 +263,7 @@ export default function CardHero({
           <PriceHistoryChart
             enHistory={enHistory}
             jaHistory={isAlternate ? [] : defaultJaHistory}
-            enFoilHistory={isAlternate ? [] : defaultEnFoilHistory}
+            enFoilHistory={enFoilHistoryForChart}
             jaFoilHistory={isAlternate ? [] : defaultJaFoilHistory}
             finish={effectiveFinish}
           />

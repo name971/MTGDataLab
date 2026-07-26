@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
   if (!scryfallId) {
     return NextResponse.json({ error: "scryfallId is required" }, { status: 400 });
   }
-  const history = await getPrintPriceHistory(scryfallId);
+  const finish = request.nextUrl.searchParams.get("finish") === "foil" ? "foil" : "normal";
+  const history = await getPrintPriceHistory(scryfallId, finish);
   return NextResponse.json({ history });
 }

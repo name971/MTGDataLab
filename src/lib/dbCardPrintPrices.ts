@@ -6,15 +6,19 @@ import type { PricePoint } from "./dbPriceHistory";
  * 特定プリントの価格推移を取得する。USDのみ保存されているため、各日付のexchange_ratesで
  * その日時点のレートに変換する（過去の日付にも今日のレートを一律適用すると誤差が出るため）。
  */
-export async function getPrintPriceHistory(scryfallId: string): Promise<PricePoint[]> {
+export async function getPrintPriceHistory(
+  scryfallId: string,
+  finish: "normal" | "foil" = "normal",
+): Promise<PricePoint[]> {
+  const priceColumn = finish === "foil" ? "prices_foil" : "prices";
   const { data, error } = await supabase
     .from("card_print_prices")
-    .select("prices")
+    .select(priceColumn)
     .eq("scryfall_id", scryfallId)
     .maybeSingle();
-  if (error || !data?.prices) return [];
+  if (error || !data) return [];
 
-  const usdByDate = data.prices as Record<string, number>;
+  const usdByDate = (data as unknown as Record<string, Record<string, number>>)[priceColumn] ?? {};
   const dates = Object.keys(usdByDate).sort();
   if (dates.length === 0) return [];
 
