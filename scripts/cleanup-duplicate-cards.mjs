@@ -62,8 +62,14 @@ async function runWithConcurrency(items, limit, worker) {
 }
 
 async function main() {
-  const cards = await supabaseGet("cards?select=scryfall_id,oracle_id,lang,updated_at");
-  console.log(`cards: ${cards.length}件`);
+  // order句を付けないとページング中の並び順が不安定になり、他プロセスの同時書き込みと重なった際に
+  // 同じ行が2ページにまたがって重複取得されることがある（scryfall_idはPKなので一意なはずの行が
+  // 見かけ上「重複グループ」に見えてしまい、誤って削除→本当に1件しかない代表プリントが消える事故が
+  // 実際に発生した）。安定した一意キーであるscryfall_idで並べてページングする。
+  const cardsRaw = await supabaseGet("cards?select=scryfall_id,oracle_id,lang,updated_at&order=scryfall_id.asc");
+  // 念のための保険: scryfall_id（PK）でもう一段deduplicateしてから使う
+  const cards = [...new Map(cardsRaw.map((c) => [c.scryfall_id, c])).values()];
+  console.log(`cards: ${cards.length}件（取得時点の重複除去前: ${cardsRaw.length}件）`);
 
   const byKey = new Map();
   for (const c of cards) {
