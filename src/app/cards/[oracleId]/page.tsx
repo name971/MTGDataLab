@@ -196,12 +196,14 @@ export default async function CardDetailPage({
   const formatUsageCounts = card.oracleId
     ? await getFormatUsageCountsForCard(card.oracleId, usagePeriodDays)
     : [];
-  const [enPriceHistory, jaPriceHistory] = card.oracleId
+  const [enPriceHistory, jaPriceHistory, enFoilPriceHistory, jaFoilPriceHistory] = card.oracleId
     ? await Promise.all([
         getPriceHistoryForCard(card.oracleId, "en"),
         getPriceHistoryForCard(card.oracleId, "ja"),
+        getPriceHistoryForCard(card.oracleId, "en", "foil"),
+        getPriceHistoryForCard(card.oracleId, "ja", "foil"),
       ])
-    : [[], []];
+    : [[], [], [], []];
   const priceExtremes = getPriceExtremes(enPriceHistory);
   const otherPrints = card.oracleId
     ? await getOtherPrintsForCard(card.oracleId, {
@@ -238,6 +240,8 @@ export default async function CardDetailPage({
         }}
         defaultEnHistory={enPriceHistory}
         defaultJaHistory={jaPriceHistory}
+        defaultEnFoilHistory={enFoilPriceHistory}
+        defaultJaFoilHistory={jaFoilPriceHistory}
         otherPrints={otherPrints}
         pricesByScryfallId={Object.fromEntries(otherPrintPrices)}
         legalities={card.legalities}

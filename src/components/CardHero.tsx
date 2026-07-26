@@ -35,6 +35,8 @@ export default function CardHero({
   defaultPrint,
   defaultEnHistory,
   defaultJaHistory,
+  defaultEnFoilHistory,
+  defaultJaFoilHistory,
   otherPrints,
   pricesByScryfallId,
   legalities,
@@ -43,6 +45,8 @@ export default function CardHero({
   defaultPrint: DefaultPrint;
   defaultEnHistory: PricePoint[];
   defaultJaHistory: PricePoint[];
+  defaultEnFoilHistory: PricePoint[];
+  defaultJaFoilHistory: PricePoint[];
   otherPrints: CardPrint[];
   pricesByScryfallId: Record<string, number>;
   legalities: Record<string, string>;
@@ -64,6 +68,7 @@ export default function CardHero({
   const [selectedHistory, setSelectedHistory] = useState<PricePoint[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [finish, setFinish] = useState<"normal" | "foil">("normal");
 
   const isAlternate = currentScryfallId !== defaultPrint.scryfallId;
   const current = allPrints.find((p) => p.scryfallId === currentScryfallId) ?? defaultAsPrint;
@@ -94,8 +99,15 @@ export default function CardHero({
     }
   }
 
-  const jpyPrice = isAlternate ? (allPrices[currentScryfallId] ?? null) : defaultPrint.jpyPrice;
   const enHistory = isAlternate ? (selectedHistory ?? []) : defaultEnHistory;
+  // Foilは代表プリントのみ日次追跡している（他プリントの一覧には無い）ため、代表プリント表示中のみ切替可能にする
+  const canToggleFoil = !isAlternate && defaultPrint.jpyPriceFoil !== null;
+  const effectiveFinish = canToggleFoil ? finish : "normal";
+  const jpyPrice = isAlternate
+    ? (allPrices[currentScryfallId] ?? null)
+    : effectiveFinish === "foil"
+      ? defaultPrint.jpyPriceFoil
+      : defaultPrint.jpyPrice;
 
   return (
     <div className="flex flex-col gap-6">
@@ -114,8 +126,31 @@ export default function CardHero({
             />
           )}
           <div className="flex-1">
-            <p className="text-xl font-medium">{defaultPrint.nameJa ?? defaultPrint.nameEn}</p>
-            {defaultPrint.nameJa && <p className="text-sm text-neutral-500">{defaultPrint.nameEn}</p>}
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xl font-medium">{defaultPrint.nameJa ?? defaultPrint.nameEn}</p>
+                {defaultPrint.nameJa && (
+                  <p className="text-sm text-neutral-500">{defaultPrint.nameEn}</p>
+                )}
+              </div>
+              {canToggleFoil && (
+                <div className="flex shrink-0 gap-1">
+                  {(["normal", "foil"] as const).map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => setFinish(f)}
+                      className={`rounded-md border px-2 py-1 text-xs ${
+                        finish === f
+                          ? "border-neutral-500 bg-neutral-100 text-neutral-900"
+                          : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
+                      }`}
+                    >
+                      {f === "normal" ? "通常" : "Foil"}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             {defaultPrint.typeLine && (
               <p className="mt-2 text-sm text-neutral-600">{defaultPrint.typeLine}</p>
             )}
@@ -142,19 +177,14 @@ export default function CardHero({
             ) : (
               <p className="mt-4 text-sm text-neutral-500">価格データなし</p>
             )}
-            {/* Foilはこの代表プリントに対してだけ日次追跡している（他プリントの一覧には無い）ため、
-                代表プリント表示時のみ出す。foil仕様が無いプリントはjpyPriceFoilがnullなので出ない。 */}
-            {!isAlternate && defaultPrint.jpyPriceFoil !== null && (
-              <p className="text-sm text-neutral-600">
-                Foil: ¥{defaultPrint.jpyPriceFoil.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
-              </p>
-            )}
-            {!isAlternate && defaultPrint.usdPrice !== null && (
+            {/* 為替参考値・最高値/最安値は非Foilの日次履歴から出しているため、Foil表示中は
+                数字がちぐはぐに見えないよう隠す（Foil自体の履歴・極値は現状追跡していない）。 */}
+            {effectiveFinish === "normal" && !isAlternate && defaultPrint.usdPrice !== null && (
               <p className="text-xs text-neutral-400">
                 為替換算の参考値（${defaultPrint.usdPrice.toFixed(2)} × {defaultPrint.usdToJpyRate.toFixed(2)}円/$）
               </p>
             )}
-            {!isAlternate && defaultPrint.priceExtremesText && (
+            {effectiveFinish === "normal" && !isAlternate && defaultPrint.priceExtremesText && (
               <p className="mt-2 whitespace-pre-line text-xs text-neutral-500">
                 {defaultPrint.priceExtremesText}
               </p>
@@ -165,7 +195,13 @@ export default function CardHero({
         {loading ? (
           <p className="py-6 text-center text-xs text-neutral-500">読み込み中...</p>
         ) : (
-          <PriceHistoryChart enHistory={enHistory} jaHistory={isAlternate ? [] : defaultJaHistory} />
+          <PriceHistoryChart
+            enHistory={enHistory}
+            jaHistory={isAlternate ? [] : defaultJaHistory}
+            enFoilHistory={isAlternate ? [] : defaultEnFoilHistory}
+            jaFoilHistory={isAlternate ? [] : defaultJaFoilHistory}
+            finish={effectiveFinish}
+          />
         )}
       </div>
 

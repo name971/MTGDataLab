@@ -80,7 +80,15 @@ export default async function CardPrintDetailPage({
         </div>
       </div>
 
-      {priceHistory.length > 0 && <PriceHistoryChart enHistory={priceHistory} jaHistory={[]} />}
+      {priceHistory.length > 0 && (
+        <PriceHistoryChart
+          enHistory={priceHistory}
+          jaHistory={[]}
+          enFoilHistory={[]}
+          jaFoilHistory={[]}
+          finish="normal"
+        />
+      )}
     </div>
   );
 }
