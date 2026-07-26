@@ -171,7 +171,8 @@ export default function CardHero({
               </p>
             )}
             {defaultPrint.power !== null && defaultPrint.toughness !== null && (
-              <p className="mt-2 text-sm font-medium text-neutral-700">
+              // 現物のカードはパワー/タフネスがフレーム右下に表示されるため、それに寄せて右揃えにする
+              <p className="mt-2 text-right text-sm font-medium text-neutral-700">
                 {defaultPrint.power}/{defaultPrint.toughness}
               </p>
             )}
