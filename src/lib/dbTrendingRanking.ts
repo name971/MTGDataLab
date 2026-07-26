@@ -66,6 +66,9 @@ export interface TrendingRankingRow {
   usageChangePt: number | null;
   usageFormat: string | null;
   compositeScore: number;
+  /** 表示用の相対注目度（このランキング内の最上位を100とした0〜100）。%とptは単位が違って
+   * 直接比較できないため、順位の根拠はこちらで見せ、生の値は補足情報として添える。 */
+  attentionScore: number;
 }
 
 /**
@@ -206,6 +209,8 @@ export async function getTrendingRankingFromDb(): Promise<TrendingRankingRow[]> 
   const top = candidates.sort((a, b) => b.compositeScore - a.compositeScore).slice(0, RANKING_SIZE);
   if (top.length === 0) return [];
 
+  const maxCompositeScore = top[0].compositeScore;
+
   const topOracleIds = top.map((c) => c.oracleId);
   const [{ data: oracles }, { data: cardRows }, { data: priceRows }] = await Promise.all([
     supabase.from("card_oracles").select("oracle_id, name, printed_name_ja").in("oracle_id", topOracleIds),
@@ -249,6 +254,8 @@ export async function getTrendingRankingFromDb(): Promise<TrendingRankingRow[]> 
         usageChangePt: c.usageChangePt,
         usageFormat: c.usageFormat,
         compositeScore: c.compositeScore,
+        attentionScore:
+          maxCompositeScore > 0 ? Math.round((c.compositeScore / maxCompositeScore) * 100) : 0,
       } satisfies TrendingRankingRow;
     })
     .filter((r): r is TrendingRankingRow => r !== null);

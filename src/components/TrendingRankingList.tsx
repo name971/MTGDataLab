@@ -39,25 +39,31 @@ function TrendingRankRow({ row, rank }: { row: TrendingRankingRow; rank: number 
           {row.nameJa}
         </p>
         <p className="truncate text-xs text-neutral-500">{row.nameEn}</p>
-        <div className="mt-1 flex items-start justify-between text-sm">
+
+        {/* 価格変化率(%)と採用率変化(pt)は単位が違って直接比較できないため、ランキングの
+            根拠になっている相対注目度（このランキング内の最上位=100とした0〜100）をバーで見せる。
+            生の%/ptは下に補足情報として添えるのみで、順位の理由には使わない。 */}
+        <div className="mt-1 flex items-center gap-1.5">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-100">
+            <div
+              className="h-full rounded-full bg-purple-500"
+              style={{ width: `${row.attentionScore}%` }}
+            />
+          </div>
+          <span className="shrink-0 text-xs text-neutral-500">注目度{row.attentionScore}</span>
+        </div>
+
+        <div className="mt-0.5 flex items-start justify-between text-xs text-neutral-500">
           {row.priceChangePct != null && (
-            <span className="flex flex-col">
-              <span className="text-xs text-neutral-400">価格変化率</span>
-              <span className={changeClass(row.priceChangePct)}>
-                {row.priceChangePct >= 0 ? "+" : ""}
-                {row.priceChangePct.toFixed(1)}%
-              </span>
+            <span className={changeClass(row.priceChangePct)}>
+              価格 {row.priceChangePct >= 0 ? "+" : ""}
+              {row.priceChangePct.toFixed(1)}%
             </span>
           )}
           {row.usageChangePt != null && (
-            <span className="flex flex-col items-end">
-              <span className="text-xs text-neutral-400">
-                採用率変化{row.usageFormat ? `(${row.usageFormat})` : ""}
-              </span>
-              <span className={changeClass(row.usageChangePt)}>
-                {row.usageChangePt >= 0 ? "+" : ""}
-                {row.usageChangePt.toFixed(1)}pt
-              </span>
+            <span className={changeClass(row.usageChangePt)}>
+              採用率{row.usageFormat ? `(${row.usageFormat})` : ""} {row.usageChangePt >= 0 ? "+" : ""}
+              {row.usageChangePt.toFixed(1)}pt
             </span>
           )}
         </div>
