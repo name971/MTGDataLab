@@ -44,6 +44,7 @@ interface ResolvedCard {
   imageUrl: string | null;
   usdPrice: number | null;
   jpyPriceFoil: number | null;
+  usdPriceFoil: number | null;
   source: "db" | "live";
 }
 
@@ -78,6 +79,7 @@ async function resolveCardFromDbDetail(dbResult: DbCardDetail): Promise<Resolved
     // Foilはscripts/snapshot-prices.mjsがcard_price_snapshotsに保存済みの円換算値をそのまま使う
     // （ライブ取得フォールバックには対応しない。foil非対応プリントはnullのまま）。
     jpyPriceFoil: snapshot?.jpyEstFoil ?? null,
+    usdPriceFoil: snapshot?.usdFoil ?? null,
     source: "db",
   };
 }
@@ -123,6 +125,7 @@ async function resolveCard(searchName: string): Promise<ResolvedCard | null> {
       (jaCard && resolveImageUris(jaCard)?.normal) ?? resolveImageUris(enCard)?.normal ?? null,
     usdPrice: enCard.prices.usd ? parseFloat(enCard.prices.usd) : null,
     jpyPriceFoil: null,
+    usdPriceFoil: null,
     source: "live",
   };
 }
@@ -205,6 +208,7 @@ export default async function CardDetailPage({
       ])
     : [[], [], [], []];
   const priceExtremes = getPriceExtremes(enPriceHistory);
+  const priceExtremesFoil = getPriceExtremes(enFoilPriceHistory);
   const otherPrints = card.oracleId
     ? await getOtherPrintsForCard(card.oracleId, {
         setCode: card.setCode,
@@ -215,6 +219,9 @@ export default async function CardDetailPage({
 
   const priceExtremesText = priceExtremes
     ? `最高値: ¥${priceExtremes.maxJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}（${formatDateSlash(priceExtremes.maxDate)}） ／ 最安値: ¥${priceExtremes.minJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}（${formatDateSlash(priceExtremes.minDate)}）\n※日次スナップショットの記録が残っている範囲内での最高値・最安値です`
+    : null;
+  const priceExtremesFoilText = priceExtremesFoil
+    ? `最高値: ¥${priceExtremesFoil.maxJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}（${formatDateSlash(priceExtremesFoil.maxDate)}） ／ 最安値: ¥${priceExtremesFoil.minJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}（${formatDateSlash(priceExtremesFoil.minDate)}）\n※日次スナップショットの記録が残っている範囲内での最高値・最安値です`
     : null;
 
   return (
@@ -235,8 +242,10 @@ export default async function CardDetailPage({
           jpyPrice,
           jpyPriceFoil: card.jpyPriceFoil,
           usdPrice: card.usdPrice,
+          usdPriceFoil: card.usdPriceFoil,
           usdToJpyRate: rates.usdToJpy,
           priceExtremesText,
+          priceExtremesFoilText,
         }}
         defaultEnHistory={enPriceHistory}
         defaultJaHistory={jaPriceHistory}

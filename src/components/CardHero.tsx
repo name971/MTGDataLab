@@ -26,8 +26,10 @@ interface DefaultPrint {
   jpyPrice: number | null;
   jpyPriceFoil: number | null;
   usdPrice: number | null;
+  usdPriceFoil: number | null;
   usdToJpyRate: number;
   priceExtremesText: string | null;
+  priceExtremesFoilText: string | null;
 }
 
 export default function CardHero({
@@ -177,16 +179,26 @@ export default function CardHero({
             ) : (
               <p className="mt-4 text-sm text-neutral-500">価格データなし</p>
             )}
-            {/* 為替参考値・最高値/最安値は非Foilの日次履歴から出しているため、Foil表示中は
-                数字がちぐはぐに見えないよう隠す（Foil自体の履歴・極値は現状追跡していない）。 */}
-            {effectiveFinish === "normal" && !isAlternate && defaultPrint.usdPrice !== null && (
+            {/* 為替参考値・最高値/最安値は通常/Foilそれぞれの日次履歴から別々に出す
+                （defaultPrint.usdPrice/priceExtremesTextが非Foil用、*Foil系がFoil用）。 */}
+            {!isAlternate && effectiveFinish === "normal" && defaultPrint.usdPrice !== null && (
               <p className="text-xs text-neutral-400">
                 為替換算の参考値（${defaultPrint.usdPrice.toFixed(2)} × {defaultPrint.usdToJpyRate.toFixed(2)}円/$）
               </p>
             )}
-            {effectiveFinish === "normal" && !isAlternate && defaultPrint.priceExtremesText && (
+            {!isAlternate && effectiveFinish === "foil" && defaultPrint.usdPriceFoil !== null && (
+              <p className="text-xs text-neutral-400">
+                為替換算の参考値（${defaultPrint.usdPriceFoil.toFixed(2)} × {defaultPrint.usdToJpyRate.toFixed(2)}円/$）
+              </p>
+            )}
+            {!isAlternate && effectiveFinish === "normal" && defaultPrint.priceExtremesText && (
               <p className="mt-2 whitespace-pre-line text-xs text-neutral-500">
                 {defaultPrint.priceExtremesText}
+              </p>
+            )}
+            {!isAlternate && effectiveFinish === "foil" && defaultPrint.priceExtremesFoilText && (
+              <p className="mt-2 whitespace-pre-line text-xs text-neutral-500">
+                {defaultPrint.priceExtremesFoilText}
               </p>
             )}
           </div>

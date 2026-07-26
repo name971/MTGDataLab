@@ -98,10 +98,15 @@ export async function getCardDetailByOracleId(oracleId: string): Promise<DbCardD
 export async function getLatestPriceSnapshot(
   oracleId: string,
   series: "en" | "ja",
-): Promise<{ usd: number | null; jpyEst: number | null; jpyEstFoil: number | null } | null> {
+): Promise<{
+  usd: number | null;
+  jpyEst: number | null;
+  usdFoil: number | null;
+  jpyEstFoil: number | null;
+} | null> {
   const { data, error } = await supabase
     .from("card_price_snapshots")
-    .select("usd, jpy_est, jpy_est_foil")
+    .select("usd, jpy_est, usd_foil, jpy_est_foil")
     .eq("oracle_id", oracleId)
     .eq("series", series)
     .order("date", { ascending: false })
@@ -109,7 +114,7 @@ export async function getLatestPriceSnapshot(
     .maybeSingle();
 
   if (error || !data) return null;
-  return { usd: data.usd, jpyEst: data.jpy_est, jpyEstFoil: data.jpy_est_foil };
+  return { usd: data.usd, jpyEst: data.jpy_est, usdFoil: data.usd_foil, jpyEstFoil: data.jpy_est_foil };
 }
 
 /**
