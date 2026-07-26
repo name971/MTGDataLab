@@ -47,33 +47,51 @@ export async function getPrintPriceHistory(scryfallId: string): Promise<PricePoi
 // サイレントに空欄になっていた）。チャンクに分割して問い合わせる。
 const SCRYFALL_ID_CHUNK = 150;
 
-export async function getLatestPricesForPrints(scryfallIds: string[]): Promise<Map<string, number>> {
-  if (scryfallIds.length === 0) return new Map();
+export interface LatestPrintPrices {
+  normal: Map<string, number>;
+  foil: Map<string, number>;
+}
 
-  const data: { scryfall_id: string; prices: unknown }[] = [];
+/** {date: usd}形式のJSONBから最新日付のUSD値を取り出す（無ければnull） */
+function latestUsdEntry(usdByDate: Record<string, number>): { date: string; usd: number } | null {
+  const dates = Object.keys(usdByDate).sort();
+  const lastDate = dates.at(-1);
+  if (!lastDate) return null;
+  return { date: lastDate, usd: usdByDate[lastDate] };
+}
+
+export async function getLatestPricesForPrints(scryfallIds: string[]): Promise<LatestPrintPrices> {
+  if (scryfallIds.length === 0) return { normal: new Map(), foil: new Map() };
+
+  const data: { scryfall_id: string; prices: unknown; prices_foil: unknown }[] = [];
   for (let i = 0; i < scryfallIds.length; i += SCRYFALL_ID_CHUNK) {
     const chunk = scryfallIds.slice(i, i + SCRYFALL_ID_CHUNK);
     const { data: page, error } = await supabase
       .from("card_print_prices")
-      .select("scryfall_id, prices")
+      .select("scryfall_id, prices, prices_foil")
       .in("scryfall_id", chunk);
     if (error) continue; // 1チャンク失敗しても他のプリントの価格は表示できるよう続行する
     if (page) data.push(...page);
   }
-  if (data.length === 0) return new Map();
+  if (data.length === 0) return { normal: new Map(), foil: new Map() };
 
-  // 全プリントで使われている日付だけ集めて、レートの問い合わせを1回で済ませる
-  const latestByPrint = new Map<string, { date: string; usd: number }>();
+  // 全プリント・通常/Foil双方で使われている日付だけ集めて、レートの問い合わせを1回で済ませる
+  const latestNormalByPrint = new Map<string, { date: string; usd: number }>();
+  const latestFoilByPrint = new Map<string, { date: string; usd: number }>();
   const neededDates = new Set<string>();
   for (const row of data) {
-    const usdByDate = (row.prices ?? {}) as Record<string, number>;
-    const dates = Object.keys(usdByDate).sort();
-    const lastDate = dates.at(-1);
-    if (!lastDate) continue;
-    latestByPrint.set(row.scryfall_id, { date: lastDate, usd: usdByDate[lastDate] });
-    neededDates.add(lastDate);
+    const normalEntry = latestUsdEntry((row.prices ?? {}) as Record<string, number>);
+    if (normalEntry) {
+      latestNormalByPrint.set(row.scryfall_id, normalEntry);
+      neededDates.add(normalEntry.date);
+    }
+    const foilEntry = latestUsdEntry((row.prices_foil ?? {}) as Record<string, number>);
+    if (foilEntry) {
+      latestFoilByPrint.set(row.scryfall_id, foilEntry);
+      neededDates.add(foilEntry.date);
+    }
   }
-  if (neededDates.size === 0) return new Map();
+  if (neededDates.size === 0) return { normal: new Map(), foil: new Map() };
 
   const { data: rateRows } = await supabase
     .from("exchange_rates")
@@ -83,11 +101,15 @@ export async function getLatestPricesForPrints(scryfallIds: string[]): Promise<M
     (rateRows ?? []).map((r) => [r.date, Number(r.usd_to_jpy)]),
   );
 
-  const result = new Map<string, number>();
-  for (const [scryfallId, { date, usd }] of latestByPrint) {
-    const rate = rateByDate.get(date);
-    if (rate === undefined) continue;
-    result.set(scryfallId, Math.round(usd * rate * 100) / 100);
+  function toJpyMap(byPrint: Map<string, { date: string; usd: number }>): Map<string, number> {
+    const result = new Map<string, number>();
+    for (const [scryfallId, { date, usd }] of byPrint) {
+      const rate = rateByDate.get(date);
+      if (rate === undefined) continue;
+      result.set(scryfallId, Math.round(usd * rate * 100) / 100);
+    }
+    return result;
   }
-  return result;
+
+  return { normal: toJpyMap(latestNormalByPrint), foil: toJpyMap(latestFoilByPrint) };
 }

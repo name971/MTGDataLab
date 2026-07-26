@@ -67,22 +67,34 @@ async function main() {
 
   // 既存のJSONB（これまでの日付分）を取得し、今日分を追記した上で丸ごと上書きする
   // （PostgRESTのupsertはJSONBの部分マージができないため、クライアント側でマージする）
-  const existing = await supabaseGet("card_print_prices?select=scryfall_id,prices&order=scryfall_id.asc");
+  const existing = await supabaseGet(
+    "card_print_prices?select=scryfall_id,prices,prices_foil&order=scryfall_id.asc",
+  );
   const pricesByScryfallId = new Map(existing.map((r) => [r.scryfall_id, r.prices ?? {}]));
+  const pricesFoilByScryfallId = new Map(existing.map((r) => [r.scryfall_id, r.prices_foil ?? {}]));
 
   const rows = [];
   let priced = 0;
+  let foilPriced = 0;
   for (const p of prints) {
     const price = findPriceById(index, p.scryfall_id);
     const usd = price?.usd != null ? parseFloat(price.usd) : null;
-    if (usd === null) continue; // 価格が付いていないプリントは追記しない（無駄な空エントリを避ける）
+    const usdFoil = price?.usd_foil != null ? parseFloat(price.usd_foil) : null;
+    if (usd === null && usdFoil === null) continue; // 価格が全く付いていないプリントは追記しない
 
     const prices = pricesByScryfallId.get(p.scryfall_id) ?? {};
-    prices[today] = usd;
-    rows.push({ scryfall_id: p.scryfall_id, oracle_id: p.oracle_id, prices });
-    priced++;
+    const pricesFoil = pricesFoilByScryfallId.get(p.scryfall_id) ?? {};
+    if (usd !== null) {
+      prices[today] = usd;
+      priced++;
+    }
+    if (usdFoil !== null) {
+      pricesFoil[today] = usdFoil;
+      foilPriced++;
+    }
+    rows.push({ scryfall_id: p.scryfall_id, oracle_id: p.oracle_id, prices, prices_foil: pricesFoil });
   }
-  console.log(`価格あり: ${priced}件を保存中...`);
+  console.log(`価格あり: ${priced}件（うちFoil ${foilPriced}件）を保存中...`);
 
   await supabaseUpsert("card_print_prices", rows, "scryfall_id");
   console.log(`\n完了: card_print_prices ${rows.length}件を更新`);

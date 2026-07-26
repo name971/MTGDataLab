@@ -119,6 +119,7 @@ CREATE TABLE card_print_prices (
   scryfall_id UUID PRIMARY KEY REFERENCES card_prints (scryfall_id),
   oracle_id   UUID NOT NULL REFERENCES card_oracles (oracle_id),
   prices      JSONB NOT NULL DEFAULT '{}'::jsonb, -- {"YYYY-MM-DD": usd円換算前のUSD価格}
+  prices_foil JSONB NOT NULL DEFAULT '{}'::jsonb, -- 同上のFoil版（Foil仕様が無いプリントは追記されないので空のまま）
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

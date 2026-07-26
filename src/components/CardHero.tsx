@@ -45,6 +45,7 @@ export default function CardHero({
   defaultJaFoilHistory,
   otherPrints,
   pricesByScryfallId,
+  foilPricesByScryfallId,
   legalities,
 }: {
   oracleId: string;
@@ -55,6 +56,7 @@ export default function CardHero({
   defaultJaFoilHistory: PricePoint[];
   otherPrints: CardPrint[];
   pricesByScryfallId: Record<string, number>;
+  foilPricesByScryfallId: Record<string, number>;
   legalities: Record<string, string>;
 }) {
   // 代表プリントも「一覧の中の1件」として扱い、選ばれているものだけ一覧から外して
@@ -268,6 +270,7 @@ export default function CardHero({
               <tbody>
                 {visiblePrints.map((p) => {
                   const jpy = allPrices[p.scryfallId];
+                  const jpyFoil = foilPricesByScryfallId[p.scryfallId];
                   return (
                     <tr key={p.scryfallId} className="border-b border-neutral-100 last:border-0">
                       <td className="min-w-0 py-2 pr-2">
@@ -292,7 +295,12 @@ export default function CardHero({
                         </button>
                       </td>
                       <td className="overflow-hidden py-2 text-right text-ellipsis whitespace-nowrap tabular-nums text-neutral-700">
-                        {jpy !== undefined ? `¥${jpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}` : "-"}
+                        <p>{jpy !== undefined ? `¥${jpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}` : "-"}</p>
+                        {jpyFoil !== undefined && (
+                          <p className="text-[10px] text-neutral-400">
+                            Foil ¥{jpyFoil.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
+                          </p>
+                        )}
                       </td>
                     </tr>
                   );

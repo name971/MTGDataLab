@@ -264,7 +264,8 @@ export default async function CardDetailPage({
         defaultEnFoilHistory={enFoilPriceHistory}
         defaultJaFoilHistory={jaFoilPriceHistory}
         otherPrints={otherPrints}
-        pricesByScryfallId={Object.fromEntries(otherPrintPrices)}
+        pricesByScryfallId={Object.fromEntries(otherPrintPrices.normal)}
+        foilPricesByScryfallId={Object.fromEntries(otherPrintPrices.foil)}
         legalities={card.legalities}
       />
 
