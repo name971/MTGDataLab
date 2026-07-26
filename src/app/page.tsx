@@ -38,7 +38,7 @@ const SAMPLE_TRENDING_CARDS: TrendingCardData[] = [
       "https://cards.scryfall.io/art_crop/front/8/9/89f612d6-7c59-4a7b-a87d-45f789e88ba5.jpg",
     category: "price",
     priceJpy: 9120,
-    changeLabel: "-3%",
+    changeLabel: "+3%",
     streakDays: 1,
   },
   {
@@ -65,7 +65,7 @@ export default async function TopPage() {
   return (
     <div className="flex flex-col gap-10">
       <section>
-        <h2 className="mb-3 text-sm font-medium text-neutral-500">注目カード</h2>
+        <h2 className="mb-3 text-sm font-medium text-neutral-500">継続注目カード</h2>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {trendingCards.map((card) => (
             <TrendingCard key={card.oracleId} card={card} />

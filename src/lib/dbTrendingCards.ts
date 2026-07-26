@@ -3,11 +3,19 @@ import type { TrendingCardData } from "@/components/TrendingCard";
 
 const CARDS_PER_CATEGORY = 2;
 
+// 「注目カードランキング」（src/lib/dbTrendingRanking.ts）が当日時点の合成スコアの瞬間値で
+// 並べているのに対し、こちらは何日連続で値上がり/採用率上昇のトップであり続けているか
+// （streak_days）を主役にして役割を分ける。閾値以上の連続日数があるカードが無い日は
+// 1段階ずつ緩めて、それでも見つからなければ空配列（呼び出し側でサンプルにフォールバック）。
+const STREAK_THRESHOLDS = [3, 2, 1];
+
 /**
  * trending_scores（scripts/compute-trending-scores.mjsが日次で計算）の最新calculated_date分から、
- * トップページの「注目カード」用データを組み立てる。同じカードが複数フォーマットに跨って
- * 上位に来ることがあるため、カテゴリごとにoracle_id単位で変化幅が最大のものだけ残してから
- * 上位CARDS_PER_CATEGORY件に絞る。
+ * トップページの「注目カード」（継続的に値上がり/採用率上昇しているカード）用データを組み立てる。
+ * 値下がり・採用率低下は評価が上がったことを意味しないため、プラスの変化のみを対象にする
+ * （src/lib/dbTrendingRanking.tsと同じ方針）。
+ * 同じカードが複数フォーマットに跨って上位に来ることがあるため、カテゴリごとにoracle_id単位で
+ * 連続日数が最大のものだけ残してから上位CARDS_PER_CATEGORY件に絞る。
  * データがまだ無い（3日分蓄積前・当日分未計算等）場合は空配列を返す（呼び出し側でサンプルに
  * フォールバックする想定）。
  */
@@ -22,26 +30,36 @@ export async function getTrendingCardsFromDb(): Promise<TrendingCardData[]> {
 
   const { data: scoreRows, error } = await supabase
     .from("trending_scores")
-    .select("oracle_id, category, price_change_3d_pct, usage_change_3d_pt, score, streak_days")
+    .select("oracle_id, category, price_change_3d_pct, usage_change_3d_pt, streak_days")
     .eq("calculated_date", latestRow.calculated_date);
   if (error || !scoreRows || scoreRows.length === 0) return [];
 
-  const bestByOracleAndCategory = new Map<string, (typeof scoreRows)[number]>();
-  for (const row of scoreRows) {
+  const risingRows = scoreRows.filter((r) =>
+    r.category === "price" ? (r.price_change_3d_pct ?? 0) > 0 : (r.usage_change_3d_pt ?? 0) > 0,
+  );
+
+  const bestByOracleAndCategory = new Map<string, (typeof risingRows)[number]>();
+  for (const row of risingRows) {
     const key = `${row.oracle_id}|${row.category}`;
     const existing = bestByOracleAndCategory.get(key);
-    if (!existing || Math.abs(row.score) > Math.abs(existing.score)) {
+    if (!existing || row.streak_days > existing.streak_days) {
       bestByOracleAndCategory.set(key, row);
     }
   }
+  const candidates = [...bestByOracleAndCategory.values()];
 
-  const topByCategory = (category: "price" | "usage") =>
-    [...bestByOracleAndCategory.values()]
-      .filter((r) => r.category === category)
-      .sort((a, b) => Math.abs(b.score) - Math.abs(a.score))
+  const topByCategory = (category: "price" | "usage", minStreak: number) =>
+    candidates
+      .filter((r) => r.category === category && r.streak_days >= minStreak)
+      .sort((a, b) => b.streak_days - a.streak_days)
       .slice(0, CARDS_PER_CATEGORY);
 
-  const picked = [...topByCategory("price"), ...topByCategory("usage")];
+  // 閾値を満たすカードが両カテゴリ合わせてCARDS_PER_CATEGORY*2件に届くまで、段階的に緩める
+  let picked: (typeof risingRows)[number][] = [];
+  for (const minStreak of STREAK_THRESHOLDS) {
+    picked = [...topByCategory("price", minStreak), ...topByCategory("usage", minStreak)];
+    if (picked.length >= CARDS_PER_CATEGORY * 2) break;
+  }
   if (picked.length === 0) return [];
 
   const oracleIds = picked.map((r) => r.oracle_id);
