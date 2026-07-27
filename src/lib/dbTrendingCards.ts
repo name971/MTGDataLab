@@ -9,57 +9,85 @@ const CARDS_PER_CATEGORY = 2;
 // 1段階ずつ緩めて、それでも見つからなければ空配列（呼び出し側でサンプルにフォールバック）。
 const STREAK_THRESHOLDS = [3, 2, 1];
 
+// 「継続注目カード」という名前なのに、1日だけの異常値（例: 未解決デッキの大量バックログ解消で
+// 採用率の母数が急増し、その日は全カードで採用率がマイナスになった）でカテゴリごと消えてしまうのは
+// 不自然なので、直近何日か遡って「その日プラスの候補が1件でもあった最新の日」を探す。
+const LOOKBACK_DAYS = 5;
+
+function isoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+interface ScoreRow {
+  oracle_id: string;
+  category: "price" | "usage";
+  price_change_3d_pct: number | null;
+  usage_change_3d_pt: number | null;
+  streak_days: number;
+  calculated_date: string;
+}
+
+function topByCategory(rows: ScoreRow[], category: "price" | "usage", minStreak: number) {
+  return rows
+    .filter((r) => r.category === category && r.streak_days >= minStreak)
+    .sort((a, b) => b.streak_days - a.streak_days)
+    .slice(0, CARDS_PER_CATEGORY);
+}
+
+/** そのカテゴリについて、直近の日から遡って最初にプラスの候補が見つかった日の結果を返す */
+function pickForCategory(rowsByDate: Map<string, ScoreRow[]>, sortedDates: string[], category: "price" | "usage") {
+  for (const date of sortedDates) {
+    const rows = rowsByDate.get(date) ?? [];
+    const bestByOracle = new Map<string, ScoreRow>();
+    for (const row of rows) {
+      const existing = bestByOracle.get(row.oracle_id);
+      if (!existing || row.streak_days > existing.streak_days) bestByOracle.set(row.oracle_id, row);
+    }
+    const candidates = [...bestByOracle.values()];
+    for (const minStreak of STREAK_THRESHOLDS) {
+      const picked = topByCategory(candidates, category, minStreak);
+      if (picked.length > 0) return picked;
+    }
+  }
+  return [];
+}
+
 /**
- * trending_scores（scripts/compute-trending-scores.mjsが日次で計算）の最新calculated_date分から、
- * トップページの「注目カード」（継続的に値上がり/採用率上昇しているカード）用データを組み立てる。
+ * trending_scores（scripts/compute-trending-scores.mjsが日次で計算）から、トップページの
+ * 「注目カード」（継続的に値上がり/採用率上昇しているカード）用データを組み立てる。
  * 値下がり・採用率低下は評価が上がったことを意味しないため、プラスの変化のみを対象にする
  * （src/lib/dbTrendingRanking.tsと同じ方針）。
- * 同じカードが複数フォーマットに跨って上位に来ることがあるため、カテゴリごとにoracle_id単位で
- * 連続日数が最大のものだけ残してから上位CARDS_PER_CATEGORY件に絞る。
- * データがまだ無い（3日分蓄積前・当日分未計算等）場合は空配列を返す（呼び出し側でサンプルに
- * フォールバックする想定）。
+ * 価格・採用率はそれぞれ独立に、直近LOOKBACK_DAYS日の中で最新の「プラス候補が存在する日」を
+ * 採用する（1日だけの異常値でカテゴリごと消えるのを防ぐため）。
+ * データがまだ無い場合は空配列を返す（呼び出し側でサンプルにフォールバックする想定）。
  */
 export async function getTrendingCardsFromDb(): Promise<TrendingCardData[]> {
-  const { data: latestRow } = await supabase
-    .from("trending_scores")
-    .select("calculated_date")
-    .order("calculated_date", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (!latestRow) return [];
+  const today = new Date();
+  const dates: string[] = [];
+  for (let i = 0; i < LOOKBACK_DAYS; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    dates.push(isoDate(d));
+  }
 
   const { data: scoreRows, error } = await supabase
     .from("trending_scores")
-    .select("oracle_id, category, price_change_3d_pct, usage_change_3d_pt, streak_days")
-    .eq("calculated_date", latestRow.calculated_date);
+    .select("oracle_id, category, price_change_3d_pct, usage_change_3d_pt, streak_days, calculated_date")
+    .in("calculated_date", dates)
+    .gt("score", 0); // マイナスの変化は評価が上がったことを意味しないので候補にしない
   if (error || !scoreRows || scoreRows.length === 0) return [];
 
-  const risingRows = scoreRows.filter((r) =>
-    r.category === "price" ? (r.price_change_3d_pct ?? 0) > 0 : (r.usage_change_3d_pt ?? 0) > 0,
-  );
-
-  const bestByOracleAndCategory = new Map<string, (typeof risingRows)[number]>();
-  for (const row of risingRows) {
-    const key = `${row.oracle_id}|${row.category}`;
-    const existing = bestByOracleAndCategory.get(key);
-    if (!existing || row.streak_days > existing.streak_days) {
-      bestByOracleAndCategory.set(key, row);
-    }
+  const rowsByDate = new Map<string, ScoreRow[]>();
+  for (const row of scoreRows as ScoreRow[]) {
+    if (!rowsByDate.has(row.calculated_date)) rowsByDate.set(row.calculated_date, []);
+    rowsByDate.get(row.calculated_date)!.push(row);
   }
-  const candidates = [...bestByOracleAndCategory.values()];
+  const sortedDates = [...rowsByDate.keys()].sort((a, b) => (a < b ? 1 : -1));
 
-  const topByCategory = (category: "price" | "usage", minStreak: number) =>
-    candidates
-      .filter((r) => r.category === category && r.streak_days >= minStreak)
-      .sort((a, b) => b.streak_days - a.streak_days)
-      .slice(0, CARDS_PER_CATEGORY);
-
-  // 閾値を満たすカードが両カテゴリ合わせてCARDS_PER_CATEGORY*2件に届くまで、段階的に緩める
-  let picked: (typeof risingRows)[number][] = [];
-  for (const minStreak of STREAK_THRESHOLDS) {
-    picked = [...topByCategory("price", minStreak), ...topByCategory("usage", minStreak)];
-    if (picked.length >= CARDS_PER_CATEGORY * 2) break;
-  }
+  const picked = [
+    ...pickForCategory(rowsByDate, sortedDates, "price"),
+    ...pickForCategory(rowsByDate, sortedDates, "usage"),
+  ];
   if (picked.length === 0) return [];
 
   const oracleIds = picked.map((r) => r.oracle_id);
@@ -104,7 +132,7 @@ export async function getTrendingCardsFromDb(): Promise<TrendingCardData[]> {
         nameJa: oracle.printed_name_ja ?? oracle.name,
         nameEn: oracle.name,
         artCropUrl,
-        category: row.category as "price" | "usage",
+        category: row.category,
         priceJpy,
         changeLabel,
         streakDays: row.streak_days,

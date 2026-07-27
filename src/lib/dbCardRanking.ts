@@ -26,8 +26,9 @@ const BASIC_LAND_NAMES = new Set([
  * card_usage_stats（採用率）を軸に、そのフォーマットで実際によく使われているカードの
  * ランキングをDBの実データから組み立てる。card_usage_statsに行が無いフォーマットは
  * 空配列を返す（呼び出し側でサンプルデータにフォールバックする想定）。
- * priceChangePct（3日変化率）はtrending_scoresが3日分のスナップショット蓄積待ちのため
- * 常に0（変化なし）を返す。
+ * priceChangePct（3日変化率）はcard_price_snapshotsの最新日と3日前の日付を比較して算出する
+ * （scripts/compute-trending-scores.mjsと同じ方式）。3日前のスナップショットが無いカードは
+ * 変化なし(0)として扱う。
  */
 export async function getCardRankingFromDb(
   format: Format,
@@ -106,9 +107,32 @@ export async function getCardRankingFromDb(
   }
 
   const priceByOracle = new Map<string, number>();
+  let latestDate: string | null = null;
   for (const p of priceRows ?? []) {
     if (!priceByOracle.has(p.oracle_id) && p.jpy_est !== null) {
       priceByOracle.set(p.oracle_id, Number(p.jpy_est));
+      if (latestDate === null || p.date > latestDate) latestDate = p.date;
+    }
+  }
+
+  // 3日前の日付ちょうどのスナップショットと比較する（priceRowsは既に全期間分取得済みなので
+  // 追加クエリ不要）。無ければ変化なし(0)扱い。
+  const priceChangeByOracle = new Map<string, number>();
+  if (latestDate) {
+    const pastDate = new Date(`${latestDate}T00:00:00Z`);
+    pastDate.setUTCDate(pastDate.getUTCDate() - 3);
+    const pastDateStr = pastDate.toISOString().slice(0, 10);
+    const pastPriceByOracle = new Map<string, number>();
+    for (const p of priceRows ?? []) {
+      if (p.date === pastDateStr && p.jpy_est !== null && !pastPriceByOracle.has(p.oracle_id)) {
+        pastPriceByOracle.set(p.oracle_id, Number(p.jpy_est));
+      }
+    }
+    for (const [oracleId, price] of priceByOracle) {
+      const past = pastPriceByOracle.get(oracleId);
+      if (past != null && past !== 0) {
+        priceChangeByOracle.set(oracleId, Math.round(((price - past) / past) * 10000) / 100);
+      }
     }
   }
 
@@ -125,7 +149,7 @@ export async function getCardRankingFromDb(
         nameEn: oracle.name,
         artCropUrl,
         priceJpy,
-        priceChangePct: 0,
+        priceChangePct: priceChangeByOracle.get(oracleId) ?? 0,
         usageRatePct: latestUsageByOracle.get(oracleId) ?? 0,
         colors: colorsFromManaCost(manaCostByOracle.get(oracleId)),
       } satisfies RankingRow;
