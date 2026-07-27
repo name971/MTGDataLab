@@ -27,6 +27,7 @@ export interface RecentDeckSummary {
   standing: string;
   eventName: string;
   format: string;
+  eventDate: string;
 }
 
 export interface ArchetypeInfo {
@@ -52,7 +53,7 @@ export async function getArchetypeById(archetypeId: number): Promise<ArchetypeIn
 export async function getDecksByArchetypeId(archetypeId: number): Promise<RecentDeckSummary[]> {
   const { data, error } = await supabase
     .from("decks")
-    .select("id, player_name, standing, tournaments!inner(event_name, format)")
+    .select("id, player_name, standing, tournaments!inner(event_name, format, event_date)")
     .eq("archetype_id", archetypeId)
     .order("id", { ascending: false });
 
@@ -66,6 +67,7 @@ export async function getDecksByArchetypeId(archetypeId: number): Promise<Recent
       standing: d.standing,
       eventName: tournament?.event_name ?? "",
       format: tournament?.format ?? "",
+      eventDate: tournament?.event_date ?? "",
     };
   });
 }
@@ -109,16 +111,18 @@ export async function getDecksByCardAndFormat(
       standing: deck.standing,
       eventName: tournament.event_name,
       format: tournament.format,
+      eventDate: tournament.event_date,
     });
   }
-  return [...byDeckId.values()];
+  // 新しいイベントほど上に来るよう、開催日の降順で返す
+  return [...byDeckId.values()].sort((a, b) => (a.eventDate < b.eventDate ? 1 : -1));
 }
 
 /** 最近インポートされた実トーナメント戦績デッキの一覧（/decks ページ用） */
 export async function getRecentDecksFromDb(format?: string): Promise<RecentDeckSummary[]> {
   let query = supabase
     .from("decks")
-    .select("id, player_name, standing, tournaments!inner(event_name, format)")
+    .select("id, player_name, standing, tournaments!inner(event_name, format, event_date)")
     .order("id", { ascending: false })
     .limit(20);
 
@@ -137,6 +141,7 @@ export async function getRecentDecksFromDb(format?: string): Promise<RecentDeckS
       standing: d.standing,
       eventName: tournament?.event_name ?? "",
       format: tournament?.format ?? "",
+      eventDate: tournament?.event_date ?? "",
     };
   });
 }

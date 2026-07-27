@@ -11,6 +11,13 @@ function resolvePeriod(raw: string | undefined): PeriodDays {
   return (PERIOD_OPTIONS as readonly number[]).includes(n) ? (n as PeriodDays) : 7;
 }
 
+/** "2026-07-26" -> "7/26" */
+function formatDateShort(isoDate: string): string {
+  if (!isoDate) return "";
+  const [, m, d] = isoDate.split("-");
+  return `${Number(m)}/${Number(d)}`;
+}
+
 export default async function CardDecksPage({
   params,
   searchParams,
@@ -62,13 +69,18 @@ export default async function CardDecksPage({
       {decks.length > 0 ? (
         <ul className="flex flex-col gap-1.5 text-sm">
           {decks.map((deck) => (
-            <li key={deck.deckId}>
-              <Link href={`/decks/${deck.deckId}`} className="hover:underline">
-                {deck.playerName}
-              </Link>
-              <span className="text-neutral-500">
-                {" "}
-                （{deck.standing}） ・ {deck.eventName}
+            <li key={deck.deckId} className="flex items-baseline gap-2">
+              <span className="shrink-0 tabular-nums text-neutral-400">
+                {formatDateShort(deck.eventDate)}
+              </span>
+              <span className="min-w-0">
+                <Link href={`/decks/${deck.deckId}`} className="hover:underline">
+                  {deck.playerName}
+                </Link>
+                <span className="text-neutral-500">
+                  {" "}
+                  （{deck.standing}） ・ {deck.eventName}
+                </span>
               </span>
             </li>
           ))}
