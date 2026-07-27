@@ -272,6 +272,11 @@ CREATE TABLE deck_cards (
 
 CREATE INDEX idx_deck_cards_deck ON deck_cards (deck_id);
 CREATE INDEX idx_deck_cards_oracle ON deck_cards (oracle_id);
+-- scripts/import-deck-cards.mjsが未解決分を"oracle_id IS NULL"でフィルタしつつ"ORDER BY id"で
+-- ページングする（並び順不安定によるデータ欠落を防ぐため）。deck_cardsが91万行を超えた頃から
+-- この2条件の組み合わせに対応するインデックスが無く、実質全表スキャンになってタイムアウトする
+-- ようになった（実際に日次パイプラインが失敗した）。部分インデックスで両方を1本にまとめる。
+CREATE INDEX idx_deck_cards_unresolved_id ON deck_cards (id) WHERE oracle_id IS NULL;
 
 
 -- ════════════════════════════════════════════
