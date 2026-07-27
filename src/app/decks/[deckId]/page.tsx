@@ -4,6 +4,12 @@ import { getDeckDetailFromDb } from "@/lib/dbDeckDetail";
 import DeckDetailView, { type DeckCardDisplay } from "@/components/DeckDetailView";
 import { totalPriceJpy } from "@/lib/deckPricing";
 
+/** "2026-07-26" -> "2026/7/26" */
+function formatDateShort(isoDate: string): string {
+  const [y, m, d] = isoDate.split("-");
+  return `${y}/${Number(m)}/${Number(d)}`;
+}
+
 interface PageDeck {
   title: string;
   subtitle: string;
@@ -16,9 +22,12 @@ async function resolveDeck(deckId: string): Promise<PageDeck | null> {
   if (Number.isInteger(numericId)) {
     const dbDeck = await getDeckDetailFromDb(numericId);
     if (dbDeck) {
+      const dateLabel = dbDeck.eventDate ? formatDateShort(dbDeck.eventDate) : null;
       return {
         title: `${dbDeck.playerName} のデッキ`,
-        subtitle: `${dbDeck.format} ・ ${dbDeck.eventName} ・ ${dbDeck.standing}`,
+        subtitle: [dbDeck.format, dbDeck.eventName, dbDeck.standing, dateLabel]
+          .filter(Boolean)
+          .join(" ・ "),
         cards: dbDeck.cards,
         format: dbDeck.format,
       };

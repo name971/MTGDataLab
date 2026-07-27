@@ -15,6 +15,7 @@ export interface DbDeckCard {
 
 export interface DbDeckDetail {
   eventName: string;
+  eventDate: string;
   format: string;
   playerName: string;
   standing: string;
@@ -155,7 +156,7 @@ export async function getRecentDecksFromDb(format?: string): Promise<RecentDeckS
 export async function getDeckDetailFromDb(deckId: number): Promise<DbDeckDetail | null> {
   const { data: deck, error: deckError } = await supabase
     .from("decks")
-    .select("id, player_name, standing, tournament_id, tournaments(event_name, format)")
+    .select("id, player_name, standing, tournament_id, tournaments(event_name, format, event_date)")
     .eq("id", deckId)
     .maybeSingle();
 
@@ -232,6 +233,7 @@ export async function getDeckDetailFromDb(deckId: number): Promise<DbDeckDetail 
 
   return {
     eventName: tournament?.event_name ?? "",
+    eventDate: tournament?.event_date ?? "",
     format: tournament?.format ?? "",
     playerName: deck.player_name,
     standing: deck.standing,
