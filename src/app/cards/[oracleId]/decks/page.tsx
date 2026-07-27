@@ -11,11 +11,11 @@ function resolvePeriod(raw: string | undefined): PeriodDays {
   return (PERIOD_OPTIONS as readonly number[]).includes(n) ? (n as PeriodDays) : 7;
 }
 
-/** "2026-07-26" -> "7/26" */
+/** "2026-07-26" -> "2026/7/26" */
 function formatDateShort(isoDate: string): string {
   if (!isoDate) return "";
-  const [, m, d] = isoDate.split("-");
-  return `${Number(m)}/${Number(d)}`;
+  const [y, m, d] = isoDate.split("-");
+  return `${y}/${Number(m)}/${Number(d)}`;
 }
 
 export default async function CardDecksPage({
