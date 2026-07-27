@@ -14,6 +14,8 @@ export interface TrendingCardData {
   priceJpy: number;
   changeLabel: string;
   streakDays: number;
+  /** この結果がどのcalculated_dateのデータを採用したものか（フォールバックで前日以前になることがある） */
+  asOfDate: string;
 }
 
 const CATEGORY_LABEL: Record<TrendingCardData["category"], string> = {

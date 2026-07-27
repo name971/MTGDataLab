@@ -18,6 +18,7 @@ const SAMPLE_TRENDING_CARDS: TrendingCardData[] = [
     priceJpy: 1840,
     changeLabel: "+12%",
     streakDays: 3,
+    asOfDate: "2026-01-01",
   },
   {
     oracleId: "this-town-aint-big-enough",
@@ -29,6 +30,7 @@ const SAMPLE_TRENDING_CARDS: TrendingCardData[] = [
     priceJpy: 620,
     changeLabel: "+8pt",
     streakDays: 1,
+    asOfDate: "2026-01-01",
   },
   {
     oracleId: "force-of-will",
@@ -40,6 +42,7 @@ const SAMPLE_TRENDING_CARDS: TrendingCardData[] = [
     priceJpy: 9120,
     changeLabel: "+3%",
     streakDays: 1,
+    asOfDate: "2026-01-01",
   },
   {
     oracleId: "solitude",
@@ -51,6 +54,7 @@ const SAMPLE_TRENDING_CARDS: TrendingCardData[] = [
     priceJpy: 5100,
     changeLabel: "+5pt",
     streakDays: 2,
+    asOfDate: "2026-01-01",
   },
 ];
 

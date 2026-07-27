@@ -136,6 +136,7 @@ export async function getTrendingCardsFromDb(): Promise<TrendingCardData[]> {
         priceJpy,
         changeLabel,
         streakDays: row.streak_days,
+        asOfDate: row.calculated_date,
       } satisfies TrendingCardData;
     })
     .filter((c): c is TrendingCardData => c !== null);
