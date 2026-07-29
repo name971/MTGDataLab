@@ -11,13 +11,17 @@ import { mkdir, readFile, writeFile, stat } from "node:fs/promises";
 import { createReadStream, createWriteStream } from "node:fs";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { createGunzip } from "node:zlib";
 import { StringDecoder } from "node:string_decoder";
 import path from "node:path";
 
 const CACHE_DIR = path.join(process.cwd(), ".cache");
 // default_cardsは英語版が存在するカードの日本語プリントを含まないため、全言語を含むall_cardsを使う。
 // ダウンロードサイズは大きくなるが、読み込み時にen/ja以外は保持せず破棄するのでメモリは膨らまない。
-export const DATA_FILE = path.join(CACHE_DIR, "scryfall-all-cards.json");
+// 2026-07-29頃、Scryfall側がbulk dataの配布形式をプレーンJSON配列からgzip圧縮JSONL
+// （1行1オブジェクト、jsonl_download_uri/compressed_sizeフィールド）に変更した。ダウンロード時に
+// 解凍してこれまで通りのファイル名で保存し、パーサー側だけJSONL読み取りに切り替える。
+export const DATA_FILE = path.join(CACHE_DIR, "scryfall-all-cards.jsonl");
 const META_FILE = path.join(CACHE_DIR, "scryfall-all-cards.meta.json");
 
 const SCRYFALL_HEADERS = {
@@ -74,93 +78,49 @@ export async function ensureBulkData({ forceRefresh = false } = {}) {
   }
 
   console.log(
-    `Scryfallバルクデータをダウンロード中... (${(remoteMeta.size / 1024 / 1024).toFixed(0)}MB, 更新日時 ${remoteMeta.updated_at})`,
+    `Scryfallバルクデータをダウンロード中... (${(remoteMeta.compressed_size / 1024 / 1024).toFixed(0)}MB gzip, 更新日時 ${remoteMeta.updated_at})`,
   );
-  const res = await fetch(remoteMeta.download_uri, { headers: SCRYFALL_HEADERS });
+  const res = await fetch(remoteMeta.jsonl_download_uri, { headers: SCRYFALL_HEADERS });
   if (!res.ok) throw new Error(`バルクデータのダウンロードに失敗: ${res.status}`);
   // ファイルが500MB超でNodeの文字列長上限（約536MB）に達するため、
-  // res.text()で丸ごと文字列化せずストリームのままディスクへ書き出す
-  await pipeline(Readable.fromWeb(res.body), createWriteStream(DATA_FILE));
+  // res.text()で丸ごと文字列化せずストリームのままディスクへ書き出す（gzipはその場で解凍する）
+  await pipeline(Readable.fromWeb(res.body), createGunzip(), createWriteStream(DATA_FILE));
   await writeFile(META_FILE, JSON.stringify({ updated_at: remoteMeta.updated_at }));
   console.log("Scryfallバルクデータのダウンロード完了");
 }
 
 /**
- * ファイル全体をトップレベルのJSON配列とみなし、要素（オブジェクト）が1件確定するたびに
- * onObjectを同期的に呼び出す軽量ストリーミングパーサー。
- *
- * 外部ライブラリ（stream-json）をNode.js 22/24 + このバルクデータ規模（2GB超）で使うと、
- * .pipe()を跨いだバックプレッシャーが効かず消費が追いつく前にオブジェクトが溜まり続けて
- * ヒープが枯渇する現象が再現したため、依存を持たない最小限の実装に置き換えている。
- * バッファは「現在パース中の未完了オブジェクトの残り」しか保持しないため、
- * ファイルサイズに関わらずメモリ使用量は一定に保たれる。
+ * JSONL（1行1オブジェクト）ファイルを1行ずつストリーミングパースし、行が1件確定するたびに
+ * onObjectを同期的に呼び出す。2026-07-29頃のScryfall側のbulk data形式変更（プレーンJSON配列
+ * →gzip圧縮JSONL）に合わせて、以前の「トップレベルJSON配列の要素ごとに区切る」状態機械から
+ * 単純な改行区切りパースに置き換えた（JSONLはオブジェクト内部に生の改行を含まない仕様のため、
+ * 行の途中でJSON構造の深さを追跡する必要が無く、これで十分かつより単純）。
+ * バッファは「まだ改行が来ていない現在行の断片」しか保持しないため、ファイルサイズに
+ * 関わらずメモリ使用量は一定に保たれる。
  */
 export async function forEachJsonArrayObject(filePath, onObject) {
   const decoder = new StringDecoder("utf8");
-
-  // buffer は「まだ処理していない残り」だけを保持する。オブジェクトが1件完成するたびに
-  // 消費済み部分を切り捨てるので、ファイルサイズに関わらずbufferは小さいまま保たれる。
   let buffer = "";
-  let pos = 0;
-  let depth = 0;
-  let objectStart = -1;
-  let inString = false;
-  let escapeNext = false;
 
-  function consumeAvailable() {
-    while (pos < buffer.length) {
-      const ch = buffer[pos];
-
-      if (objectStart === -1) {
-        // トップレベルのオブジェクト開始待ち（配列の[やカンマ、空白は読み飛ばす）
-        if (ch === "{") {
-          objectStart = pos;
-          depth = 1;
-          inString = false;
-          escapeNext = false;
-        }
-        pos++;
-        continue;
-      }
-
-      if (inString) {
-        if (escapeNext) escapeNext = false;
-        else if (ch === "\\") escapeNext = true;
-        else if (ch === '"') inString = false;
-        pos++;
-        continue;
-      }
-
-      if (ch === '"') {
-        inString = true;
-      } else if (ch === "{") {
-        depth++;
-      } else if (ch === "}") {
-        depth--;
-        if (depth === 0) {
-          onObject(JSON.parse(buffer.slice(objectStart, pos + 1)));
-          objectStart = -1;
-        }
-      }
-      pos++;
+  function consumeLines() {
+    let newlineIndex;
+    while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
+      const line = buffer.slice(0, newlineIndex).trim();
+      buffer = buffer.slice(newlineIndex + 1);
+      if (line.length > 0) onObject(JSON.parse(line));
     }
-
-    // 消費済みの先頭部分を切り捨ててバッファを小さく保つ
-    const keepFrom = objectStart === -1 ? pos : objectStart;
-    buffer = buffer.slice(keepFrom);
-    pos -= keepFrom;
-    if (objectStart !== -1) objectStart -= keepFrom;
   }
 
   await new Promise((resolve, reject) => {
     const stream = createReadStream(filePath);
     stream.on("data", (chunk) => {
       buffer += decoder.write(chunk);
-      consumeAvailable();
+      consumeLines();
     });
     stream.on("end", () => {
       buffer += decoder.end();
-      consumeAvailable();
+      const line = buffer.trim();
+      if (line.length > 0) onObject(JSON.parse(line));
       resolve();
     });
     stream.on("error", reject);
@@ -485,8 +445,11 @@ export function toCardRow(card, oracleId) {
     image_uri_art_crop: img?.art_crop ?? null,
     mana_cost: card.mana_cost ?? card.card_faces?.[0]?.mana_cost ?? null,
     type_line: card.type_line ?? card.card_faces?.[0]?.type_line ?? null,
-    power: card.power ?? card.card_faces?.[0]?.power ?? null,
-    toughness: card.toughness ?? card.card_faces?.[0]?.toughness ?? null,
+    // Battle→クリーチャーやSaga→クリーチャー等の変身カードは表面(faces[0])が
+    // クリーチャーではなくパワー/タフネスを持たないため、裏面(faces[1])も見る。
+    power: card.power ?? card.card_faces?.[0]?.power ?? card.card_faces?.[1]?.power ?? null,
+    toughness:
+      card.toughness ?? card.card_faces?.[0]?.toughness ?? card.card_faces?.[1]?.toughness ?? null,
     legalities: card.legalities ?? {},
     released_at: card.released_at ?? null,
     finishes: card.finishes ?? [],
