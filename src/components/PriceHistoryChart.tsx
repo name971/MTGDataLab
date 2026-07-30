@@ -109,6 +109,8 @@ export default function PriceHistoryChart({
 }
 
 function ChartSvg({ points }: { points: PricePoint[] }) {
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+
   const prices = points.map((p) => p.jpy);
   const minPrice = Math.min(...prices);
   const maxPrice = Math.max(...prices);
@@ -122,14 +124,41 @@ function ChartSvg({ points }: { points: PricePoint[] }) {
       ? PADDING.left + (WIDTH - PADDING.left - PADDING.right) / 2
       : PADDING.left + (i / (points.length - 1)) * (WIDTH - PADDING.left - PADDING.right);
 
+  // マウス位置に一番近い点を探す（点の間隔がまばらでも操作しやすいよう、X座標だけで判定する）
+  function handlePointerMove(e: React.PointerEvent<SVGSVGElement>) {
+    const svg = e.currentTarget;
+    const rect = svg.getBoundingClientRect();
+    const relativeX = ((e.clientX - rect.left) / rect.width) * WIDTH;
+    let closest = 0;
+    let closestDist = Infinity;
+    for (let i = 0; i < points.length; i++) {
+      const dist = Math.abs(xFor(i) - relativeX);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closest = i;
+      }
+    }
+    setHoverIndex(closest);
+  }
+
   const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"}${xFor(i)},${yFor(p.jpy)}`).join(" ");
   const latest = points[points.length - 1];
   const first = points[0];
   const diff = latest.jpy - first.jpy;
+  const hovered = hoverIndex !== null ? points[hoverIndex] : null;
+
+  // ツールチップがSVGの右端で見切れないよう、カーソルに近い点が右寄りなら吹き出しを左側に出す
+  const tooltipAnchorsRight = hoverIndex !== null && xFor(hoverIndex) > WIDTH * 0.6;
 
   return (
     <div className="overflow-x-auto">
-      <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="w-full min-w-[400px]" role="img">
+      <svg
+        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+        className="w-full min-w-[400px]"
+        role="img"
+        onPointerMove={handlePointerMove}
+        onPointerLeave={() => setHoverIndex(null)}
+      >
         <line
           x1={PADDING.left}
           y1={HEIGHT - PADDING.bottom}
@@ -145,7 +174,13 @@ function ChartSvg({ points }: { points: PricePoint[] }) {
         </text>
         <path d={linePath} fill="none" className={diff >= 0 ? "stroke-teal-700" : "stroke-red-700"} strokeWidth={2} />
         {points.map((p, i) => (
-          <circle key={p.date} cx={xFor(i)} cy={yFor(p.jpy)} r={2.5} className={diff >= 0 ? "fill-teal-700" : "fill-red-700"} />
+          <circle
+            key={p.date}
+            cx={xFor(i)}
+            cy={yFor(p.jpy)}
+            r={hoverIndex === i ? 4 : 2.5}
+            className={diff >= 0 ? "fill-teal-700" : "fill-red-700"}
+          />
         ))}
         <text x={PADDING.left} y={HEIGHT - 6} className="fill-neutral-400 text-[10px]">
           {first.date}
@@ -153,6 +188,29 @@ function ChartSvg({ points }: { points: PricePoint[] }) {
         <text x={WIDTH - PADDING.right} y={HEIGHT - 6} textAnchor="end" className="fill-neutral-400 text-[10px]">
           {latest.date}
         </text>
+
+        {hovered && (
+          <g pointerEvents="none">
+            <line
+              x1={xFor(hoverIndex!)}
+              y1={PADDING.top}
+              x2={xFor(hoverIndex!)}
+              y2={HEIGHT - PADDING.bottom}
+              className="stroke-neutral-300"
+              strokeDasharray="3 3"
+            />
+            <circle cx={xFor(hoverIndex!)} cy={yFor(hovered.jpy)} r={4} className="fill-white stroke-neutral-700" strokeWidth={1.5} />
+            <g transform={`translate(${xFor(hoverIndex!) + (tooltipAnchorsRight ? -104 : 8)}, ${Math.max(PADDING.top, yFor(hovered.jpy) - 32)})`}>
+              <rect width={96} height={34} rx={4} className="fill-neutral-800" opacity={0.92} />
+              <text x={8} y={13} className="fill-white text-[10px] font-medium">
+                ¥{hovered.jpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
+              </text>
+              <text x={8} y={26} className="fill-neutral-300 text-[9px]">
+                {hovered.date}
+              </text>
+            </g>
+          </g>
+        )}
       </svg>
     </div>
   );
