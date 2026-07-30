@@ -378,7 +378,14 @@ export function findPriceById(index, scryfallId) {
   return index.priceById.get(scryfallId) ?? null;
 }
 
+// Transform/Adventure/Modal DFCは「表面（クリーチャー等）だけの名前」を表示するのが慣習
+// （例: Fable of the Mirror-Breaker、Bonecrusher Giant）だが、split/aftermath（Wear // Tear等の
+// 融合カード）は両半分が対等でどちらも省略されないのが慣習のため、トップレベルの
+// 結合済みname（Scryfallが自動生成する"X // Y"形式）を使う必要がある。
+const COMBINED_NAME_LAYOUTS = new Set(["split", "aftermath"]);
+
 export function frontFaceName(card) {
+  if (COMBINED_NAME_LAYOUTS.has(card.layout)) return card.name;
   return card.card_faces?.[0]?.name ?? card.name;
 }
 
@@ -395,7 +402,10 @@ function stripFurigana(name) {
 }
 
 export function frontFacePrintedName(card) {
-  return stripFurigana(card.card_faces?.[0]?.printed_name ?? card.printed_name ?? null);
+  const printed = COMBINED_NAME_LAYOUTS.has(card.layout)
+    ? (card.printed_name ?? card.card_faces?.[0]?.printed_name ?? null)
+    : (card.card_faces?.[0]?.printed_name ?? card.printed_name ?? null);
+  return stripFurigana(printed);
 }
 
 /**

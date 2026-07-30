@@ -31,7 +31,13 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 const SLUG_PREFIX = process.argv[2] ?? "pioneer";
 const FORMAT = process.argv[3] ?? "Pioneer";
 
-const FETCH_HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; jp-mtgstocks/0.1)" };
+// Connection: keep-aliveのまま同じTCP接続を使い回すと、mtgo.com側が時々セッション確立目的の
+// 302を返して失敗することが実際に確認された（間隔を空けても再現し、Connection: closeで
+// 都度新規接続にしたら解消した）。接続を使い回さないよう明示的に指定する。
+const FETCH_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (compatible; jp-mtgstocks/0.1)",
+  Connection: "close",
+};
 
 async function supabaseUpsert(table, rows, conflictColumn) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?on_conflict=${conflictColumn}`, {
@@ -94,6 +100,16 @@ function extractJsonObject(text, start) {
   return null;
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// 64件前後のページを連続で叩くと、mtgo.com側が時々セッション確立目的の302を返して失敗することが
+// ある（実際にGitHub Actionsで頻発した）。1秒未満の間隔での即時リトライは検証の結果ほぼ無意味
+// だったため（同じ理由で再度失敗するだけ）、ここでは1回だけ試す。失敗分の再挑戦は
+// fetchAllWithRetry側で数秒空けてバッチ単位にまとめて行う。
+const FETCH_INTERVAL_MS = 400;
+
 async function fetchDecklistData(path) {
   const res = await fetch(`https://www.mtgo.com${path}`, { headers: FETCH_HEADERS });
   if (!res.ok) return null;
@@ -140,6 +156,33 @@ function normalizeEventData(data) {
   return { eventName, eventDate, decks };
 }
 
+// /decklistsの一覧ページには直近の一定件数しか載らないため、この実行で取得に失敗したイベントは
+// 数日後には一覧から押し出されて二度と拾えなくなる（実際に日次実行を続けるうちに取りこぼしが
+// 蓄積していった）。翌日の再実行に賭けるのではなく、この実行の中で失敗分だけを対象に
+// 間隔を空けて複数回リトライし、その場で拾い切る。
+const BATCH_RETRY_PASSES = 4;
+const BATCH_RETRY_DELAY_MS = 5000;
+
+async function fetchAllWithRetry(paths) {
+  const results = new Map();
+  let remaining = paths;
+  for (let pass = 1; pass <= BATCH_RETRY_PASSES && remaining.length > 0; pass++) {
+    if (pass > 1) {
+      console.log(`  ...${remaining.length}件を再挑戦（${pass}回目）`);
+      await sleep(BATCH_RETRY_DELAY_MS);
+    }
+    const stillFailed = [];
+    for (let i = 0; i < remaining.length; i++) {
+      if (i > 0) await sleep(FETCH_INTERVAL_MS);
+      const rawData = await fetchDecklistData(remaining[i]);
+      if (rawData) results.set(remaining[i], rawData);
+      else stillFailed.push(remaining[i]);
+    }
+    remaining = stillFailed;
+  }
+  return results;
+}
+
 async function main() {
   console.log(`mtgo.com/decklists: ${SLUG_PREFIX}系の完了済みイベントを取得中...`);
   const indexRes = await fetch("https://www.mtgo.com/decklists", { headers: FETCH_HEADERS });
@@ -150,15 +193,17 @@ async function main() {
   const paths = [...new Set([...indexHtml.matchAll(linkPattern)].map((m) => m[1]))];
   console.log(`対象イベント: ${paths.length}件`);
 
+  const dataByPath = await fetchAllWithRetry(paths);
+
   let tournamentCount = 0;
   let deckCount = 0;
   let cardCount = 0;
   let skippedTournaments = 0;
 
   for (const path of paths) {
-    const rawData = await fetchDecklistData(path);
+    const rawData = dataByPath.get(path);
     if (!rawData || !rawData.decklists?.length) {
-      console.error(`✗ ${path}: データ取得できず`);
+      console.error(`✗ ${path}: データ取得できず（${BATCH_RETRY_PASSES}回リトライ後も失敗）`);
       continue;
     }
     const data = normalizeEventData(rawData);

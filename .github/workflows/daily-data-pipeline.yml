@@ -32,62 +32,83 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # デッキ取り込み（TopDeck.gg/mtgo.com）は外部サイト依存で失敗しやすい。以前は価格スナップ
+      # ショットがこれより後ろにあったため、デッキ取り込みが1件失敗しただけでジョブ全体が止まり、
+      # 本来は無関係なはずの価格データまで日次で取得できなくなる事故が実際に起きた。
+      # 価格スナップショットはcards/card_printsのみに依存し当日のデッキ取り込みと無関係なので、
+      # 先に済ませておく。
+      - name: Snapshot today's card prices
+        run: node scripts/snapshot-prices.mjs
+
+      - name: Snapshot today's print prices (all versions)
+        run: node scripts/snapshot-print-prices.mjs
+
       # import-tournaments.mjsは引数無しだとStandardのみ取得する。Commanderはmtgo.comに
       # 無い形式でTopDeck.gg取り込みだけが頼りのため、明示的に別ステップで呼ぶ
       # （呼び忘れると採用率/使用デッキが古いまま静かに止まる。実際に約2週間気づかず止まっていた）。
+      # continue-on-error: 1フォーマットの取り込み失敗で他フォーマット・後続の集計まで
+      # 止まらないようにする（外部サイト依存で個別に失敗しうるため）。
       - name: Import tournaments (TopDeck.gg, Standard)
+        continue-on-error: true
         run: node scripts/import-tournaments.mjs Standard
 
       - name: Import tournaments (TopDeck.gg, Commander)
+        continue-on-error: true
         run: node scripts/import-tournaments.mjs Commander
 
       # import-mtgo-decklists.mjsは引数無しだとPioneerのみ取得する。mtgo.com/decklistsには
       # Standard/Modern/Legacy/Vintageの分もあるため、対応フォーマット全部を個別に呼ぶ
       # （Commanderはmtgo.comに無い形式のためTopDeck.gg取り込みのみに任せる）。
       - name: Import MTGO decklists (Standard)
+        continue-on-error: true
         run: node scripts/import-mtgo-decklists.mjs standard Standard
 
       - name: Import MTGO decklists (Pioneer)
+        continue-on-error: true
         run: node scripts/import-mtgo-decklists.mjs pioneer Pioneer
 
       - name: Import MTGO decklists (Modern)
+        continue-on-error: true
         run: node scripts/import-mtgo-decklists.mjs modern Modern
 
       - name: Import MTGO decklists (Legacy)
+        continue-on-error: true
         run: node scripts/import-mtgo-decklists.mjs legacy Legacy
 
       - name: Import MTGO decklists (Vintage)
+        continue-on-error: true
         run: node scripts/import-mtgo-decklists.mjs vintage Vintage
 
       - name: Resolve deck card oracle_ids
+        continue-on-error: true
         run: node scripts/import-deck-cards.mjs
 
       # classify-decks.ts / classify-decks-commander.mjsはどのワークフローにも組み込まれておらず、
       # 手動実行でしかarchetype_idが更新されていなかった（アーキタイプランキングの分母に
       # 未分類デッキが4〜6割溜まっていた原因）。日次で回して毎日分類する。
       - name: Classify decks (Standard)
+        continue-on-error: true
         run: npx tsx scripts/classify-decks.ts Standard
 
       - name: Classify decks (Pioneer)
+        continue-on-error: true
         run: npx tsx scripts/classify-decks.ts Pioneer
 
       - name: Classify decks (Modern)
+        continue-on-error: true
         run: npx tsx scripts/classify-decks.ts Modern
 
       - name: Classify decks (Legacy)
+        continue-on-error: true
         run: npx tsx scripts/classify-decks.ts Legacy
 
       - name: Classify decks (Vintage)
+        continue-on-error: true
         run: npx tsx scripts/classify-decks.ts Vintage
 
       - name: Classify decks (Commander)
+        continue-on-error: true
         run: node scripts/classify-decks-commander.mjs
-
-      - name: Snapshot today's card prices
-        run: node scripts/snapshot-prices.mjs
-
-      - name: Snapshot today's print prices (all versions)
-        run: node scripts/snapshot-print-prices.mjs
 
       - name: Compute usage stats / archetype price stats
         run: node scripts/compute-deck-stats.mjs
