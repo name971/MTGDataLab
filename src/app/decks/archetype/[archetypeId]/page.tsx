@@ -9,6 +9,15 @@ import {
 import DeckDetailView from "@/components/DeckDetailView";
 import { totalPriceJpy } from "@/lib/deckPricing";
 
+/** "2026-07-26" -> "2026/7/26" */
+function formatDateShort(isoDate: string): string {
+  if (!isoDate) return "";
+  const [y, m, d] = isoDate.split("-");
+  return `${y}/${Number(m)}/${Number(d)}`;
+}
+
+const OTHER_DECKS_VISIBLE_COUNT = 10;
+
 /** "4-0" "2-1-1" 形式のstandingを勝率（勝ち数優先、同点なら負け数が少ない方）で比較する */
 function winRateRank(standing: string): { wins: number; losses: number } {
   const [wins, losses] = standing.split("-").map((n) => parseInt(n, 10) || 0);
@@ -51,7 +60,12 @@ export default async function ArchetypeDetailPage({
   const decks = await getDecksByArchetypeId(numericId);
   const bestDeck = pickBestDeck(decks);
   const bestDeckDetail = bestDeck ? await getDeckDetailFromDb(bestDeck.deckId) : null;
-  const otherDecks = decks.filter((d) => d.deckId !== bestDeck?.deckId);
+  // 新しい開催日順（開催日が同じ場合はdeckId降順）に並べてから表示する
+  const otherDecks = decks
+    .filter((d) => d.deckId !== bestDeck?.deckId)
+    .sort((a, b) => (a.eventDate === b.eventDate ? b.deckId - a.deckId : a.eventDate < b.eventDate ? 1 : -1));
+  const visibleOtherDecks = otherDecks.slice(0, OTHER_DECKS_VISIBLE_COUNT);
+  const collapsedOtherDecks = otherDecks.slice(OTHER_DECKS_VISIBLE_COUNT);
 
   return (
     <div className="flex flex-col gap-4">
@@ -95,18 +109,48 @@ export default async function ArchetypeDetailPage({
         <div className="mt-4">
           <h2 className="mb-2 text-sm font-medium text-neutral-500">他のデッキ</h2>
           <ul className="flex flex-col gap-1 text-sm">
-            {otherDecks.map((deck) => (
-              <li key={deck.deckId}>
-                <Link href={`/decks/${deck.deckId}`} className="hover:underline">
-                  {deck.playerName}
-                </Link>
-                <span className="text-neutral-500">
-                  {" "}
-                  ({deck.standing}) ・ {deck.eventName}
+            {visibleOtherDecks.map((deck) => (
+              <li key={deck.deckId} className="flex items-baseline gap-2">
+                <span className="shrink-0 tabular-nums text-neutral-400">
+                  {formatDateShort(deck.eventDate)}
+                </span>
+                <span className="min-w-0">
+                  <Link href={`/decks/${deck.deckId}`} className="hover:underline">
+                    {deck.playerName}
+                  </Link>
+                  <span className="text-neutral-500">
+                    {" "}
+                    ({deck.standing}) ・ {deck.eventName}
+                  </span>
                 </span>
               </li>
             ))}
           </ul>
+          {collapsedOtherDecks.length > 0 && (
+            <details className="mt-1 text-sm">
+              <summary className="cursor-pointer text-neutral-500 hover:underline">
+                残り{collapsedOtherDecks.length}件を表示
+              </summary>
+              <ul className="mt-1 flex flex-col gap-1">
+                {collapsedOtherDecks.map((deck) => (
+                  <li key={deck.deckId} className="flex items-baseline gap-2">
+                    <span className="shrink-0 tabular-nums text-neutral-400">
+                      {formatDateShort(deck.eventDate)}
+                    </span>
+                    <span className="min-w-0">
+                      <Link href={`/decks/${deck.deckId}`} className="hover:underline">
+                        {deck.playerName}
+                      </Link>
+                      <span className="text-neutral-500">
+                        {" "}
+                        ({deck.standing}) ・ {deck.eventName}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </div>
       )}
     </div>
