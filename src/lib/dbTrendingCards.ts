@@ -14,6 +14,22 @@ const STREAK_THRESHOLDS = [3, 2, 1];
 // 不自然なので、直近何日か遡って「その日プラスの候補が1件でもあった最新の日」を探す。
 const LOOKBACK_DAYS = 5;
 
+// 基本土地は採用率が常に高水準で推移し、短期変化は本質的にノイズなため除外する
+// （src/lib/dbCardRanking.ts・dbTrendingRanking.tsの同名セットと同じ判断基準）
+const BASIC_LAND_NAMES = new Set([
+  "Plains",
+  "Island",
+  "Swamp",
+  "Mountain",
+  "Forest",
+  "Wastes",
+  "Snow-Covered Plains",
+  "Snow-Covered Island",
+  "Snow-Covered Swamp",
+  "Snow-Covered Mountain",
+  "Snow-Covered Forest",
+]);
+
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
@@ -77,8 +93,15 @@ export async function getTrendingCardsFromDb(): Promise<TrendingCardData[]> {
     .gt("score", 0); // マイナスの変化は評価が上がったことを意味しないので候補にしない
   if (error || !scoreRows || scoreRows.length === 0) return [];
 
+  const { data: basicLandOracles } = await supabase
+    .from("card_oracles")
+    .select("oracle_id")
+    .in("name", [...BASIC_LAND_NAMES]);
+  const basicLandOracleIds = new Set((basicLandOracles ?? []).map((o) => o.oracle_id));
+
   const rowsByDate = new Map<string, ScoreRow[]>();
   for (const row of scoreRows as ScoreRow[]) {
+    if (basicLandOracleIds.has(row.oracle_id)) continue;
     if (!rowsByDate.has(row.calculated_date)) rowsByDate.set(row.calculated_date, []);
     rowsByDate.get(row.calculated_date)!.push(row);
   }
