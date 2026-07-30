@@ -11,7 +11,10 @@ on:
 jobs:
   pipeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # MTGO取り込みのレート制限対策（バッチ単位リトライ）で1フォーマットあたり10分超かかる
+    # ようになり、45分だと後半（デッキ解決・アーキタイプ分類・集計）まで到達できず
+    # タイムアウトでキャンセルされる事故が実際に発生した。90分に引き上げる。
+    timeout-minutes: 90
     env:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
