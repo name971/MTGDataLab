@@ -182,9 +182,43 @@ export default function CardHero({
                 )}
               </div>
               {(hasNormalPrice || hasFoilPrice) && (
-                <div className="flex shrink-0 gap-1">
+                <div className="flex shrink-0 items-center gap-1">
                   {(["normal", "foil"] as const).map((f) => {
                     const available = f === "normal" ? hasNormalPrice : hasFoilPrice;
+                    if (f === "foil") {
+                      // タブの形・文字色・枠線は「通常」タブと完全に揃え、中の塗りつぶしだけ
+                      // 虹色にしてFoilらしさを出す。
+                      return (
+                        <button
+                          key={f}
+                          onClick={() => available && setFinish(f)}
+                          disabled={!available}
+                          className={`relative rounded-md border px-2 py-1 text-xs ${
+                            !available
+                              ? "cursor-not-allowed border-neutral-200 text-neutral-300 opacity-50 grayscale"
+                              : effectiveFinish === "foil"
+                                ? "border-neutral-500 text-neutral-900"
+                                : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
+                          }`}
+                          style={{
+                            background:
+                              "linear-gradient(115deg, #ff008033, #ff8c0033, #ffed0033, #00ff8c33, #00c8ff33, #8c00ff33)",
+                          }}
+                        >
+                          Foil
+                          {!available && (
+                            <svg
+                              viewBox="0 0 100 100"
+                              preserveAspectRatio="none"
+                              className="pointer-events-none absolute inset-0 h-full w-full text-neutral-700"
+                            >
+                              <line x1="4" y1="4" x2="96" y2="96" stroke="currentColor" strokeWidth="4" />
+                              <line x1="96" y1="4" x2="4" y2="96" stroke="currentColor" strokeWidth="4" />
+                            </svg>
+                          )}
+                        </button>
+                      );
+                    }
                     return (
                       <button
                         key={f}
@@ -198,7 +232,7 @@ export default function CardHero({
                               : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
                         }`}
                       >
-                        {f === "normal" ? "通常" : "Foil"}
+                        通常
                         {!available && (
                           // ボタンの枠全体に対角線のバツ印を重ねて「この選択肢自体が存在しない」ことを見せる
                           <svg
