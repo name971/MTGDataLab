@@ -142,15 +142,31 @@ export default function CardHero({
       <div className="flex flex-1 flex-col gap-4">
         <div className="flex flex-col gap-6 sm:flex-row">
           {current.imageUrl && (
-            <Image
-              src={current.imageUrl}
-              alt={defaultPrint.nameEn}
-              width={223}
-              height={311}
-              className={`h-fit w-[180px] shrink-0 border border-neutral-200 object-cover ${
+            <div
+              className={`relative h-fit w-[180px] shrink-0 overflow-hidden border border-neutral-200 ${
                 SQUARE_CORNER_SET_CODES.has(current.setCode) ? "" : "rounded-xl"
               }`}
-            />
+            >
+              <Image
+                src={current.imageUrl}
+                alt={defaultPrint.nameEn}
+                width={223}
+                height={311}
+                className="h-fit w-full object-cover"
+              />
+              {effectiveFinish === "foil" && (
+                // Foil選択中であることが一目で分かるよう、虹色のホログラム風テクスチャを
+                // 半透明で重ねる（実物のFoilカードの質感を模した演出。クリックは透過させる）。
+                <div
+                  className="pointer-events-none absolute inset-0 opacity-70 mix-blend-overlay"
+                  style={{
+                    background:
+                      "repeating-linear-gradient(115deg, #ff0080 0%, #ff8c00 14%, #ffed00 28%, #00ff8c 42%, #00c8ff 56%, #8c00ff 70%, #ff0080 84%)",
+                    backgroundSize: "200% 200%",
+                  }}
+                />
+              )}
+            </div>
           )}
           <div className="flex-1">
             <div className="flex items-start justify-between gap-3">
