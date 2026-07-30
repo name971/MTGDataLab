@@ -23,36 +23,6 @@ export default function Footer() {
           Coastによる承認・後援を受けたものではありません。使用されている素材の一部はWizards
           of the Coastの所有物です。©Wizards of the Coast LLC.
         </p>
-        <p>
-          カードデータ・画像:{" "}
-          <a
-            href="https://scryfall.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline hover:text-neutral-700"
-          >
-            Scryfall
-          </a>
-          {" ・ "}トーナメントデータ:{" "}
-          <a
-            href="https://topdeck.gg"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline hover:text-neutral-700"
-          >
-            TopDeck.gg
-          </a>
-          ・mtgo.com{" ・ "}為替レート:{" "}
-          <a
-            href="https://frankfurter.dev"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline hover:text-neutral-700"
-          >
-            Frankfurter
-          </a>
-          。価格は為替換算による参考値です。
-        </p>
       </div>
     </footer>
   );
