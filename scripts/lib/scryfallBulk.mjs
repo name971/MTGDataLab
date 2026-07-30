@@ -360,6 +360,16 @@ export function findJapanesePrint(index, oracleId, enSetCode, enCollectorNumber)
  * 画像には使わずテキスト表示専用としてこの関数で拾う。
  */
 export function findAnyJapaneseName(index, oracleId) {
+  const best = findAnyJapaneseCard(index, oracleId);
+  return best ? frontFacePrintedName(best) : null;
+}
+
+/**
+ * findAnyJapaneseNameと同じ選定基準（名前を持つプリントの中から一番良いもの）で、
+ * 名前だけでなくraw card自体を返す。cards（ルールテキスト等含む行）を組み立てたい
+ * バックフィル用に使う（scripts/backfill-missing-ja-cards.mjs参照）。
+ */
+export function findAnyJapaneseCard(index, oracleId) {
   const byPrint = index.byOracleIdJa.get(oracleId);
   if (!byPrint) return null;
   // printed_nameが欠落しているプリント（Scryfall側のデータ欠け。例: Kamigawa: Neon Dynastyの
@@ -370,7 +380,7 @@ export function findAnyJapaneseName(index, oracleId) {
     if (!frontFacePrintedName(card)) continue;
     if (!best || isBetterRepresentative(card, best)) best = card;
   }
-  return best ? frontFacePrintedName(best) : null;
+  return best;
 }
 
 /** scryfall_idから現在価格だけを引く（snapshot-prices.mjs用の軽量ルックアップ） */
@@ -455,6 +465,7 @@ export function toCardRow(card, oracleId) {
     image_uri_art_crop: img?.art_crop ?? null,
     mana_cost: card.mana_cost ?? card.card_faces?.[0]?.mana_cost ?? null,
     type_line: card.type_line ?? card.card_faces?.[0]?.type_line ?? null,
+    printed_type_line: card.printed_type_line ?? card.card_faces?.[0]?.printed_type_line ?? null,
     // Battle→クリーチャーやSaga→クリーチャー等の変身カードは表面(faces[0])が
     // クリーチャーではなくパワー/タフネスを持たないため、裏面(faces[1])も見る。
     power: card.power ?? card.card_faces?.[0]?.power ?? card.card_faces?.[1]?.power ?? null,

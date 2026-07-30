@@ -105,24 +105,38 @@ async function getCommanderArtByArchetype(
   archetypes: { id: number; name: string }[],
 ): Promise<{ art: Map<number, string[]>; colors: Map<number, string[]> }> {
   const frontFaceName = (name: string) => name.split(" // ")[0];
-  const commanderNames = archetypes.flatMap((a) => a.name.split(" / ").map(frontFaceName));
+  const commanderNames = [...new Set(archetypes.flatMap((a) => a.name.split(" / ").map(frontFaceName)))];
   if (commanderNames.length === 0) return { art: new Map(), colors: new Map() };
 
-  const { data: oracles } = await supabase
-    .from("card_oracles")
-    .select("oracle_id, name")
-    .in("name", [...new Set(commanderNames)]);
-  if (!oracles || oracles.length === 0) return { art: new Map(), colors: new Map() };
+  // Commanderは統率者ごとに別アーキタイプになるため名前の種類数が数百件に及ぶ。.in()に
+  // 全件まとめて渡すとURLが長すぎてPostgRESTが400を返し、結果が丸ごと（画像も色も）
+  // サイレントに欠落する事故が実際に起きていた。チャンク分割して問い合わせる。
+  const NAME_CHUNK = 150;
+  const oracles: { oracle_id: string; name: string }[] = [];
+  for (let i = 0; i < commanderNames.length; i += NAME_CHUNK) {
+    const chunk = commanderNames.slice(i, i + NAME_CHUNK);
+    const { data, error } = await supabase.from("card_oracles").select("oracle_id, name").in("name", chunk);
+    if (error) continue;
+    if (data) oracles.push(...data);
+  }
+  if (oracles.length === 0) return { art: new Map(), colors: new Map() };
 
   const oracleIdByName = new Map(oracles.map((o) => [o.name, o.oracle_id]));
-  const { data: cards } = await supabase
-    .from("cards")
-    .select("oracle_id, image_uri_art_crop, mana_cost")
-    .eq("lang", "en")
-    .in("oracle_id", oracles.map((o) => o.oracle_id));
+  const oracleIds = oracles.map((o) => o.oracle_id);
+  const cards: { oracle_id: string; image_uri_art_crop: string | null; mana_cost: string | null }[] = [];
+  for (let i = 0; i < oracleIds.length; i += NAME_CHUNK) {
+    const chunk = oracleIds.slice(i, i + NAME_CHUNK);
+    const { data, error } = await supabase
+      .from("cards")
+      .select("oracle_id, image_uri_art_crop, mana_cost")
+      .eq("lang", "en")
+      .in("oracle_id", chunk);
+    if (error) continue;
+    if (data) cards.push(...data);
+  }
 
-  const artByOracleId = new Map((cards ?? []).map((c) => [c.oracle_id, c.image_uri_art_crop]));
-  const manaCostByOracleId = new Map((cards ?? []).map((c) => [c.oracle_id, c.mana_cost]));
+  const artByOracleId = new Map(cards.map((c) => [c.oracle_id, c.image_uri_art_crop]));
+  const manaCostByOracleId = new Map(cards.map((c) => [c.oracle_id, c.mana_cost]));
 
   const art = new Map<number, string[]>();
   const colors = new Map<number, string[]>();

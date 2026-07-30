@@ -33,6 +33,7 @@ CREATE TABLE cards (
   image_uri_art_crop  TEXT,
   mana_cost           TEXT,
   type_line            TEXT,
+  printed_type_line    TEXT, -- タイプ行の日本語訳（日本語版プリントのみ。type_lineは常に英語）
   power               TEXT, -- "*"や"1+*"等の非数値もあるためTEXT（Scryfallの型に合わせる）。クリーチャー以外はNULL
   toughness           TEXT,
   legalities          JSONB,                     -- {"modern": "legal", "standard": "not_legal", ...}

@@ -72,7 +72,7 @@ async function resolveCardFromDbDetail(dbResult: DbCardDetail): Promise<Resolved
     setCode: enCard.set_code,
     collectorNumber: enCard.collector_number,
     rarity: enCard.rarity,
-    typeLine: (jaCard?.type_line || enCard.type_line) ?? null,
+    typeLine: (jaCard?.printed_type_line || enCard.type_line) ?? null,
     manaCost: enCard.mana_cost,
     power: enCard.power,
     toughness: enCard.toughness,
