@@ -158,7 +158,7 @@ export default function CardHero({
                 // Foil選択中であることが一目で分かるよう、虹色のホログラム風テクスチャを
                 // 半透明で重ねる（実物のFoilカードの質感を模した演出。クリックは透過させる）。
                 <div
-                  className="pointer-events-none absolute inset-0 opacity-70 mix-blend-overlay"
+                  className="pointer-events-none absolute inset-0 opacity-50 mix-blend-overlay"
                   style={{
                     background:
                       "repeating-linear-gradient(115deg, #ff0080 0%, #ff8c00 14%, #ffed00 28%, #00ff8c 42%, #00c8ff 56%, #8c00ff 70%, #ff0080 84%)",
