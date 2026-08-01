@@ -64,6 +64,9 @@ export interface ScryfallCard {
     usd?: string | null;
     eur?: string | null;
   };
+  /** "universesbeyond"が入っていると、コラボ作品向けにルールテキスト中のカード名が
+   * フレーバー名（例: FF版Ragavanの"Zidane Tribal"）に差し替わっていることがある */
+  promo_types?: string[];
 }
 
 /** 両面カードは表面（card_faces[0]）の画像を使う。通常カードはそのままトップレベルを使う */
@@ -141,7 +144,25 @@ export async function fetchCardByFuzzyName(name: string): Promise<ScryfallCard |
   return res.json();
 }
 
-export async function fetchJapanesePrint(oracleName: string): Promise<ScryfallCard | null> {
+export async function fetchCardByScryfallId(scryfallId: string): Promise<ScryfallCard | null> {
+  const res = await fetch(`${SCRYFALL_BASE}/cards/${scryfallId}`, {
+    headers: SCRYFALL_HEADERS,
+    ...SCRYFALL_FETCH_OPTIONS,
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+/** Universes Beyond（コラボ作品）のプリントは、ルールテキスト中のカード名がフレーバー名に
+ * 差し替わっていることがある（例: Final Fantasy版Ragavanの"Zidane Tribal"）。 */
+export function isUniversesBeyondPrint(card: Pick<ScryfallCard, "promo_types">): boolean {
+  return card.promo_types?.includes("universesbeyond") ?? false;
+}
+
+export async function fetchJapanesePrint(
+  oracleName: string,
+  opts?: { excludeUniversesBeyond?: boolean },
+): Promise<ScryfallCard | null> {
   const query = encodeURIComponent(`!"${oracleName}" lang:ja`);
   const res = await fetch(`${SCRYFALL_BASE}/cards/search?q=${query}&unique=prints`, {
     headers: SCRYFALL_HEADERS,
@@ -149,8 +170,12 @@ export async function fetchJapanesePrint(oracleName: string): Promise<ScryfallCa
   });
   if (!res.ok) return null;
   const data = await res.json();
-  const prints: ScryfallCard[] = data.data ?? [];
+  let prints: ScryfallCard[] = data.data ?? [];
   if (prints.length === 0) return null;
+  if (opts?.excludeUniversesBeyond) {
+    const nonUb = prints.filter((p) => !isUniversesBeyondPrint(p));
+    if (nonUb.length > 0) prints = nonUb;
+  }
   // printed_type_line が入っている版があればそれを優先する（無い版が先頭に来ることがあるため）
   return prints.find((p) => resolveFrontFacePrintedTypeLine(p)) ?? prints[0];
 }

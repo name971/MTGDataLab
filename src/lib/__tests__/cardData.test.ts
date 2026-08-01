@@ -17,9 +17,23 @@ function mockOracleThenCards(oracleResult: unknown, cardsResult: unknown) {
   const eq = vi.fn().mockResolvedValue(cardsResult);
   const cardsSelect = vi.fn().mockReturnValue({ eq });
 
+  // resolveFallbackTypeLineJa/resolveFallbackTextJaがDBだけで完結するようになったため、
+  // 追加で"cards"テーブルに別チェーン（.eq().eq().not().limit().maybeSingle()）で
+  // 問い合わせる。テストではフォールバック先が見つからない（null）ケースとして扱う。
+  const fallbackMaybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
+  const fallbackLimit = vi.fn().mockReturnValue({ maybeSingle: fallbackMaybeSingle });
+  const fallbackNot = vi.fn().mockReturnValue({ limit: fallbackLimit });
+  const fallbackEq2 = vi.fn().mockReturnValue({ not: fallbackNot });
+  const fallbackEq1 = vi.fn().mockReturnValue({ eq: fallbackEq2 });
+  const fallbackSelect = vi.fn().mockReturnValue({ eq: fallbackEq1 });
+
+  let cardsCallCount = 0;
   (supabase.from as ReturnType<typeof vi.fn>).mockImplementation((table: string) => {
     if (table === "card_oracles") return { select: oracleSelect };
-    if (table === "cards") return { select: cardsSelect };
+    if (table === "cards") {
+      cardsCallCount += 1;
+      return { select: cardsCallCount === 1 ? cardsSelect : fallbackSelect };
+    }
     throw new Error(`unexpected table ${table}`);
   });
 }

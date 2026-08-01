@@ -13,6 +13,12 @@ import ManaText from "./ManaText";
 const SQUARE_CORNER_SET_CODES = new Set(["ced", "cei"]);
 const VISIBLE_COUNT = 20;
 
+/** "2026-07-25" -> "2026/7/25" */
+function formatDateSlash(isoDate: string): string {
+  const [y, m, d] = isoDate.split("-");
+  return `${y}/${Number(m)}/${Number(d)}`;
+}
+
 interface DefaultPrint {
   scryfallId: string | null;
   imageUrl: string | null;
@@ -32,6 +38,7 @@ interface DefaultPrint {
   usdPrice: number | null;
   usdPriceFoil: number | null;
   usdToJpyRate: number;
+  usdToJpyRateFoil: number;
   priceExtremesText: string | null;
   priceExtremesFoilText: string | null;
 }
@@ -59,8 +66,8 @@ export default function CardHero({
   foilPricesByScryfallId: Record<string, number>;
   legalities: Record<string, string>;
 }) {
-  // 代表プリントも「一覧の中の1件」として扱い、選ばれているものだけ一覧から外して
-  // メイン表示側に出す（クリックすると入れ替わる＝スワップの見た目にする）。
+  // カードデータ（このページの主役プリント）も「一覧の中の1件」として扱い、選ばれているものだけ
+  // 一覧の先頭に出す（クリックすると画像・価格がその場で入れ替わる＝スワップの見た目にする）。
   const defaultAsPrint: CardPrint = {
     scryfallId: defaultPrint.scryfallId ?? "",
     setCode: defaultPrint.setCode,
@@ -73,13 +80,18 @@ export default function CardHero({
   const allPrints = [defaultAsPrint, ...otherPrints];
 
   const [currentScryfallId, setCurrentScryfallId] = useState(defaultPrint.scryfallId ?? "");
+  // 「カードデータ」＝全プリント中の最安値（毎日どのプリントが最安かは変わりうる集約値）と、
+  // 「特定のプリント自身の値動き」は別物。currentScryfallIdがdefaultPrint.scryfallIdと
+  // 一致していても、それが「今日たまたま最安だったから」なのか「そのプリントを個別に
+  // 選んだから」なのかを区別する必要があるため、scryfallIdの一致では判定せず専用のstateを持つ。
+  const [isAggregateView, setIsAggregateView] = useState(true);
   const [selectedHistory, setSelectedHistory] = useState<PricePoint[] | null>(null);
   const [selectedFoilHistory, setSelectedFoilHistory] = useState<PricePoint[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [finish, setFinish] = useState<"normal" | "foil">("normal");
 
-  const isAlternate = currentScryfallId !== defaultPrint.scryfallId;
+  const isAlternate = !isAggregateView;
   const current = allPrints.find((p) => p.scryfallId === currentScryfallId) ?? defaultAsPrint;
   const listPrints = allPrints.filter((p) => p.scryfallId !== currentScryfallId);
   const visiblePrints = expanded ? listPrints : listPrints.slice(0, VISIBLE_COUNT);
@@ -88,15 +100,20 @@ export default function CardHero({
   if (defaultPrint.scryfallId && defaultPrint.jpyPrice !== null) {
     allPrices[defaultPrint.scryfallId] = defaultPrint.jpyPrice;
   }
+  // otherPrintsにはカードデータ自身のプリントが含まれないため、foilPricesByScryfallIdにも
+  // その分が無い。ここで補っておかないと、一覧でカードデータの行だけFoil価格が
+  // 表示されない（allPricesと同じ理由・同じ対応）。
+  const allFoilPrices: Record<string, number> = { ...foilPricesByScryfallId };
+  if (defaultPrint.scryfallId && defaultPrint.jpyPriceFoil !== null) {
+    allFoilPrices[defaultPrint.scryfallId] = defaultPrint.jpyPriceFoil;
+  }
 
+  // 特定のプリントを選ぶ（defaultPrintと同じscryfallIdであっても、常にそのプリント自身の
+  // 価格推移をAPIから取得する＝集約値と混同しない）。
   async function selectPrint(p: CardPrint) {
     setCurrentScryfallId(p.scryfallId);
+    setIsAggregateView(false);
     setFinish("normal"); // プリントを切り替えたら表示は通常価格から始める
-    if (p.scryfallId === defaultPrint.scryfallId) {
-      setSelectedHistory(null); // 代表プリントに戻る場合はdefaultEnHistoryをそのまま使う
-      setSelectedFoilHistory(null);
-      return;
-    }
     setSelectedHistory(null);
     setSelectedFoilHistory(null);
     setLoading(true);
@@ -116,6 +133,15 @@ export default function CardHero({
     }
   }
 
+  /** 「カードデータ」＝全プリント中の最安値（集約）の表示に戻す */
+  function resetToAggregate() {
+    setCurrentScryfallId(defaultPrint.scryfallId ?? "");
+    setIsAggregateView(true);
+    setFinish("normal");
+    setSelectedHistory(null);
+    setSelectedFoilHistory(null);
+  }
+
   const enHistory = isAlternate ? (selectedHistory ?? []) : defaultEnHistory;
   const enFoilHistoryForChart = isAlternate ? (selectedFoilHistory ?? []) : defaultEnFoilHistory;
   // 通常・Foil両方の価格が実際にある時だけ切り替えタブを出す。片方しか無いプリント
@@ -124,13 +150,13 @@ export default function CardHero({
     ? allPrices[currentScryfallId] !== undefined
     : defaultPrint.jpyPrice !== null;
   const hasFoilPrice = isAlternate
-    ? foilPricesByScryfallId[currentScryfallId] !== undefined
+    ? allFoilPrices[currentScryfallId] !== undefined
     : defaultPrint.jpyPriceFoil !== null;
   const canToggleFoil = hasNormalPrice && hasFoilPrice;
   const effectiveFinish = canToggleFoil ? finish : hasFoilPrice ? "foil" : "normal";
   const jpyPrice = isAlternate
     ? effectiveFinish === "foil"
-      ? (foilPricesByScryfallId[currentScryfallId] ?? null)
+      ? (allFoilPrices[currentScryfallId] ?? null)
       : (allPrices[currentScryfallId] ?? null)
     : effectiveFinish === "foil"
       ? defaultPrint.jpyPriceFoil
@@ -142,11 +168,27 @@ export default function CardHero({
       <div className="flex flex-1 flex-col gap-4">
         <div className="flex flex-col gap-6 sm:flex-row">
           {current.imageUrl && (
-            <div
-              className={`relative h-fit w-[180px] shrink-0 overflow-hidden border border-neutral-200 ${
-                SQUARE_CORNER_SET_CODES.has(current.setCode) ? "" : "rounded-xl"
-              }`}
-            >
+            <div className="w-[180px] shrink-0">
+              {isAlternate ? (
+                <button
+                  onClick={resetToAggregate}
+                  className="mb-1.5 inline-block rounded bg-neutral-800 px-2.5 py-1 text-sm font-semibold text-white hover:bg-neutral-700"
+                >
+                  ← カードデータに戻る
+                </button>
+              ) : (
+                <span
+                  title="カード名・画像はこのプリントのものを表示しています（トーナメントで使える通常のプリントの中で最安値のものを自動選択、プロモ・特殊枠・コラボ作品限定版などは対象外）。価格は全プリント中の最安値を表示しています"
+                  className="mb-1.5 inline-block cursor-help rounded bg-neutral-800 px-2.5 py-1 text-sm font-semibold text-white"
+                >
+                  カードデータ
+                </span>
+              )}
+              <div
+                className={`relative h-fit w-full overflow-hidden border border-neutral-200 ${
+                  SQUARE_CORNER_SET_CODES.has(current.setCode) ? "" : "rounded-xl"
+                }`}
+              >
               <Image
                 src={current.imageUrl}
                 alt={defaultPrint.nameEn}
@@ -166,6 +208,7 @@ export default function CardHero({
                   }}
                 />
               )}
+              </div>
             </div>
           )}
           <div className="flex-1">
@@ -264,10 +307,10 @@ export default function CardHero({
                 {defaultPrint.power}/{defaultPrint.toughness}
               </p>
             )}
-
             {isAlternate ? (
               <p className="mt-3 text-sm text-neutral-500">
                 {current.setName} (#{current.collectorNumber})
+                {current.releasedAt && ` ・ 発売日: ${formatDateSlash(current.releasedAt)}`}
               </p>
             ) : (
               <p className="mt-3 text-sm text-neutral-500">
@@ -284,14 +327,14 @@ export default function CardHero({
             )}
             {/* 為替参考値・最高値/最安値は通常/Foilそれぞれの日次履歴から別々に出す
                 （defaultPrint.usdPrice/priceExtremesTextが非Foil用、*Foil系がFoil用）。 */}
-            {!isAlternate && effectiveFinish === "normal" && defaultPrint.usdPrice !== null && (
+            {!isAlternate && effectiveFinish === "normal" && defaultPrint.usdPrice !== null && defaultPrint.jpyPrice !== null && (
               <p className="text-xs text-neutral-400">
                 為替換算の参考値（${defaultPrint.usdPrice.toFixed(2)} × {defaultPrint.usdToJpyRate.toFixed(2)}円/$）
               </p>
             )}
-            {!isAlternate && effectiveFinish === "foil" && defaultPrint.usdPriceFoil !== null && (
+            {!isAlternate && effectiveFinish === "foil" && defaultPrint.usdPriceFoil !== null && defaultPrint.jpyPriceFoil !== null && (
               <p className="text-xs text-neutral-400">
-                為替換算の参考値（${defaultPrint.usdPriceFoil.toFixed(2)} × {defaultPrint.usdToJpyRate.toFixed(2)}円/$）
+                為替換算の参考値（${defaultPrint.usdPriceFoil.toFixed(2)} × {defaultPrint.usdToJpyRateFoil.toFixed(2)}円/$）
               </p>
             )}
             {!isAlternate && effectiveFinish === "normal" && defaultPrint.priceExtremesText && (
@@ -329,6 +372,11 @@ export default function CardHero({
             width={22}
             height={22}
             className="shrink-0 invert"
+            // Scryfallにアイコンが無いセット（GK1等の一部）だとブラウザ標準の壊れた画像アイコンが
+            // 出てしまうため、読み込み失敗時は非表示にする
+            onError={(e) => {
+              e.currentTarget.style.visibility = "hidden";
+            }}
           />
           <div className="min-w-0">
             <p className="truncate text-sm leading-snug font-semibold">
@@ -346,7 +394,7 @@ export default function CardHero({
           </p>
         )}
 
-        {listPrints.length > 0 ? (
+        {allPrints.length > 0 && (
           <div className="flex flex-col gap-3">
             <table className="w-full table-fixed border-collapse text-sm">
               <colgroup>
@@ -354,9 +402,51 @@ export default function CardHero({
                 <col className="w-20" />
               </colgroup>
               <tbody>
+                {/* カードデータも一覧の中の1件として常に先頭に表示する（他プリントと並べて
+                    見比べられるように）。URLは変えず、他の行と同じselectPrintでその場の表示
+                    （画像・価格・下のセット情報行）を切り替える。 */}
+                <tr className="border-b border-neutral-100 bg-neutral-50 last:border-0">
+                  <td className="min-w-0 py-2 pr-2">
+                    <button
+                      onClick={() => selectPrint(defaultAsPrint)}
+                      className="flex min-w-0 w-full items-center gap-2 text-left text-neutral-900 hover:underline"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element -- ScryfallのSVGアイコンCDN、next/imageの最適化対象外の小さな外部SVG */}
+                      <img
+                        src={`https://svgs.scryfall.io/sets/${current.setCode}.svg`}
+                        alt=""
+                        width={14}
+                        height={14}
+                        className="shrink-0"
+                        onError={(e) => {
+                          e.currentTarget.style.visibility = "hidden";
+                        }}
+                      />
+                      <span className="min-w-0 truncate font-semibold">{current.setName}</span>
+                      {current.notTournamentLegal && (
+                        <span className="shrink-0 rounded bg-red-50 px-1 text-[10px] text-red-700">使用不可</span>
+                      )}
+                    </button>
+                  </td>
+                  <td className="overflow-hidden py-2 text-right text-ellipsis whitespace-nowrap tabular-nums text-neutral-900">
+                    <p>
+                      {allPrices[current.scryfallId] !== undefined
+                        ? `¥${allPrices[current.scryfallId].toLocaleString("ja-JP", { maximumFractionDigits: 0 })}`
+                        : "-"}
+                    </p>
+                    {allFoilPrices[current.scryfallId] !== undefined && (
+                      <p className="text-[10px] text-neutral-400">
+                        Foil ¥
+                        {allFoilPrices[current.scryfallId].toLocaleString("ja-JP", {
+                          maximumFractionDigits: 0,
+                        })}
+                      </p>
+                    )}
+                  </td>
+                </tr>
                 {visiblePrints.map((p) => {
                   const jpy = allPrices[p.scryfallId];
-                  const jpyFoil = foilPricesByScryfallId[p.scryfallId];
+                  const jpyFoil = allFoilPrices[p.scryfallId];
                   return (
                     <tr key={p.scryfallId} className="border-b border-neutral-100 last:border-0">
                       <td className="min-w-0 py-2 pr-2">
@@ -371,6 +461,9 @@ export default function CardHero({
                             width={14}
                             height={14}
                             className="shrink-0"
+                            onError={(e) => {
+                              e.currentTarget.style.visibility = "hidden";
+                            }}
                           />
                           <span className="min-w-0 truncate">{p.setName}</span>
                           {p.notTournamentLegal && (
@@ -402,8 +495,6 @@ export default function CardHero({
               </button>
             )}
           </div>
-        ) : (
-          <p className="text-sm text-neutral-500">他のプリントは見つかりませんでした。</p>
         )}
       </div>
       </div>

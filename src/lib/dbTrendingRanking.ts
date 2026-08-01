@@ -96,11 +96,28 @@ export async function getTrendingRankingFromDb(): Promise<TrendingRankingRow[]> 
     .maybeSingle();
   if (!latestRow) return [];
 
-  const { data: scoreRows, error } = await supabase
-    .from("trending_scores")
-    .select("oracle_id, format, category, price_change_3d_pct, usage_change_3d_pt")
-    .eq("calculated_date", latestRow.calculated_date);
-  if (error || !scoreRows || scoreRows.length === 0) return [];
+  // 1日分でもフォーマット×カテゴリ×オラクルの組み合わせが増えると1000行を超えうるため、
+  // PostgRESTのデフォルト上限に備えてページングする（他のdb*.tsで実際に踏んだのと同じ問題）。
+  const SCORE_PAGE_SIZE = 1000;
+  const scoreRows: {
+    oracle_id: string;
+    format: string;
+    category: string;
+    price_change_3d_pct: number | null;
+    usage_change_3d_pt: number | null;
+  }[] = [];
+  for (let offset = 0; ; offset += SCORE_PAGE_SIZE) {
+    const { data: page, error } = await supabase
+      .from("trending_scores")
+      .select("oracle_id, format, category, price_change_3d_pct, usage_change_3d_pt")
+      .eq("calculated_date", latestRow.calculated_date)
+      .range(offset, offset + SCORE_PAGE_SIZE - 1);
+    if (error) return [];
+    if (!page || page.length === 0) break;
+    scoreRows.push(...page);
+    if (page.length < SCORE_PAGE_SIZE) break;
+  }
+  if (scoreRows.length === 0) return [];
 
   // 値下がり・採用率低下はプラス評価にならないため、プラスの変化だけを候補として拾う
   const priceByOracle = new Map<string, number>();
@@ -144,10 +161,9 @@ export async function getTrendingRankingFromDb(): Promise<TrendingRankingRow[]> 
 
   const [{ data: priceSeriesRows }, { data: usageSeriesRows }] = await Promise.all([
     supabase
-      .from("card_price_snapshots")
+      .from("card_cheapest_price_snapshots")
       .select("oracle_id, jpy_est, date")
       .in("oracle_id", candidateOracleIds)
-      .eq("series", "en")
       .in("date", allDates),
     supabase
       .from("card_usage_stats")
@@ -216,10 +232,9 @@ export async function getTrendingRankingFromDb(): Promise<TrendingRankingRow[]> 
     supabase.from("card_oracles").select("oracle_id, name, printed_name_ja").in("oracle_id", topOracleIds),
     supabase.from("cards").select("oracle_id, lang, image_uri_art_crop").in("oracle_id", topOracleIds),
     supabase
-      .from("card_price_snapshots")
+      .from("card_cheapest_price_snapshots")
       .select("oracle_id, jpy_est, date")
       .in("oracle_id", topOracleIds)
-      .eq("series", "en")
       .order("date", { ascending: false }),
   ]);
 

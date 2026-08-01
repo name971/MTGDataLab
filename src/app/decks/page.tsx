@@ -33,7 +33,9 @@ export default async function DeckRankingPage({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-baseline justify-between gap-4">
-        <h1 className="text-xl font-semibold">デッキ単位のランキング（アーキタイプランキング）</h1>
+        <div className="flex items-baseline gap-3">
+          <h1 className="text-xl font-semibold">デッキ単位のランキング（アーキタイプランキング）</h1>
+        </div>
         {top10AvgPriceJpy !== null && (
           <p className="whitespace-nowrap text-sm text-neutral-600">
             上位{top10.length}デッキ平均:{" "}

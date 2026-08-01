@@ -175,13 +175,32 @@ function ChartSvg({ points }: { points: PricePoint[] }) {
         <path d={linePath} fill="none" className={diff >= 0 ? "stroke-teal-700" : "stroke-red-700"} strokeWidth={2} />
         {points.map((p, i) => (
           <circle
-            key={p.date}
+            key={`dot-${p.date}`}
             cx={xFor(i)}
             cy={yFor(p.jpy)}
             r={hoverIndex === i ? 4 : 2.5}
             className={diff >= 0 ? "fill-teal-700" : "fill-red-700"}
           />
         ))}
+        {points.map((p, i) => {
+          if (!p.setCode) return null;
+          const size = hoverIndex === i ? 22 : 18;
+          return (
+            <image
+              key={`icon-${p.date}`}
+              href={`https://svgs.scryfall.io/sets/${p.setCode}.svg`}
+              x={xFor(i) - size / 2}
+              y={yFor(p.jpy) - size - 10}
+              width={size}
+              height={size}
+              // Scryfallにアイコンが無いセット（GK1等の一部）だとブラウザ標準の壊れた画像
+              // アイコンが出てしまうため、読み込み失敗時は非表示にする（CardHero.tsxと同じ対応）
+              onError={(e) => {
+                e.currentTarget.style.visibility = "hidden";
+              }}
+            />
+          );
+        })}
         <text x={PADDING.left} y={HEIGHT - 6} className="fill-neutral-400 text-[10px]">
           {first.date}
         </text>
@@ -200,12 +219,32 @@ function ChartSvg({ points }: { points: PricePoint[] }) {
               strokeDasharray="3 3"
             />
             <circle cx={xFor(hoverIndex!)} cy={yFor(hovered.jpy)} r={4} className="fill-white stroke-neutral-700" strokeWidth={1.5} />
-            <g transform={`translate(${xFor(hoverIndex!) + (tooltipAnchorsRight ? -104 : 8)}, ${Math.max(PADDING.top, yFor(hovered.jpy) - 32)})`}>
-              <rect width={96} height={34} rx={4} className="fill-neutral-800" opacity={0.92} />
-              <text x={8} y={13} className="fill-white text-[10px] font-medium">
+            <g
+              transform={`translate(${xFor(hoverIndex!) + (tooltipAnchorsRight ? -136 : 8)}, ${Math.max(PADDING.top, yFor(hovered.jpy) - (hovered.setCode ? 46 : 32))})`}
+            >
+              <rect width={128} height={hovered.setCode ? 46 : 34} rx={4} className="fill-neutral-800" opacity={0.92} />
+              {hovered.setCode && (
+                <>
+                  <image
+                    href={`https://svgs.scryfall.io/sets/${hovered.setCode}.svg`}
+                    x={8}
+                    y={6}
+                    width={12}
+                    height={12}
+                    className="invert"
+                    onError={(e) => {
+                      e.currentTarget.style.visibility = "hidden";
+                    }}
+                  />
+                  <text x={24} y={15} className="fill-neutral-300 text-[9px]">
+                    {hovered.setName ?? hovered.setCode}
+                  </text>
+                </>
+              )}
+              <text x={8} y={hovered.setCode ? 32 : 13} className="fill-white text-[10px] font-medium">
                 ¥{hovered.jpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
               </text>
-              <text x={8} y={26} className="fill-neutral-300 text-[9px]">
+              <text x={8} y={hovered.setCode ? 42 : 26} className="fill-neutral-300 text-[9px]">
                 {hovered.date}
               </text>
             </g>

@@ -60,10 +60,18 @@ function pickForCategory(rowsByDate: Map<string, ScoreRow[]>, sortedDates: strin
       if (!existing || row.streak_days > existing.streak_days) bestByOracle.set(row.oracle_id, row);
     }
     const candidates = [...bestByOracle.values()];
+    // しきい値を緩めながら探すが、「最初に1件でも見つかった時点」で確定すると、
+    // 継続日数の長いカードが1枚だけの日にCARDS_PER_CATEGORY枠が余ってしまう
+    // （実際に発生: 継続2日以上が1枚しか無く、そこで打ち切られ2枠目を緩めて
+    // 探しに行かなかった）。CARDS_PER_CATEGORY件集まるまでしきい値を緩め続ける。
     for (const minStreak of STREAK_THRESHOLDS) {
       const picked = topByCategory(candidates, category, minStreak);
-      if (picked.length > 0) return picked;
+      if (picked.length >= CARDS_PER_CATEGORY) return picked;
     }
+    // 最後まで緩めても2件に満たない場合は、集まった分だけ返す
+    // （STREAK_THRESHOLDSの最後の値=1はスコアがプラスの候補全件を含むため、この時点のpickedが最大枚数）
+    const loosest = topByCategory(candidates, category, STREAK_THRESHOLDS[STREAK_THRESHOLDS.length - 1]);
+    if (loosest.length > 0) return loosest;
   }
   return [];
 }
@@ -86,12 +94,23 @@ export async function getTrendingCardsFromDb(): Promise<TrendingCardData[]> {
     dates.push(isoDate(d));
   }
 
-  const { data: scoreRows, error } = await supabase
-    .from("trending_scores")
-    .select("oracle_id, category, price_change_3d_pct, usage_change_3d_pt, streak_days, calculated_date")
-    .in("calculated_date", dates)
-    .gt("score", 0); // マイナスの変化は評価が上がったことを意味しないので候補にしない
-  if (error || !scoreRows || scoreRows.length === 0) return [];
+  // LOOKBACK_DAYS日分×フォーマット×カテゴリ×オラクルの組み合わせで1000行を超えうるため
+  // ページングする（他のdb*.tsで実際に踏んだのと同じ問題）。
+  const SCORE_PAGE_SIZE = 1000;
+  const scoreRows: ScoreRow[] = [];
+  for (let offset = 0; ; offset += SCORE_PAGE_SIZE) {
+    const { data: page, error } = await supabase
+      .from("trending_scores")
+      .select("oracle_id, category, price_change_3d_pct, usage_change_3d_pt, streak_days, calculated_date")
+      .in("calculated_date", dates)
+      .gt("score", 0) // マイナスの変化は評価が上がったことを意味しないので候補にしない
+      .range(offset, offset + SCORE_PAGE_SIZE - 1);
+    if (error) return [];
+    if (!page || page.length === 0) break;
+    scoreRows.push(...page);
+    if (page.length < SCORE_PAGE_SIZE) break;
+  }
+  if (scoreRows.length === 0) return [];
 
   const { data: basicLandOracles } = await supabase
     .from("card_oracles")
@@ -118,10 +137,9 @@ export async function getTrendingCardsFromDb(): Promise<TrendingCardData[]> {
     supabase.from("card_oracles").select("oracle_id, name, printed_name_ja").in("oracle_id", oracleIds),
     supabase.from("cards").select("oracle_id, lang, image_uri_art_crop").in("oracle_id", oracleIds),
     supabase
-      .from("card_price_snapshots")
+      .from("card_cheapest_price_snapshots")
       .select("oracle_id, jpy_est, date")
       .in("oracle_id", oracleIds)
-      .eq("series", "en")
       .order("date", { ascending: false }),
   ]);
 

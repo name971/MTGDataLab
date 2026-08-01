@@ -70,6 +70,19 @@ async function supabaseUpsert(table, rows, conflictColumn) {
   if (!res.ok) throw new Error(`${table} upsert failed: ${res.status} ${await res.text()}`);
 }
 
+/**
+ * 指定日以前で、そのテーブル・条件に該当する最新の日付を1件探す。
+ * 「ちょうどN日前」の厳密一致だと、その日だけ日次バッチが動かなかった（実際に
+ * 2026-07-28分が丸ごと欠けたことがあった）だけで計算全体がスキップされてしまうため、
+ * 「N日前以前で一番近い日」を使えるようにする。
+ */
+async function findLatestDateAtOrBefore(table, dateColumn, extraFilter, targetDate) {
+  const rows = await supabaseGet(
+    `${table}?select=${dateColumn}&${extraFilter}&${dateColumn}=lte.${targetDate}&order=${dateColumn}.desc&limit=1`,
+  );
+  return rows[0]?.[dateColumn] ?? null;
+}
+
 async function main() {
   const today = new Date();
   const todayStr = isoDate(today);
@@ -77,20 +90,36 @@ async function main() {
   pastDate.setDate(pastDate.getDate() - LOOKBACK_DAYS);
   const pastStr = isoDate(pastDate);
 
-  // ── 価格の3日変化（フォーマット非依存、oracle_id単位） ──
-  const [priceToday, pricePast] = await Promise.all([
-    supabaseGet(`card_price_snapshots?select=oracle_id,jpy_est&series=eq.en&date=eq.${todayStr}`),
-    supabaseGet(`card_price_snapshots?select=oracle_id,jpy_est&series=eq.en&date=eq.${pastStr}`),
-  ]);
-
-  if (pricePast.length === 0) {
+  // 価格は「代表プリント」ではなく、カード詳細ページと同じ「全プリント中の最安値」
+  // （card_cheapest_price_snapshots）を基準にする。代表プリントは選び直しの頻度が低く、
+  // より安いプリントが出ても反映されないため、値上がり検知の基準としてはズレることがあった。
+  const resolvedTodayPriceDate = await findLatestDateAtOrBefore(
+    "card_cheapest_price_snapshots",
+    "date",
+    "",
+    todayStr,
+  );
+  const resolvedPastPriceDate = await findLatestDateAtOrBefore(
+    "card_cheapest_price_snapshots",
+    "date",
+    "",
+    pastStr,
+  );
+  if (!resolvedTodayPriceDate || !resolvedPastPriceDate) {
     console.log(
-      `価格スナップショットに${pastStr}時点のデータがありません（${LOOKBACK_DAYS}日分の蓄積待ち）。trending_scoresの計算をスキップします。`
+      `価格スナップショットに${pastStr}以前のデータがありません（${LOOKBACK_DAYS}日分の蓄積待ち）。trending_scoresの計算をスキップします。`,
     );
     return;
   }
 
+  // ── 価格の3日変化（フォーマット非依存、oracle_id単位） ──
+  const [priceToday, pricePast] = await Promise.all([
+    supabaseGet(`card_cheapest_price_snapshots?select=oracle_id,jpy_est&date=eq.${resolvedTodayPriceDate}`),
+    supabaseGet(`card_cheapest_price_snapshots?select=oracle_id,jpy_est&date=eq.${resolvedPastPriceDate}`),
+  ]);
+
   const pricePastMap = new Map(pricePast.map((r) => [r.oracle_id, Number(r.jpy_est)]));
+  const priceTodayMap = new Map(priceToday.map((r) => [r.oracle_id, Number(r.jpy_est)]));
   const priceChangeByOracle = new Map(); // oracle_id -> pct
   for (const row of priceToday) {
     const past = pricePastMap.get(row.oracle_id);
@@ -99,20 +128,44 @@ async function main() {
     priceChangeByOracle.set(row.oracle_id, Math.round(pct * 100) / 100);
   }
 
-  // ── 採用率の3日変化（フォーマット×oracle_id単位） ──
-  const [usageToday, usagePast] = await Promise.all([
-    supabaseGet(`card_usage_stats?select=format,oracle_id,usage_rate,deck_sample_size&calculated_at=eq.${todayStr}`),
-    supabaseGet(`card_usage_stats?select=format,oracle_id,usage_rate&calculated_at=eq.${pastStr}`),
-  ]);
+  // 継続日数（streak_days）は「カード自身の価格/採用率が前日比で実際に上がり続けている日数」を
+  // 表す（以前は「そのフォーマットで1位のカードであり続けた日数」だったため、1位が入れ替わると
+  // 実際には値上がりしているカードの継続日数がリセットされ、逆に前日比では下がっているのに
+  // 1位を維持しているだけのカードが「N日連続」と表示される食い違いがあった）。
+  // そのため前日の生の価格・採用率も別途取得する。
+  const yesterdayDate = new Date(today);
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+  const yesterdayDateStr = isoDate(yesterdayDate);
+  const resolvedYesterdayPriceDate = await findLatestDateAtOrBefore(
+    "card_cheapest_price_snapshots",
+    "date",
+    "",
+    yesterdayDateStr,
+  );
+  const priceYesterday = resolvedYesterdayPriceDate
+    ? await supabaseGet(`card_cheapest_price_snapshots?select=oracle_id,jpy_est&date=eq.${resolvedYesterdayPriceDate}`)
+    : [];
+  const priceYesterdayMap = new Map(priceYesterday.map((r) => [r.oracle_id, Number(r.jpy_est)]));
 
-  if (usagePast.length === 0) {
+  const resolvedTodayUsageDate = await findLatestDateAtOrBefore("card_usage_stats", "calculated_at", "", todayStr);
+  const resolvedPastUsageDate = await findLatestDateAtOrBefore("card_usage_stats", "calculated_at", "", pastStr);
+  if (!resolvedTodayUsageDate || !resolvedPastUsageDate) {
     console.log(
-      `card_usage_statsに${pastStr}時点のデータがありません（${LOOKBACK_DAYS}日分の蓄積待ち）。trending_scoresの計算をスキップします。`
+      `card_usage_statsに${pastStr}以前のデータがありません（${LOOKBACK_DAYS}日分の蓄積待ち）。trending_scoresの計算をスキップします。`,
     );
     return;
   }
 
+  // ── 採用率の3日変化（フォーマット×oracle_id単位） ──
+  const [usageToday, usagePast] = await Promise.all([
+    supabaseGet(
+      `card_usage_stats?select=format,oracle_id,usage_rate,deck_sample_size&calculated_at=eq.${resolvedTodayUsageDate}`,
+    ),
+    supabaseGet(`card_usage_stats?select=format,oracle_id,usage_rate&calculated_at=eq.${resolvedPastUsageDate}`),
+  ]);
+
   const usagePastMap = new Map(usagePast.map((r) => [`${r.format}|${r.oracle_id}`, Number(r.usage_rate)]));
+  const usageTodayMap = new Map(usageToday.map((r) => [`${r.format}|${r.oracle_id}`, Number(r.usage_rate)]));
   const usageChangeByKey = new Map(); // "format|oracle_id" -> pt
   for (const row of usageToday) {
     const key = `${row.format}|${row.oracle_id}`;
@@ -122,17 +175,27 @@ async function main() {
     usageChangeByKey.set(key, Math.round(pt * 100) / 100);
   }
 
-  // 前日分のtrending_scoresを取得し、各フォーマット×カテゴリの1位を継続日数計算に使う
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = isoDate(yesterday);
+  const resolvedYesterdayUsageDate = await findLatestDateAtOrBefore(
+    "card_usage_stats",
+    "calculated_at",
+    "",
+    yesterdayDateStr,
+  );
+  const usageYesterday = resolvedYesterdayUsageDate
+    ? await supabaseGet(`card_usage_stats?select=format,oracle_id,usage_rate&calculated_at=eq.${resolvedYesterdayUsageDate}`)
+    : [];
+  const usageYesterdayMap = new Map(usageYesterday.map((r) => [`${r.format}|${r.oracle_id}`, Number(r.usage_rate)]));
+
+  // 前日分のtrending_scoresを取得し、オラクル単位の継続日数を引き継ぐ（1位固定ではなく
+  // オラクルごとに持たせる。1位が入れ替わっても、そのカード自身が値上がりし続けていれば
+  // 継続日数が正しく積み上がるようにするため）。
+  const yesterdayStr = yesterdayDateStr;
   const yesterdayRows = await supabaseGet(
     `trending_scores?select=oracle_id,format,category,streak_days&calculated_date=eq.${yesterdayStr}&score=not.is.null`
   );
-  const yesterdayTop = new Map(); // "format|category" -> {oracle_id, streak_days} for rank1 only, approximated by first row
+  const yesterdayStreakByKey = new Map(); // "format|category|oracle_id" -> streak_days
   for (const row of yesterdayRows) {
-    const key = `${row.format}|${row.category}`;
-    if (!yesterdayTop.has(key)) yesterdayTop.set(key, { oracle_id: row.oracle_id, streak_days: row.streak_days });
+    yesterdayStreakByKey.set(`${row.format}|${row.category}|${row.oracle_id}`, row.streak_days);
   }
 
   const formats = [...new Set(usageToday.map((r) => r.format))];
@@ -153,10 +216,14 @@ async function main() {
       .sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct))
       .slice(0, TOP_N_PER_CATEGORY);
 
-    priceMovers.forEach((r, i) => {
-      const isTop = i === 0;
-      const prevTop = yesterdayTop.get(`${format}|price`);
-      const streak = isTop && prevTop?.oracle_id === r.oracleId ? prevTop.streak_days + 1 : 1;
+    priceMovers.forEach((r) => {
+      const todayPrice = priceTodayMap.get(r.oracleId);
+      const yestPrice = priceYesterdayMap.get(r.oracleId);
+      const prevStreak = yesterdayStreakByKey.get(`${format}|price|${r.oracleId}`) ?? 0;
+      // 前日の生データが両方揃っている時だけ厳密判定。前日比で実際に上がっていれば継続、
+      // 下がっている（or横ばい）なら継続リセット。前日データが無ければ判定不能なので1日目扱い。
+      const streak =
+        todayPrice != null && yestPrice != null ? (todayPrice > yestPrice ? prevStreak + 1 : 0) : 1;
       rows.push({
         oracle_id: r.oracleId,
         format,
@@ -177,10 +244,11 @@ async function main() {
       .sort((a, b) => Math.abs(b.pt) - Math.abs(a.pt))
       .slice(0, TOP_N_PER_CATEGORY);
 
-    usageMovers.forEach((r, i) => {
-      const isTop = i === 0;
-      const prevTop = yesterdayTop.get(`${format}|usage`);
-      const streak = isTop && prevTop?.oracle_id === r.oracleId ? prevTop.streak_days + 1 : 1;
+    usageMovers.forEach((r) => {
+      const todayRate = usageTodayMap.get(`${format}|${r.oracleId}`);
+      const yestRate = usageYesterdayMap.get(`${format}|${r.oracleId}`);
+      const prevStreak = yesterdayStreakByKey.get(`${format}|usage|${r.oracleId}`) ?? 0;
+      const streak = todayRate != null && yestRate != null ? (todayRate > yestRate ? prevStreak + 1 : 0) : 1;
       rows.push({
         oracle_id: r.oracleId,
         format,

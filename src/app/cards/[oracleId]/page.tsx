@@ -13,19 +13,21 @@ import {
   resolveImageUris,
   RARITY_LABEL_JA,
 } from "@/lib/scryfall";
-import { fetchExchangeRates, toJpy } from "@/lib/fx";
+import { toJpy } from "@/lib/fx";
 import { SAMPLE_CARD_SLUGS } from "@/lib/sampleCards";
 import { getArchetypesUsingCard } from "@/lib/sampleDeckDetail";
 import { getFormatUsageCountsForCard } from "@/lib/dbCardUsageByFormat";
 import { getPriceHistoryForCard, type PricePoint } from "@/lib/dbPriceHistory";
+import { getCheapestPriceHistory, getLatestCheapestPrice } from "@/lib/dbCheapestPrice";
 import { getOtherPrintsForCard } from "@/lib/dbCardPrints";
 import { getLatestPricesForPrints } from "@/lib/dbCardPrintPrices";
 import CardHero from "@/components/CardHero";
 import {
   getCardDetailFromDb,
   getCardDetailByOracleId,
-  getLatestPriceSnapshot,
   fetchPriceByScryfallId,
+  getLatestPrintUsd,
+  getLatestUsdToJpyRate,
   type DbCardDetail,
 } from "@/lib/cardData";
 
@@ -46,19 +48,32 @@ interface ResolvedCard {
   legalities: Record<string, string>;
   imageUrl: string | null;
   usdPrice: number | null;
-  jpyPriceFoil: number | null;
   usdPriceFoil: number | null;
+  // スナップショットに保存済みの円換算値（記録日時点のレートで計算済み）。価格推移グラフの
+  // 最新点もこの値そのものを表示しているため、ヘッダーの現在価格もこちらを優先して使うことで
+  // グラフの右端と一致させる。null（スナップショット無し・ライブ取得フォールバック時）の場合のみ
+  // 呼び出し側でその場のライブ為替レートから計算する。
+  jpyPrice: number | null;
+  jpyPriceFoil: number | null;
   source: "db" | "live";
 }
 
 async function resolveCardFromDbDetail(dbResult: DbCardDetail): Promise<ResolvedCard> {
-  const { oracle, enCard, jaCard } = dbResult;
-  // card_price_snapshots（日次バッチで投入済み）優先、無ければライブ取得にフォールバック
-  const snapshot = await getLatestPriceSnapshot(oracle.oracle_id, "en");
+  const { oracle, enCard, jaCard, fallbackTypeLineJa, fallbackTextJa } = dbResult;
+  // card_cheapest_price_snapshots（日次バッチで投入済み、全プリント横断の最安値）優先、
+  // 無ければライブ取得にフォールバック
+  const snapshot = await getLatestCheapestPrice(oracle.oracle_id);
   let usdPrice: number | null = snapshot?.usd ?? null;
+  let jpyPrice: number | null = snapshot?.jpyEst ?? null;
   if (usdPrice === null) {
-    const livePrice = await fetchPriceByScryfallId(enCard.scryfall_id);
-    usdPrice = livePrice?.usd ? parseFloat(livePrice.usd) : null;
+    // card_cheapest_price_snapshotsが未生成でも、card_print_prices（プリント単位の日次価格）
+    // には既にデータがあることが多いため、ライブ取得より先にこちらをDBだけで試す。
+    usdPrice = await getLatestPrintUsd(enCard.scryfall_id);
+    if (usdPrice === null) {
+      const livePrice = await fetchPriceByScryfallId(enCard.scryfall_id);
+      usdPrice = livePrice?.usd ? parseFloat(livePrice.usd) : null;
+    }
+    jpyPrice = null; // ライブ取得分は換算済みの値を持たないため、呼び出し側でその場のレートから計算する
   }
   return {
     oracleId: oracle.oracle_id,
@@ -72,20 +87,20 @@ async function resolveCardFromDbDetail(dbResult: DbCardDetail): Promise<Resolved
     setCode: enCard.set_code,
     collectorNumber: enCard.collector_number,
     rarity: enCard.rarity,
-    typeLine: (jaCard?.printed_type_line || enCard.type_line) ?? null,
+    typeLine: (jaCard?.printed_type_line || fallbackTypeLineJa || enCard.type_line) ?? null,
     manaCost: enCard.mana_cost,
     power: enCard.power,
     toughness: enCard.toughness,
-    // 日本語版プリントのルールテキスト訳（printed_text_ja）があればそちらを優先し、
-    // 無ければ英語のoracle_text（card_oracles、常に取得済み）にフォールバックする。
-    oracleText: jaCard?.printed_text_ja ?? oracle.oracle_text,
+    // 日本語版プリントのルールテキスト訳（printed_text_ja）があればそちらを優先するが、
+    // 代表プリントがUniverses Beyond版でフレーバー名に差し替わっている場合はfallbackTextJa
+    // （非コラボ版のテキスト）を優先する。どちらも無ければ英語のoracle_textにフォールバック。
+    oracleText: fallbackTextJa ?? jaCard?.printed_text_ja ?? oracle.oracle_text,
     legalities: enCard.legalities,
     imageUrl: jaCard?.image_uri_normal ?? enCard.image_uri_normal,
     usdPrice,
-    // Foilはscripts/snapshot-prices.mjsがcard_price_snapshotsに保存済みの円換算値をそのまま使う
-    // （ライブ取得フォールバックには対応しない。foil非対応プリントはnullのまま）。
-    jpyPriceFoil: snapshot?.jpyEstFoil ?? null,
+    jpyPrice,
     usdPriceFoil: snapshot?.usdFoil ?? null,
+    jpyPriceFoil: snapshot?.jpyEstFoil ?? null,
     source: "db",
   };
 }
@@ -133,8 +148,9 @@ async function resolveCard(searchName: string): Promise<ResolvedCard | null> {
     imageUrl:
       (jaCard && resolveImageUris(jaCard)?.normal) ?? resolveImageUris(enCard)?.normal ?? null,
     usdPrice: enCard.prices.usd ? parseFloat(enCard.prices.usd) : null,
-    jpyPriceFoil: null,
+    jpyPrice: null,
     usdPriceFoil: null,
+    jpyPriceFoil: null,
     source: "live",
   };
 }
@@ -200,19 +216,41 @@ export default async function CardDetailPage({
   const { period } = await searchParams;
   const usagePeriodDays = resolveUsagePeriod(period);
 
-  const [card, rates] = await Promise.all([resolveCardByParam(oracleId), fetchExchangeRates()]);
+  const card = await resolveCardByParam(oracleId);
   if (!card) notFound();
 
-  const jpyPrice = card.usdPrice !== null ? toJpy(card.usdPrice, rates.usdToJpy) : null;
+  // ヘッダーの現在価格は、スナップショット保存済みのjpy_est（記録日時点のレートで計算済み）を
+  // そのまま使う。価格推移グラフの最新点も同じjpy_estを表示しているため、これでヘッダーと
+  // グラフの右端が必ず一致する。ライブ為替APIをその場で叩いて再計算するフォールバックは
+  // 廃止した（毎回外部APIを叩くコストがかかる上、バッチ実行時のレートとズレて逆に不一致の原因に
+  // なっていたため）。
+  // ただし、インポートしたばかりでcard_cheapest_price_snapshotsがまだ無い（＝jpy_estが無い）
+  // カードは、usdだけ取れていてもそのまま「価格データなし」になってしまうので、その場合だけ
+  // exchange_rates（既にDBにある、外部APIを叩かない）の直近レートで仮計算する。
+  const needsRateFallback =
+    (card.jpyPrice === null && card.usdPrice !== null) ||
+    (card.jpyPriceFoil === null && card.usdPriceFoil !== null);
+  const fallbackRate = needsRateFallback ? await getLatestUsdToJpyRate() : null;
+
+  const jpyPrice =
+    card.jpyPrice ?? (card.usdPrice !== null && fallbackRate !== null ? toJpy(card.usdPrice, fallbackRate) : null);
+  const jpyPriceFoil =
+    card.jpyPriceFoil ??
+    (card.usdPriceFoil !== null && fallbackRate !== null ? toJpy(card.usdPriceFoil, fallbackRate) : null);
+  // 「為替換算の参考値（$X × Y円/$）」の掛け算が実際の表示価格と食い違わないよう、
+  // YはjpyPriceから逆算した実効レート（スナップショット由来ならバッチ実行時のレート、
+  // 仮計算ならexchange_ratesの直近レートそのもの）を使う。
+  const usdToJpyRate = card.usdPrice && jpyPrice !== null ? jpyPrice / card.usdPrice : 0;
+  const usdToJpyRateFoil = card.usdPriceFoil && jpyPriceFoil !== null ? jpyPriceFoil / card.usdPriceFoil : 0;
   const relatedArchetypes = getArchetypesUsingCard(card.nameEn);
   const formatUsageCounts = card.oracleId
     ? await getFormatUsageCountsForCard(card.oracleId, usagePeriodDays)
     : [];
   const [enPriceHistory, jaPriceHistory, enFoilPriceHistory, jaFoilPriceHistory] = card.oracleId
     ? await Promise.all([
-        getPriceHistoryForCard(card.oracleId, "en"),
+        getCheapestPriceHistory(card.oracleId),
         getPriceHistoryForCard(card.oracleId, "ja"),
-        getPriceHistoryForCard(card.oracleId, "en", "foil"),
+        getCheapestPriceHistory(card.oracleId, "foil"),
         getPriceHistoryForCard(card.oracleId, "ja", "foil"),
       ])
     : [[], [], [], []];
@@ -252,10 +290,11 @@ export default async function CardDetailPage({
           collectorNumber: card.collectorNumber,
           rarityLabel: RARITY_LABEL_JA[card.rarity] ?? card.rarity,
           jpyPrice,
-          jpyPriceFoil: card.jpyPriceFoil,
+          jpyPriceFoil,
           usdPrice: card.usdPrice,
           usdPriceFoil: card.usdPriceFoil,
-          usdToJpyRate: rates.usdToJpy,
+          usdToJpyRate,
+          usdToJpyRateFoil,
           priceExtremesText,
           priceExtremesFoilText,
         }}
@@ -317,7 +356,7 @@ export default async function CardDetailPage({
             </ul>
           ) : null}
           {formatUsageCounts.some((f) => f.changePct !== null) && (
-            <p className="mt-2 text-xs text-neutral-400">※（）は直前の同じ期間との比較</p>
+            <p className="mt-2 text-xs text-neutral-400">※（）は直前の同じ期間との採用率の変化率</p>
           )}
           {formatUsageCounts.length === 0 &&
             (relatedArchetypes.length > 0 ? (

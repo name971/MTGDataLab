@@ -42,6 +42,7 @@ CREATE TABLE cards (
   is_showcase          BOOLEAN DEFAULT false,
   is_borderless        BOOLEAN DEFAULT false,
   is_promo             BOOLEAN DEFAULT false,
+  is_universes_beyond  BOOLEAN DEFAULT false, -- promo_typesに"universesbeyond"を含むか（コラボ作品プリント）
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -102,6 +103,10 @@ CREATE TABLE card_prints (
   collector_number     TEXT NOT NULL,
   released_at          DATE,
   image_uri_normal     TEXT,
+  -- 日本語版プリントの画像（存在する場合のみ）。「その他のプリント」欄は可能な限り
+  -- 日本語版の画像を出したいが、日本語版が存在しないプリントも多いため、image_uri_normal
+  -- （英語版、常に存在）とは別カラムで持つ（呼び出し側でimage_uri_normal_ja ?? image_uri_normal）。
+  image_uri_normal_ja  TEXT,
   -- 金縁(World Championship Decks等)・銀縁(Un-set)・memorabilia区分(30th Anniversary Edition等)は
   -- オラクルとしては合法でも、この物理プリント自体はどのフォーマットでも使用不可
   -- （border_colorが標準の黒/白以外、またはset_typeが非トーナメント区分）。
@@ -125,6 +130,25 @@ CREATE TABLE card_print_prices (
 );
 
 CREATE INDEX idx_card_print_prices_oracle_id ON card_print_prices (oracle_id);
+
+-- オラクル単位・日付単位で「その日、全プリント中で一番安かった価格」を集計したもの。
+-- card_print_prices（全プリントの日次価格履歴）から日次バッチ（scripts/compute-cheapest-price-snapshots.mjs）
+-- で計算する。「代表プリント」は新セット追加時にしか選び直さないため実勢と時差が生じるが、
+-- こちらは全プリントを毎日横断して最安値を見るため、より実態に近い「今一番安く買えるプリントはいくら」を
+-- 表示できる（カード詳細ページのメイン価格・グラフはここを見る）。
+CREATE TABLE card_cheapest_price_snapshots (
+  oracle_id       UUID NOT NULL REFERENCES card_oracles (oracle_id),
+  date            DATE NOT NULL,
+  scryfall_id     UUID REFERENCES card_prints (scryfall_id), -- その日最安だった通常プリント
+  usd             NUMERIC(10, 2),
+  jpy_est         NUMERIC(12, 2),
+  scryfall_id_foil UUID REFERENCES card_prints (scryfall_id), -- その日最安だったFoilプリント
+  usd_foil        NUMERIC(10, 2),
+  jpy_est_foil    NUMERIC(12, 2),
+  PRIMARY KEY (oracle_id, date)
+);
+
+CREATE INDEX idx_card_cheapest_price_oracle_date ON card_cheapest_price_snapshots (oracle_id, date);
 
 
 -- ════════════════════════════════════════════
@@ -279,7 +303,6 @@ CREATE INDEX idx_deck_cards_oracle ON deck_cards (oracle_id);
 -- ようになった（実際に日次パイプラインが失敗した）。部分インデックスで両方を1本にまとめる。
 CREATE INDEX idx_deck_cards_unresolved_id ON deck_cards (id) WHERE oracle_id IS NULL;
 
-
 -- ════════════════════════════════════════════
 -- 4. 採用率・ランキング用の集計テーブル
 -- ════════════════════════════════════════════
@@ -377,6 +400,50 @@ CREATE TABLE pack_slot_definitions (
   probability  NUMERIC(6, 4) NOT NULL, -- そのスロットでこのレアリティが出る確率（同一slot_name内の合計が1.0）
   card_count   INT NOT NULL DEFAULT 1,
   UNIQUE (set_code, product_type, slot_name, rarity)
+);
+
+-- ブースターシートのカード構成（MTGJSON booster.sheets由来、scripts/import-pack-slot-cards.mjsで
+-- 一度だけ投入）。1枚1行、そのシート内での相対ウェイトを持つ。セットの印刷構成はリリース後
+-- 基本的に変わらないため、pack_slot_definitions（確率）と同じく手動更新でよい
+-- （新セット追加時のみ再実行）。日次で変わるのは「価格」だけなので、価格計算は
+-- pack_slot_avg_prices（下記）で別に日次計算する。
+CREATE TABLE pack_slot_cards (
+  set_code     TEXT NOT NULL,
+  product_type TEXT NOT NULL,
+  slot_name    TEXT NOT NULL,
+  scryfall_id  UUID NOT NULL,
+  -- MTGJSONのシート内ウェイトは巨大な値になることがあり、桁数を予測しづらいため
+  -- 精度固定のNUMERICではなく浮動小数点にする（相対比率としてしか使わないので厳密な精度は不要）
+  weight       DOUBLE PRECISION NOT NULL,
+  foil         BOOLEAN NOT NULL DEFAULT false,
+  PRIMARY KEY (set_code, product_type, slot_name, scryfall_id)
+);
+
+CREATE INDEX idx_pack_slot_cards_lookup ON pack_slot_cards (set_code, product_type, slot_name);
+
+-- スロット単位の期待価格（日次バッチ scripts/compute-pack-slot-avg-prices.mjs で計算）。
+-- pack_slot_cards（カード構成・ウェイト）× card_print_prices（全プリントの日次価格履歴）を
+-- 突き合わせ、元のsamplePackData.ts（scripts/generate-pack-data.mjs）と同じ「カード単位の
+-- 出現ウェイト付き平均」を毎日計算し直す。構成は静的、価格だけ日次追従という設計。
+CREATE TABLE pack_slot_avg_prices (
+  set_code       TEXT NOT NULL,
+  product_type   TEXT NOT NULL,
+  slot_name      TEXT NOT NULL,
+  avg_price_jpy  NUMERIC(10, 2) NOT NULL,
+  match_rate     NUMERIC(5, 4) NOT NULL, -- ウェイト合計のうち、価格が取得できたカードの割合
+  calculated_at  DATE NOT NULL,
+  PRIMARY KEY (set_code, product_type, slot_name, calculated_at)
+);
+
+CREATE INDEX idx_pack_slot_avg_prices_lookup ON pack_slot_avg_prices (set_code, product_type, calculated_at);
+
+-- パック単品の商品画像URL（TCGCSVから取得、めったに変わらないので価格と別テーブルにして
+-- 日次上書きの対象から外す）。
+CREATE TABLE pack_products (
+  set_code       TEXT NOT NULL,
+  product_type   TEXT NOT NULL,
+  pack_image_url TEXT,
+  PRIMARY KEY (set_code, product_type)
 );
 
 

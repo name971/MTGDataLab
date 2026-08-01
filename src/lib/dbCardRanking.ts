@@ -26,9 +26,9 @@ const BASIC_LAND_NAMES = new Set([
  * card_usage_stats（採用率）を軸に、そのフォーマットで実際によく使われているカードの
  * ランキングをDBの実データから組み立てる。card_usage_statsに行が無いフォーマットは
  * 空配列を返す（呼び出し側でサンプルデータにフォールバックする想定）。
- * priceChangePct（3日変化率）はcard_price_snapshotsの最新日と3日前の日付を比較して算出する
- * （scripts/compute-trending-scores.mjsと同じ方式）。3日前のスナップショットが無いカードは
- * 変化なし(0)として扱う。
+ * priceChangePct（3日変化率）はcard_cheapest_price_snapshots（全プリント横断の最安値）の
+ * 最新日と3日前の日付を比較して算出する（scripts/compute-trending-scores.mjsと同じ方式）。
+ * 3日前のスナップショットが無いカードは変化なし(0)として扱う。
  */
 export async function getCardRankingFromDb(
   format: Format,
@@ -78,18 +78,29 @@ export async function getCardRankingFromDb(
 
   if (topOracleIds.length === 0) return [];
 
-  const [{ data: oracles }, { data: cardRows }, { data: priceRows }] = await Promise.all([
+  // card_cheapest_price_snapshotsはtopOracleId(最大100件)×蓄積日数分の行があり、蓄積が進むと
+  // 1000行を超える（例: 100件×10日で1000行）。ページングしないと日付降順の後方＝
+  // 一部オラクルの直近データが切り捨てられ、priceChangePctが不正確になる。
+  const PRICE_PAGE_SIZE = 1000;
+  const priceRows: { oracle_id: string; jpy_est: number | null; date: string }[] = [];
+  for (let offset = 0; ; offset += PRICE_PAGE_SIZE) {
+    const { data: page, error } = await supabase
+      .from("card_cheapest_price_snapshots")
+      .select("oracle_id, jpy_est, date")
+      .in("oracle_id", topOracleIds)
+      .order("date", { ascending: false })
+      .range(offset, offset + PRICE_PAGE_SIZE - 1);
+    if (error || !page || page.length === 0) break;
+    priceRows.push(...page);
+    if (page.length < PRICE_PAGE_SIZE) break;
+  }
+
+  const [{ data: oracles }, { data: cardRows }] = await Promise.all([
     supabase.from("card_oracles").select("oracle_id, name, printed_name_ja").in("oracle_id", topOracleIds),
     supabase
       .from("cards")
       .select("oracle_id, lang, image_uri_art_crop, mana_cost")
       .in("oracle_id", topOracleIds),
-    supabase
-      .from("card_price_snapshots")
-      .select("oracle_id, jpy_est, date")
-      .in("oracle_id", topOracleIds)
-      .eq("series", "en")
-      .order("date", { ascending: false }),
   ]);
 
   const nameByOracle = new Map((oracles ?? []).map((o) => [o.oracle_id, o]));
@@ -115,23 +126,27 @@ export async function getCardRankingFromDb(
     }
   }
 
-  // 3日前の日付ちょうどのスナップショットと比較する（priceRowsは既に全期間分取得済みなので
-  // 追加クエリ不要）。無ければ変化なし(0)扱い。
+  // 3日前「ちょうど」の日付と厳密一致でしか比較しないと、その日だけ日次バッチが
+  // 動いていない（実際に2026-07-28分が丸ごと欠けていたことがあった）だけで対象カード
+  // 全件が変化なし(0%)になってしまう。3日前以前で一番近い日のスナップショットを使う
+  // （priceRowsは既に全期間分取得済みなので追加クエリ不要）。
   const priceChangeByOracle = new Map<string, number>();
   if (latestDate) {
     const pastDate = new Date(`${latestDate}T00:00:00Z`);
     pastDate.setUTCDate(pastDate.getUTCDate() - 3);
     const pastDateStr = pastDate.toISOString().slice(0, 10);
-    const pastPriceByOracle = new Map<string, number>();
+    const pastPriceByOracle = new Map<string, { date: string; price: number }>();
     for (const p of priceRows ?? []) {
-      if (p.date === pastDateStr && p.jpy_est !== null && !pastPriceByOracle.has(p.oracle_id)) {
-        pastPriceByOracle.set(p.oracle_id, Number(p.jpy_est));
+      if (p.jpy_est === null || p.date > pastDateStr) continue;
+      const existing = pastPriceByOracle.get(p.oracle_id);
+      if (!existing || p.date > existing.date) {
+        pastPriceByOracle.set(p.oracle_id, { date: p.date, price: Number(p.jpy_est) });
       }
     }
     for (const [oracleId, price] of priceByOracle) {
       const past = pastPriceByOracle.get(oracleId);
-      if (past != null && past !== 0) {
-        priceChangeByOracle.set(oracleId, Math.round(((price - past) / past) * 10000) / 100);
+      if (past != null && past.price !== 0) {
+        priceChangeByOracle.set(oracleId, Math.round(((price - past.price) / past.price) * 10000) / 100);
       }
     }
   }

@@ -19,6 +19,7 @@ interface CardPrintRow {
   collector_number: string;
   released_at: string | null;
   image_uri_normal: string | null;
+  image_uri_normal_ja: string | null;
   not_tournament_legal: boolean;
 }
 
@@ -29,13 +30,14 @@ function toCardPrint(p: CardPrintRow): CardPrint {
     setName: p.sets?.set_name ?? p.set_code,
     collectorNumber: p.collector_number,
     releasedAt: p.released_at,
-    imageUrl: p.image_uri_normal,
+    // 日本語版の画像があればそちらを優先する（無ければ英語版）
+    imageUrl: p.image_uri_normal_ja ?? p.image_uri_normal,
     notTournamentLegal: p.not_tournament_legal,
   };
 }
 
 const CARD_PRINT_SELECT =
-  "scryfall_id, set_code, sets(set_name), collector_number, released_at, image_uri_normal, not_tournament_legal";
+  "scryfall_id, set_code, sets(set_name), collector_number, released_at, image_uri_normal, image_uri_normal_ja, not_tournament_legal";
 
 /**
  * card_prints（scripts/rebuild-card-prints.mjsがScryfallバルクデータから事前生成、db/schema.sql参照）
@@ -46,13 +48,24 @@ export async function getOtherPrintsForCard(
   oracleId: string,
   excludePrint?: { setCode: string; collectorNumber: string },
 ): Promise<CardPrint[]> {
-  const { data, error } = await supabase
-    .from("card_prints")
-    .select(CARD_PRINT_SELECT)
-    .eq("oracle_id", oracleId)
-    .order("released_at", { ascending: false })
-    .returns<CardPrintRow[]>();
-  if (error || !data) return [];
+  // 基本土地等は700件超のプリントを持ち、PostgRESTのデフォルト上限（1000行）に近い/超える
+  // ことがある。降順ソートなので今のところ先頭（新しい方）は守られるが、将来的に
+  // 1000件を超えるカードが増えることも考え、念のためページングしておく。
+  const PAGE_SIZE = 1000;
+  const data: CardPrintRow[] = [];
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const { data: page, error } = await supabase
+      .from("card_prints")
+      .select(CARD_PRINT_SELECT)
+      .eq("oracle_id", oracleId)
+      .order("released_at", { ascending: false })
+      .range(offset, offset + PAGE_SIZE - 1)
+      .returns<CardPrintRow[]>();
+    if (error) return [];
+    if (!page || page.length === 0) break;
+    data.push(...page);
+    if (page.length < PAGE_SIZE) break;
+  }
 
   return data
     .filter(

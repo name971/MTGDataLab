@@ -3,10 +3,14 @@
  * 作り直す。cardsテーブルと違い代表プリント1枚に絞らず、oracle_idごとの非デジタルプリントを
  * 全件対象にする。価格は追跡しない（画像・セット名・発売年のみ）。
  *
- * 基本は英語版のみだが、(セット, コレクター番号)の組に英語版が存在せず日本語版しか無い場合
- * （Mystical Archive等、日本語版限定で別コレクター番号のプリントが存在するケース）は
- * その日本語版を採用する。英語版・日本語版どちらも存在する組は今まで通り英語版だけを使う
- * （単なる言語違いの重複を増やさないため）。
+ * 基本行（scryfall_id・セット名・発売日等）は英語版のみだが、(セット, コレクター番号)の組に
+ * 英語版が存在せず日本語版しか無い場合（Mystical Archive等、日本語版限定で別コレクター番号の
+ * プリントが存在するケース）はその日本語版を採用する。英語版・日本語版どちらも存在する組は
+ * 今まで通り英語版だけを基本行に使う（単なる言語違いの重複を増やさないため）。
+ * 画像だけは別枠でimage_uri_normal_jaに日本語版の画像URLも保持し、表示側（その他のプリント欄・
+ * プリント切り替え時のメイン画像）は日本語版があればそちらを使う（バルクデータには元々
+ * 日本語版の画像URLも含まれており、追加のAPI呼び出しは不要。画像URL文字列1本の追加なので
+ * DB容量への影響も軽微）。
  *
  * loadIndex()（scripts/lib/scryfallBulk.mjs）はメモリ節約のため名前ごとに「一番良い1件」しか
  * 保持しないため、全プリント一覧が必要なこのスクリプトは自前でバルクデータをストリーミングし直す。
@@ -90,6 +94,7 @@ async function main() {
 
   // (oracle_id, set, collector_number)ごとに英語版を優先し、無ければ日本語版を採用する
   const byPrintKey = new Map();
+  const jaImageByPrintKey = new Map();
   const setsByCode = new Map();
   let scanned = 0;
   await forEachJsonArrayObject(DATA_FILE, (raw) => {
@@ -98,6 +103,13 @@ async function main() {
     if (!raw.oracle_id || !knownOracleIds.has(raw.oracle_id)) return;
 
     const key = `${raw.oracle_id}|${raw.set}|${raw.collector_number}`;
+
+    if (raw.lang === "ja") {
+      const face = raw.card_faces?.[0];
+      const imageUris = raw.image_uris ?? face?.image_uris ?? null;
+      if (imageUris?.normal) jaImageByPrintKey.set(key, imageUris.normal);
+    }
+
     const current = byPrintKey.get(key);
     if (current && (current.lang === "en" || raw.lang === "ja")) return; // 英語版があれば日本語版は無視
     byPrintKey.set(key, raw);
@@ -107,6 +119,7 @@ async function main() {
   const prints = [...byPrintKey.values()].map((raw) => {
     const face = raw.card_faces?.[0];
     const imageUris = raw.image_uris ?? face?.image_uris ?? null;
+    const key = `${raw.oracle_id}|${raw.set}|${raw.collector_number}`;
     return {
       scryfall_id: raw.id,
       oracle_id: raw.oracle_id,
@@ -114,6 +127,7 @@ async function main() {
       collector_number: raw.collector_number,
       released_at: raw.released_at ?? null,
       image_uri_normal: imageUris?.normal ?? null,
+      image_uri_normal_ja: jaImageByPrintKey.get(key) ?? null,
       not_tournament_legal: isNotTournamentLegal(raw),
     };
   });

@@ -192,10 +192,9 @@ export async function getDeckDetailFromDb(deckId: number): Promise<DbDeckDetail 
       .select("oracle_id, lang, image_uri_art_crop, image_uri_normal, type_line, mana_cost")
       .in("oracle_id", oracleIds);
     const { data: priceRows } = await supabase
-      .from("card_price_snapshots")
+      .from("card_cheapest_price_snapshots")
       .select("oracle_id, jpy_est, date")
       .in("oracle_id", oracleIds)
-      .eq("series", "en")
       .order("date", { ascending: false });
 
     for (const o of oracles ?? []) {

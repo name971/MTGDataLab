@@ -170,6 +170,7 @@ function slimCard(card) {
     promo: card.promo,
     digital: card.digital,
     border_color: card.border_color,
+    promo_types: card.promo_types,
     is_showcase: card.frame_effects?.includes("showcase") ?? false,
     image_uris: card.image_uris
       ? { normal: card.image_uris.normal, art_crop: card.image_uris.art_crop }
@@ -477,5 +478,10 @@ export function toCardRow(card, oracleId) {
     is_showcase: card.is_showcase ?? false,
     is_borderless: card.border_color === "borderless",
     is_promo: card.promo ?? false,
+    // Universes Beyond（コラボ作品）のプリントはルールテキスト中のカード名がフレーバー名に
+    // 差し替わることがある（例: Final Fantasy版Ragavanの"Zidane Tribal"）。以前はカード詳細
+    // ページ表示のたびにScryfallへライブ問い合わせして判定していたが、静的な情報なので
+    // インポート時に判定してDBに保存しておく。
+    is_universes_beyond: card.promo_types?.includes("universesbeyond") ?? false,
   };
 }

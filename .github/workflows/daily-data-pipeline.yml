@@ -46,6 +46,19 @@ jobs:
       - name: Snapshot today's print prices (all versions)
         run: node scripts/snapshot-print-prices.mjs
 
+      - name: Compute cheapest-print-price snapshots
+        run: node scripts/compute-cheapest-price-snapshots.mjs
+
+      # パックEV: パック単品の実勢価格（TCGCSV）はレート制限を気にせず取得できる別ソースなので
+      # 他ステップの成否に関わらず進める。片方が失敗してもEVページ側でフォールバックする。
+      - name: Snapshot pack prices (TCGCSV)
+        continue-on-error: true
+        run: node scripts/snapshot-pack-prices.mjs
+
+      - name: Compute pack slot avg prices
+        continue-on-error: true
+        run: node scripts/compute-pack-slot-avg-prices.mjs
+
       # import-tournaments.mjsは引数無しだとStandardのみ取得する。Commanderはmtgo.comに
       # 無い形式でTopDeck.gg取り込みだけが頼りのため、明示的に別ステップで呼ぶ
       # （呼び忘れると採用率/使用デッキが古いまま静かに止まる。実際に約2週間気づかず止まっていた）。

@@ -1,7 +1,23 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getCardDetailByOracleId } from "@/lib/cardData";
+import { getCardDetailByOracleId, getCardDetailFromDb, type DbCardDetail } from "@/lib/cardData";
 import { getDecksByCardAndFormat } from "@/lib/dbDeckDetail";
+import { SAMPLE_CARD_SLUGS } from "@/lib/sampleCards";
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * URLの[oracleId]は「サンプル22枚のスラグ（例: "ragavan"）」と「実データのUUID」の
+ * どちらもありうる（src/app/cards/[oracleId]/page.tsxのresolveCardByParamと同じ判定）。
+ * ここで前者を無視してUUID決め打ちでDBを引くと、スラグ経由のカードは常に404になっていた
+ * （実際に発生していたバグ）。
+ */
+async function resolveCardDetail(oracleId: string): Promise<DbCardDetail | null> {
+  const searchName = SAMPLE_CARD_SLUGS[oracleId];
+  if (searchName) return getCardDetailFromDb(searchName);
+  if (UUID_PATTERN.test(oracleId)) return getCardDetailByOracleId(oracleId);
+  return null;
+}
 
 const PERIOD_OPTIONS = [7, 30, 90] as const;
 type PeriodDays = (typeof PERIOD_OPTIONS)[number];
@@ -30,11 +46,9 @@ export default async function CardDecksPage({
   if (!format) notFound();
   const periodDays = resolvePeriod(period);
 
-  const [card, decks] = await Promise.all([
-    getCardDetailByOracleId(oracleId),
-    getDecksByCardAndFormat(oracleId, format, periodDays),
-  ]);
+  const card = await resolveCardDetail(oracleId);
   if (!card) notFound();
+  const decks = await getDecksByCardAndFormat(card.oracle.oracle_id, format, periodDays);
 
   const cardName = card.oracle.printed_name_ja ?? card.oracle.name;
 
