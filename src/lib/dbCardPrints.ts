@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { getLatestPricesForPrints } from "./dbCardPrintPrices";
 
 export interface CardPrint {
   scryfallId: string;
@@ -73,6 +74,42 @@ export async function getOtherPrintsForCard(
         !excludePrint || p.set_code !== excludePrint.setCode || p.collector_number !== excludePrint.collectorNumber,
     )
     .map(toCardPrint);
+}
+
+/**
+ * 「カードデータ」欄のメイン画像を選ぶ。トーナメント使用可能な全プリントを価格が安い順に見ていき、
+ * その版に一致する日本語版画像（image_uri_normal_ja）があれば採用する。無ければ次に安いプリントで
+ * 同じ判定を繰り返し、どのプリントにも日本語版が無ければ一番安いプリントの英語版画像を使う。
+ * card_printsに行が無い（scripts/rebuild-card-prints.mjs未反映）オラクルはnullを返す
+ * （呼び出し側でcardsテーブルの代表プリント画像にフォールバックする想定）。
+ */
+export async function getBestCardImage(oracleId: string): Promise<string | null> {
+  const PAGE_SIZE = 1000;
+  const rows: { scryfall_id: string; image_uri_normal: string | null; image_uri_normal_ja: string | null }[] = [];
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const { data: page, error } = await supabase
+      .from("card_prints")
+      .select("scryfall_id, image_uri_normal, image_uri_normal_ja")
+      .eq("oracle_id", oracleId)
+      .eq("not_tournament_legal", false)
+      .range(offset, offset + PAGE_SIZE - 1);
+    if (error) return null;
+    if (!page || page.length === 0) break;
+    rows.push(...page);
+    if (page.length < PAGE_SIZE) break;
+  }
+  if (rows.length === 0) return null;
+
+  const prices = await getLatestPricesForPrints(rows.map((r) => r.scryfall_id));
+  const priced = rows
+    .filter((r) => prices.normal.has(r.scryfall_id))
+    .sort((a, b) => prices.normal.get(a.scryfall_id)! - prices.normal.get(b.scryfall_id)!);
+
+  for (const r of priced) {
+    if (r.image_uri_normal_ja) return r.image_uri_normal_ja;
+  }
+  // どのプリントにも日本語版画像が無ければ、一番安いプリント（価格不明な行しか無ければ先頭の行）の英語版画像を使う
+  return (priced[0] ?? rows[0]).image_uri_normal ?? null;
 }
 
 /** プリント別詳細ページ（/cards/[oracleId]/prints/[scryfallId]）用に1件だけ取得する */

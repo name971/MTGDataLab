@@ -17,25 +17,17 @@ const PADDING = { top: 12, right: 12, bottom: 24, left: 56 };
 
 export default function PriceHistoryChart({
   enHistory,
-  jaHistory,
   enFoilHistory,
-  jaFoilHistory,
   finish,
 }: {
   enHistory: PricePoint[];
-  jaHistory: PricePoint[];
   enFoilHistory: PricePoint[];
-  jaFoilHistory: PricePoint[];
   /** 通常/Foilの切り替えはCardHero側の1箇所（価格表示と共通）で行うため、ここでは制御下で受け取るだけ */
   finish: "normal" | "foil";
 }) {
   const [period, setPeriod] = useState<Period>("30");
-  const [series, setSeries] = useState<"en" | "ja">("en");
-  const hasJa = jaHistory.length > 0 || jaFoilHistory.length > 0;
 
-  const normalHistory = series === "ja" && hasJa ? jaHistory : enHistory;
-  const foilHistory = series === "ja" && hasJa ? jaFoilHistory : enFoilHistory;
-  const fullHistory = finish === "foil" ? foilHistory : normalHistory;
+  const fullHistory = finish === "foil" ? enFoilHistory : enHistory;
 
   const points = useMemo(() => {
     if (period === "all") return fullHistory;
@@ -46,8 +38,7 @@ export default function PriceHistoryChart({
     return fullHistory.filter((p) => p.date >= cutoffStr);
   }, [fullHistory, period]);
 
-  const hasAnyData =
-    enHistory.length > 0 || jaHistory.length > 0 || enFoilHistory.length > 0 || jaFoilHistory.length > 0;
+  const hasAnyData = enHistory.length > 0 || enFoilHistory.length > 0;
   if (!hasAnyData) {
     return (
       <div className="rounded-lg border border-dashed border-neutral-300 p-4 text-xs text-neutral-500">
@@ -73,25 +64,6 @@ export default function PriceHistoryChart({
               {opt.label}
             </button>
           ))}
-        </div>
-        <div className="flex items-center gap-2">
-          {hasJa && (
-            <div className="flex gap-1">
-              {(["en", "ja"] as const).map((s) => (
-                <button
-                  key={s}
-                  onClick={() => setSeries(s)}
-                  className={`rounded-md border px-2 py-1 text-xs ${
-                    series === s
-                      ? "border-neutral-500 bg-neutral-100 text-neutral-900"
-                      : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
-                  }`}
-                >
-                  {s === "en" ? "英語版" : "日本語版"}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
       </div>
 

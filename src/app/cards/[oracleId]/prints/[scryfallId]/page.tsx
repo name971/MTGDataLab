@@ -128,9 +128,7 @@ export default async function CardPrintDetailPage({
       {(priceHistory.length > 0 || foilPriceHistory.length > 0) && (
         <PriceHistoryChart
           enHistory={priceHistory}
-          jaHistory={[]}
           enFoilHistory={foilPriceHistory}
-          jaFoilHistory={[]}
           finish="normal"
         />
       )}

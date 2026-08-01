@@ -47,9 +47,7 @@ export default function CardHero({
   oracleId,
   defaultPrint,
   defaultEnHistory,
-  defaultJaHistory,
   defaultEnFoilHistory,
-  defaultJaFoilHistory,
   otherPrints,
   pricesByScryfallId,
   foilPricesByScryfallId,
@@ -58,9 +56,7 @@ export default function CardHero({
   oracleId: string;
   defaultPrint: DefaultPrint;
   defaultEnHistory: PricePoint[];
-  defaultJaHistory: PricePoint[];
   defaultEnFoilHistory: PricePoint[];
-  defaultJaFoilHistory: PricePoint[];
   otherPrints: CardPrint[];
   pricesByScryfallId: Record<string, number>;
   foilPricesByScryfallId: Record<string, number>;
@@ -355,9 +351,7 @@ export default function CardHero({
         ) : (
           <PriceHistoryChart
             enHistory={enHistory}
-            jaHistory={isAlternate ? [] : defaultJaHistory}
             enFoilHistory={enFoilHistoryForChart}
-            jaFoilHistory={isAlternate ? [] : defaultJaFoilHistory}
             finish={effectiveFinish}
           />
         )}

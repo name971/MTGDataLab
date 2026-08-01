@@ -17,9 +17,9 @@ import { toJpy } from "@/lib/fx";
 import { SAMPLE_CARD_SLUGS } from "@/lib/sampleCards";
 import { getArchetypesUsingCard } from "@/lib/sampleDeckDetail";
 import { getFormatUsageCountsForCard } from "@/lib/dbCardUsageByFormat";
-import { getPriceHistoryForCard, type PricePoint } from "@/lib/dbPriceHistory";
+import type { PricePoint } from "@/lib/dbPriceHistory";
 import { getCheapestPriceHistory, getLatestCheapestPrice } from "@/lib/dbCheapestPrice";
-import { getOtherPrintsForCard } from "@/lib/dbCardPrints";
+import { getOtherPrintsForCard, getBestCardImage } from "@/lib/dbCardPrints";
 import { getLatestPricesForPrints } from "@/lib/dbCardPrintPrices";
 import CardHero from "@/components/CardHero";
 import {
@@ -62,7 +62,10 @@ async function resolveCardFromDbDetail(dbResult: DbCardDetail): Promise<Resolved
   const { oracle, enCard, jaCard, fallbackTypeLineJa, fallbackTextJa } = dbResult;
   // card_cheapest_price_snapshots（日次バッチで投入済み、全プリント横断の最安値）優先、
   // 無ければライブ取得にフォールバック
-  const snapshot = await getLatestCheapestPrice(oracle.oracle_id);
+  const [snapshot, bestImage] = await Promise.all([
+    getLatestCheapestPrice(oracle.oracle_id),
+    getBestCardImage(oracle.oracle_id),
+  ]);
   let usdPrice: number | null = snapshot?.usd ?? null;
   let jpyPrice: number | null = snapshot?.jpyEst ?? null;
   if (usdPrice === null) {
@@ -96,7 +99,10 @@ async function resolveCardFromDbDetail(dbResult: DbCardDetail): Promise<Resolved
     // （非コラボ版のテキスト）を優先する。どちらも無ければ英語のoracle_textにフォールバック。
     oracleText: fallbackTextJa ?? jaCard?.printed_text_ja ?? oracle.oracle_text,
     legalities: enCard.legalities,
-    imageUrl: jaCard?.image_uri_normal ?? enCard.image_uri_normal,
+    // 「一番安いプリントから順に見て、日本語版画像があればそれを採用」というアルゴリズムで
+    // card_printsから選ぶ（getBestCardImage）。card_prints未反映（新規カード等）でnullの場合のみ、
+    // 従来通りcardsテーブルの代表プリント画像にフォールバックする。
+    imageUrl: bestImage ?? jaCard?.image_uri_normal ?? enCard.image_uri_normal,
     usdPrice,
     jpyPrice,
     usdPriceFoil: snapshot?.usdFoil ?? null,
@@ -246,14 +252,12 @@ export default async function CardDetailPage({
   const formatUsageCounts = card.oracleId
     ? await getFormatUsageCountsForCard(card.oracleId, usagePeriodDays)
     : [];
-  const [enPriceHistory, jaPriceHistory, enFoilPriceHistory, jaFoilPriceHistory] = card.oracleId
+  const [enPriceHistory, enFoilPriceHistory] = card.oracleId
     ? await Promise.all([
         getCheapestPriceHistory(card.oracleId),
-        getPriceHistoryForCard(card.oracleId, "ja"),
         getCheapestPriceHistory(card.oracleId, "foil"),
-        getPriceHistoryForCard(card.oracleId, "ja", "foil"),
       ])
-    : [[], [], [], []];
+    : [[], []];
   const priceExtremes = getPriceExtremes(enPriceHistory);
   const priceExtremesFoil = getPriceExtremes(enFoilPriceHistory);
   const otherPrints = card.oracleId
@@ -299,9 +303,7 @@ export default async function CardDetailPage({
           priceExtremesFoilText,
         }}
         defaultEnHistory={enPriceHistory}
-        defaultJaHistory={jaPriceHistory}
         defaultEnFoilHistory={enFoilPriceHistory}
-        defaultJaFoilHistory={jaFoilPriceHistory}
         otherPrints={otherPrints}
         pricesByScryfallId={Object.fromEntries(otherPrintPrices.normal)}
         foilPricesByScryfallId={Object.fromEntries(otherPrintPrices.foil)}
