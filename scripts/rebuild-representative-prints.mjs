@@ -14,6 +14,7 @@ import {
   loadIndex,
   findEnglishCard,
   findJapanesePrint,
+  findAnyJapaneseCard,
   findAnyJapaneseName,
   frontFaceName,
   frontFacePrintedName,
@@ -95,7 +96,12 @@ async function main() {
       notFound++;
       continue;
     }
-    const jaCard = findJapanesePrint(index, better.oracle_id, better.set, better.collector_number);
+    // 代表プリントと同じ版の日本語版が無い場合、他の版の日本語版でも良いのでルールテキスト・
+    // タイプ行だけは翻訳を出す（backfill-missing-ja-cards.mjsと同じ方針。画像はズレる可能性が
+    // あるが、名前・テキストが英語のまま残るよりまし）。
+    const jaCard =
+      findJapanesePrint(index, better.oracle_id, better.set, better.collector_number) ??
+      findAnyJapaneseCard(index, better.oracle_id);
 
     // 既存のcards行（この oracle_id の en/ja 各1行のはず）を取得し、
     // 選び直した結果と違うscryfall_idのものだけ差し替える

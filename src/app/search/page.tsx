@@ -28,7 +28,12 @@ export default async function SearchPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-semibold">検索結果: {query}</h1>
+      <div className="flex items-baseline gap-3">
+        <h1 className="text-xl font-semibold">検索結果: {query}</h1>
+        <Link href="/search/advanced" className="text-sm text-neutral-500 hover:underline">
+          高度検索 →
+        </Link>
+      </div>
 
       {results.length > 0 ? (
         <div className="flex flex-col gap-2">

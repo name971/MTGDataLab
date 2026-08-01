@@ -22,14 +22,26 @@ describe("searchCardsInDb", () => {
       data: [{ oracle_id: "oid-1", name: "Solitude", printed_name_ja: "孤独" }],
       error: null,
     });
-    const inMock = vi.fn().mockResolvedValue({
-      data: [
-        { oracle_id: "oid-1", lang: "en", image_uri_art_crop: "https://example.com/en.jpg" },
-        { oracle_id: "oid-1", lang: "ja", image_uri_art_crop: "https://example.com/ja.jpg" },
-      ],
+    (supabase.from as ReturnType<typeof vi.fn>).mockImplementation((table: string) => {
+      if (table === "cards") {
+        const inMock = vi.fn().mockResolvedValue({
+          data: [
+            { oracle_id: "oid-1", lang: "en", image_uri_art_crop: "https://example.com/en.jpg" },
+            { oracle_id: "oid-1", lang: "ja", image_uri_art_crop: "https://example.com/ja.jpg" },
+          ],
+        });
+        return { select: vi.fn().mockReturnValue({ in: inMock }) };
+      }
+      if (table === "card_prints") {
+        // getBestCardImages: このテストのオラクルはcard_prints未反映という想定にし、
+        // cardsテーブルの代表プリント画像（アサーション対象）がそのまま使われるようにする
+        const rangeMock = vi.fn().mockResolvedValue({ data: [], error: null });
+        const eqMock = vi.fn().mockReturnValue({ range: rangeMock });
+        const inMock = vi.fn().mockReturnValue({ eq: eqMock });
+        return { select: vi.fn().mockReturnValue({ in: inMock }) };
+      }
+      throw new Error(`unexpected table ${table}`);
     });
-    const selectMock = vi.fn().mockReturnValue({ in: inMock });
-    (supabase.from as ReturnType<typeof vi.fn>).mockReturnValue({ select: selectMock });
 
     const result = await searchCardsInDb("solitude");
     expect(result).toEqual([

@@ -11,6 +11,9 @@ export interface CardPrint {
   /** 金縁(World Championship Decks等)・銀縁(Un-set)・memorabilia区分など、
    * オラクルとしては合法でもこの物理プリント自体はどのフォーマットでも使用不可 */
   notTournamentLegal: boolean;
+  /** このプリント固有のレアリティ（common/uncommon/rare/mythic）。再録時に変わることがあるため
+   * プリントごとに持つ。scripts/rebuild-card-prints.mjs未反映の古い行はnullのことがある */
+  rarity: string | null;
 }
 
 interface CardPrintRow {
@@ -22,6 +25,7 @@ interface CardPrintRow {
   image_uri_normal: string | null;
   image_uri_normal_ja: string | null;
   not_tournament_legal: boolean;
+  rarity: string | null;
 }
 
 function toCardPrint(p: CardPrintRow): CardPrint {
@@ -34,11 +38,12 @@ function toCardPrint(p: CardPrintRow): CardPrint {
     // 日本語版の画像があればそちらを優先する（無ければ英語版）
     imageUrl: p.image_uri_normal_ja ?? p.image_uri_normal,
     notTournamentLegal: p.not_tournament_legal,
+    rarity: p.rarity,
   };
 }
 
 const CARD_PRINT_SELECT =
-  "scryfall_id, set_code, sets(set_name), collector_number, released_at, image_uri_normal, image_uri_normal_ja, not_tournament_legal";
+  "scryfall_id, set_code, sets(set_name), collector_number, released_at, image_uri_normal, image_uri_normal_ja, not_tournament_legal, rarity";
 
 /**
  * card_prints（scripts/rebuild-card-prints.mjsがScryfallバルクデータから事前生成、db/schema.sql参照）
@@ -110,6 +115,63 @@ export async function getBestCardImage(oracleId: string): Promise<string | null>
   }
   // どのプリントにも日本語版画像が無ければ、一番安いプリント（価格不明な行しか無ければ先頭の行）の英語版画像を使う
   return (priced[0] ?? rows[0]).image_uri_normal ?? null;
+}
+
+const ORACLE_ID_CHUNK = 150; // .in()にUUIDを大量に並べるとURLが長すぎてPostgRESTが400を返すため
+
+/**
+ * getBestCardImageの複数オラクル一括版。ランキング・注目カード等の一覧ページ用に、
+ * オラクルの件数に関わらず一定回数のクエリで済ませる（1件ずつ問い合わせるN+1を避ける）。
+ * 選定ロジックはgetBestCardImageと同じ（安い順に見て日本語版画像がある最初の1枚を採用）。
+ * 画像が決まらなかったオラクルはMapに含めない（呼び出し側でcardsテーブルの代表プリント画像に
+ * フォールバックする想定）。
+ */
+export async function getBestCardImages(oracleIds: string[]): Promise<Map<string, string>> {
+  if (oracleIds.length === 0) return new Map();
+
+  const rows: {
+    oracle_id: string;
+    scryfall_id: string;
+    image_uri_normal: string | null;
+    image_uri_normal_ja: string | null;
+  }[] = [];
+  const PAGE_SIZE = 1000;
+  for (let i = 0; i < oracleIds.length; i += ORACLE_ID_CHUNK) {
+    const chunk = oracleIds.slice(i, i + ORACLE_ID_CHUNK);
+    for (let offset = 0; ; offset += PAGE_SIZE) {
+      const { data: page, error } = await supabase
+        .from("card_prints")
+        .select("oracle_id, scryfall_id, image_uri_normal, image_uri_normal_ja")
+        .in("oracle_id", chunk)
+        .eq("not_tournament_legal", false)
+        .range(offset, offset + PAGE_SIZE - 1);
+      if (error) break;
+      if (!page || page.length === 0) break;
+      rows.push(...page);
+      if (page.length < PAGE_SIZE) break;
+    }
+  }
+  if (rows.length === 0) return new Map();
+
+  const prices = await getLatestPricesForPrints(rows.map((r) => r.scryfall_id));
+
+  const rowsByOracle = new Map<string, typeof rows>();
+  for (const r of rows) {
+    if (!rowsByOracle.has(r.oracle_id)) rowsByOracle.set(r.oracle_id, []);
+    rowsByOracle.get(r.oracle_id)!.push(r);
+  }
+
+  const result = new Map<string, string>();
+  for (const [oracleId, group] of rowsByOracle) {
+    const priced = group
+      .filter((r) => prices.normal.has(r.scryfall_id))
+      .sort((a, b) => prices.normal.get(a.scryfall_id)! - prices.normal.get(b.scryfall_id)!);
+
+    const jaHit = priced.find((r) => r.image_uri_normal_ja);
+    const imageUrl = jaHit?.image_uri_normal_ja ?? (priced[0] ?? group[0]).image_uri_normal;
+    if (imageUrl) result.set(oracleId, imageUrl);
+  }
+  return result;
 }
 
 /** プリント別詳細ページ（/cards/[oracleId]/prints/[scryfallId]）用に1件だけ取得する */

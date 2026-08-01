@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { getBestCardImages } from "./dbCardPrints";
 
 /** 2〜3文字未満はクエリを発火させない（db/search-design.sql の運用メモ） */
 const MIN_QUERY_LENGTH = 2;
@@ -22,17 +23,22 @@ export async function searchCardsInDb(query: string): Promise<SearchCardResult[]
   if (error || !oracles || oracles.length === 0) return [];
 
   const oracleIds = oracles.map((o: { oracle_id: string }) => o.oracle_id);
-  const { data: cards } = await supabase
-    .from("cards")
-    .select("oracle_id, lang, image_uri_art_crop")
-    .in("oracle_id", oracleIds);
+  const [{ data: cards }, bestImageByOracle] = await Promise.all([
+    supabase.from("cards").select("oracle_id, lang, image_uri_art_crop").in("oracle_id", oracleIds),
+    getBestCardImages(oracleIds),
+  ]);
 
+  // カード詳細ページの「カードデータ」画像選定（安い順+日本語版一致、getBestCardImage）と揃える。
+  // card_prints未反映等でgetBestCardImagesが決められなかった場合のみ、cardsテーブルの
+  // 代表プリント画像にフォールバックする。
   const imageByOracleId = new Map<string, string>();
   for (const card of cards ?? []) {
-    // 日本語版があればそちらの画像を優先（既存の表示ルールに合わせる）
     if (card.image_uri_art_crop && (card.lang === "ja" || !imageByOracleId.has(card.oracle_id))) {
       imageByOracleId.set(card.oracle_id, card.image_uri_art_crop);
     }
+  }
+  for (const [oracleId, normalUrl] of bestImageByOracle) {
+    imageByOracleId.set(oracleId, normalUrl.replace("/normal/", "/art_crop/"));
   }
 
   return oracles.map((o: { oracle_id: string; name: string; printed_name_ja: string | null }) => ({

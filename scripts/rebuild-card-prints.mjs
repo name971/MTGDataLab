@@ -128,6 +128,7 @@ async function main() {
       released_at: raw.released_at ?? null,
       image_uri_normal: imageUris?.normal ?? null,
       image_uri_normal_ja: jaImageByPrintKey.get(key) ?? null,
+      rarity: raw.rarity ?? null,
       not_tournament_legal: isNotTournamentLegal(raw),
     };
   });

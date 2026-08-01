@@ -134,8 +134,11 @@ function slimFace(face) {
     printed_name: face.printed_name,
     mana_cost: face.mana_cost,
     type_line: face.type_line,
+    printed_type_line: face.printed_type_line,
     oracle_text: face.oracle_text,
     printed_text: face.printed_text,
+    power: face.power,
+    toughness: face.toughness,
     image_uris: face.image_uris
       ? { normal: face.image_uris.normal, art_crop: face.image_uris.art_crop }
       : undefined,
@@ -164,6 +167,8 @@ function slimCard(card) {
     type_line: card.type_line,
     oracle_text: card.oracle_text,
     printed_text: card.printed_text,
+    power: card.power,
+    toughness: card.toughness,
     legalities: card.legalities,
     released_at: card.released_at,
     finishes: card.finishes,

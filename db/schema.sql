@@ -107,6 +107,10 @@ CREATE TABLE card_prints (
   -- 日本語版の画像を出したいが、日本語版が存在しないプリントも多いため、image_uri_normal
   -- （英語版、常に存在）とは別カラムで持つ（呼び出し側でimage_uri_normal_ja ?? image_uri_normal）。
   image_uri_normal_ja  TEXT,
+  -- このプリント固有のレアリティ（同じカードでも再録時にレアリティが変わることがあるため、
+  -- oracle単位ではなくプリント単位で持つ。「カードデータ」欄で過去に出た全レアリティを
+  -- 集計表示するのに使う）
+  rarity               TEXT,
   -- 金縁(World Championship Decks等)・銀縁(Un-set)・memorabilia区分(30th Anniversary Edition等)は
   -- オラクルとしては合法でも、この物理プリント自体はどのフォーマットでも使用不可
   -- （border_colorが標準の黒/白以外、またはset_typeが非トーナメント区分）。

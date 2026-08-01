@@ -2,6 +2,7 @@ import { supabase } from "./supabase";
 import type { Format } from "./formats";
 import type { RankingRow } from "./sampleRankingData";
 import { colorsFromManaCost } from "./manaColors";
+import { getBestCardImages } from "./dbCardPrints";
 
 // 色フィルタで絞り込んでも表示件数が残るよう、表示用（20件）より広めに候補を取得する
 const TOP_N = 100;
@@ -95,16 +96,20 @@ export async function getCardRankingFromDb(
     if (page.length < PRICE_PAGE_SIZE) break;
   }
 
-  const [{ data: oracles }, { data: cardRows }] = await Promise.all([
+  const [{ data: oracles }, { data: cardRows }, bestImageByOracle] = await Promise.all([
     supabase.from("card_oracles").select("oracle_id, name, printed_name_ja").in("oracle_id", topOracleIds),
     supabase
       .from("cards")
       .select("oracle_id, lang, image_uri_art_crop, mana_cost")
       .in("oracle_id", topOracleIds),
+    getBestCardImages(topOracleIds),
   ]);
 
   const nameByOracle = new Map((oracles ?? []).map((o) => [o.oracle_id, o]));
 
+  // カード詳細ページの「カードデータ」画像選定（安い順+日本語版一致、getBestCardImage）と揃える。
+  // card_prints未反映等でgetBestCardImagesが決められなかった場合のみ、cardsテーブルの
+  // 代表プリント画像にフォールバックする。
   const artCropByOracle = new Map<string, string>();
   const manaCostByOracle = new Map<string, string>();
   for (const c of cardRows ?? []) {
@@ -115,6 +120,9 @@ export async function getCardRankingFromDb(
     if (c.lang === "en" && c.mana_cost) {
       manaCostByOracle.set(c.oracle_id, c.mana_cost);
     }
+  }
+  for (const [oracleId, normalUrl] of bestImageByOracle) {
+    artCropByOracle.set(oracleId, normalUrl.replace("/normal/", "/art_crop/"));
   }
 
   const priceByOracle = new Map<string, number>();

@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import type { TrendingCardData } from "@/components/TrendingCard";
+import { getBestCardImages } from "./dbCardPrints";
 
 const CARDS_PER_CATEGORY = 2;
 
@@ -133,7 +134,7 @@ export async function getTrendingCardsFromDb(): Promise<TrendingCardData[]> {
   if (picked.length === 0) return [];
 
   const oracleIds = picked.map((r) => r.oracle_id);
-  const [{ data: oracles }, { data: cardRows }, { data: priceRows }] = await Promise.all([
+  const [{ data: oracles }, { data: cardRows }, { data: priceRows }, bestImageByOracle] = await Promise.all([
     supabase.from("card_oracles").select("oracle_id, name, printed_name_ja").in("oracle_id", oracleIds),
     supabase.from("cards").select("oracle_id, lang, image_uri_art_crop").in("oracle_id", oracleIds),
     supabase
@@ -141,15 +142,22 @@ export async function getTrendingCardsFromDb(): Promise<TrendingCardData[]> {
       .select("oracle_id, jpy_est, date")
       .in("oracle_id", oracleIds)
       .order("date", { ascending: false }),
+    getBestCardImages(oracleIds),
   ]);
 
   const nameByOracle = new Map((oracles ?? []).map((o) => [o.oracle_id, o]));
+  // カード詳細ページの「カードデータ」画像選定（安い順+日本語版一致、getBestCardImage）と揃える。
+  // card_prints未反映等でgetBestCardImagesが決められなかった場合のみ、cardsテーブルの
+  // 代表プリント画像にフォールバックする。
   const artCropByOracle = new Map<string, string>();
   for (const c of cardRows ?? []) {
     const existing = artCropByOracle.get(c.oracle_id);
     if (c.image_uri_art_crop && (c.lang === "ja" || !existing)) {
       artCropByOracle.set(c.oracle_id, c.image_uri_art_crop);
     }
+  }
+  for (const [oracleId, normalUrl] of bestImageByOracle) {
+    artCropByOracle.set(oracleId, normalUrl.replace("/normal/", "/art_crop/"));
   }
   const priceByOracle = new Map<string, number>();
   for (const p of priceRows ?? []) {

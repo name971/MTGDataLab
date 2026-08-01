@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { getBestCardImages } from "./dbCardPrints";
 
 export interface DbDeckCard {
   oracleId: string | null;
@@ -183,19 +184,19 @@ export async function getDeckDetailFromDb(deckId: number): Promise<DbDeckDetail 
   const priceByOracle = new Map<string, number>();
 
   if (oracleIds.length > 0) {
-    const { data: oracles } = await supabase
-      .from("card_oracles")
-      .select("oracle_id, printed_name_ja")
-      .in("oracle_id", oracleIds);
-    const { data: cardRows } = await supabase
-      .from("cards")
-      .select("oracle_id, lang, image_uri_art_crop, image_uri_normal, type_line, mana_cost")
-      .in("oracle_id", oracleIds);
-    const { data: priceRows } = await supabase
-      .from("card_cheapest_price_snapshots")
-      .select("oracle_id, jpy_est, date")
-      .in("oracle_id", oracleIds)
-      .order("date", { ascending: false });
+    const [{ data: oracles }, { data: cardRows }, { data: priceRows }, bestImageByOracle] = await Promise.all([
+      supabase.from("card_oracles").select("oracle_id, printed_name_ja").in("oracle_id", oracleIds),
+      supabase
+        .from("cards")
+        .select("oracle_id, lang, image_uri_art_crop, image_uri_normal, type_line, mana_cost")
+        .in("oracle_id", oracleIds),
+      supabase
+        .from("card_cheapest_price_snapshots")
+        .select("oracle_id, jpy_est, date")
+        .in("oracle_id", oracleIds)
+        .order("date", { ascending: false }),
+      getBestCardImages(oracleIds),
+    ]);
 
     for (const o of oracles ?? []) {
       oracleInfo.set(o.oracle_id, {
@@ -220,6 +221,16 @@ export async function getDeckDetailFromDb(deckId: number): Promise<DbDeckDetail 
       // マナコストは英語版の値で統一する（日本語版でも同じはずだが、表記ゆれを避けるため）
       if (existing && c.mana_cost && (c.lang === "en" || !existing.manaCost)) {
         existing.manaCost = c.mana_cost;
+      }
+    }
+    // カード詳細ページの「カードデータ」画像選定（安い順+日本語版一致、getBestCardImage）と揃える。
+    // card_prints未反映等でgetBestCardImagesが決められなかった場合のみ、上のcardsテーブル
+    // 代表プリント画像のままにする。
+    for (const [oracleId, normalUrl] of bestImageByOracle) {
+      const existing = oracleInfo.get(oracleId);
+      if (existing) {
+        existing.imageNormalUrl = normalUrl;
+        existing.artCropUrl = normalUrl.replace("/normal/", "/art_crop/");
       }
     }
     // date降順なので最初に出てきた行がoracle_idごとの最新スナップショット

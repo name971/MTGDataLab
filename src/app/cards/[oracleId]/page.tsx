@@ -268,11 +268,21 @@ export default async function CardDetailPage({
     : [];
   const otherPrintPrices = await getLatestPricesForPrints(otherPrints.map((p) => p.scryfallId));
 
+  // 「カードデータ」欄のレアリティは代表プリント1件のものではなく、これまでに出た全プリントの
+  // レアリティを集計して表示する（再録でレアリティが変わることがあるため）。
+  // rarity未反映（scripts/rebuild-card-prints.mjs未実行）の古いcard_prints行はnullなので除外する。
+  const RARITY_ORDER = ["common", "uncommon", "rare", "mythic"] as const;
+  const allRarities = [...new Set([card.rarity, ...otherPrints.map((p) => p.rarity).filter((r) => r !== null)])];
+  const allRarityLabels = allRarities
+    .sort((a, b) => RARITY_ORDER.indexOf(a as (typeof RARITY_ORDER)[number]) - RARITY_ORDER.indexOf(b as (typeof RARITY_ORDER)[number]))
+    .map((r) => RARITY_LABEL_JA[r] ?? r)
+    .join(" / ");
+
   const priceExtremesText = priceExtremes
-    ? `最高値: ¥${priceExtremes.maxJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}（${formatDateSlash(priceExtremes.maxDate)}） ／ 最安値: ¥${priceExtremes.minJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}（${formatDateSlash(priceExtremes.minDate)}）\n※日次スナップショットの記録が残っている範囲内での最高値・最安値です`
+    ? `最安値: ¥${priceExtremes.minJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}（${formatDateSlash(priceExtremes.minDate)}） ／ 最高値: ¥${priceExtremes.maxJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}（${formatDateSlash(priceExtremes.maxDate)}）\n※日次スナップショットの記録が残っている範囲内での最高値・最安値です`
     : null;
   const priceExtremesFoilText = priceExtremesFoil
-    ? `最高値: ¥${priceExtremesFoil.maxJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}（${formatDateSlash(priceExtremesFoil.maxDate)}） ／ 最安値: ¥${priceExtremesFoil.minJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}（${formatDateSlash(priceExtremesFoil.minDate)}）\n※日次スナップショットの記録が残っている範囲内での最高値・最安値です`
+    ? `最安値: ¥${priceExtremesFoil.minJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}（${formatDateSlash(priceExtremesFoil.minDate)}） ／ 最高値: ¥${priceExtremesFoil.maxJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}（${formatDateSlash(priceExtremesFoil.maxDate)}）\n※日次スナップショットの記録が残っている範囲内での最高値・最安値です`
     : null;
 
   return (
@@ -292,7 +302,7 @@ export default async function CardDetailPage({
           setName: card.setName,
           setCode: card.setCode,
           collectorNumber: card.collectorNumber,
-          rarityLabel: RARITY_LABEL_JA[card.rarity] ?? card.rarity,
+          rarityLabel: allRarityLabels,
           jpyPrice,
           jpyPriceFoil,
           usdPrice: card.usdPrice,

@@ -6,6 +6,14 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE INDEX idx_card_oracles_name_trgm ON card_oracles USING GIN (name gin_trgm_ops);
 CREATE INDEX idx_card_oracles_name_ja_trgm ON card_oracles USING GIN (printed_name_ja gin_trgm_ops);
 
+-- 高度検索（src/lib/dbAdvancedSearch.ts）用。インデックス無しでcardsテーブル（全プリント×全言語で
+-- 数十万行）にILIKE '%...%'を投げるとフルスキャンになりstatement timeoutで落ちる
+-- （実際にtype_line・printed_text_jaで発生し、エラーが握りつぶされて0件表示になっていた）。
+CREATE INDEX idx_card_oracles_oracle_text_trgm ON card_oracles USING GIN (oracle_text gin_trgm_ops);
+CREATE INDEX idx_cards_type_line_trgm ON cards USING GIN (type_line gin_trgm_ops);
+CREATE INDEX idx_cards_printed_type_line_trgm ON cards USING GIN (printed_type_line gin_trgm_ops);
+CREATE INDEX idx_cards_printed_text_ja_trgm ON cards USING GIN (printed_text_ja gin_trgm_ops);
+
 -- 検索RPC関数。src/lib/searchCards.ts の searchCardsInDb() から呼び出す。
 -- 英語名・日本語名どちらにも一致でき、類似度が高い順に返す。
 CREATE OR REPLACE FUNCTION search_cards(query TEXT)

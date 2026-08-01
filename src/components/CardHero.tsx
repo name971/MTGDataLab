@@ -309,9 +309,9 @@ export default function CardHero({
                 {current.releasedAt && ` ・ 発売日: ${formatDateSlash(current.releasedAt)}`}
               </p>
             ) : (
-              <p className="mt-3 text-sm text-neutral-500">
-                {defaultPrint.setName} ・ {defaultPrint.rarityLabel}
-              </p>
+              // 「カードデータ」は特定の1プリントではなく集約値の表示なので、セット名（代表プリントの
+              // セット、Mystery Booster等の再録専用商品になることがあり紛らわしい）は出さずレアリティのみ表示する
+              <p className="mt-3 text-sm text-neutral-500">{defaultPrint.rarityLabel}</p>
             )}
 
             {jpyPrice !== null ? (
@@ -384,7 +384,7 @@ export default function CardHero({
         </div>
         {current.notTournamentLegal && (
           <p className="mb-3 rounded-md bg-red-50 px-2 py-1 text-xs text-red-700">
-            ※このプリントは特殊な縁/区分のため、どのフォーマットでも使用できません
+            ※このプリントは特殊なため、公式大会では使用できません
           </p>
         )}
 
