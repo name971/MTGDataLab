@@ -72,6 +72,7 @@ export default function CardHero({
     releasedAt: null,
     imageUrl: defaultPrint.imageUrl,
     notTournamentLegal: false,
+    rarity: null,
   };
   const allPrints = [defaultAsPrint, ...otherPrints];
 
@@ -359,27 +360,42 @@ export default function CardHero({
 
       <div className="rounded-lg border border-neutral-200 p-4 sm:w-80 sm:shrink-0">
         <div className="mb-3 flex items-center gap-2 rounded-lg bg-neutral-800 px-3 py-2.5 text-white">
-          {/* eslint-disable-next-line @next/next/no-img-element -- ScryfallのSVGアイコンCDN、next/imageの最適化対象外の小さな外部SVG */}
-          <img
-            src={`https://svgs.scryfall.io/sets/${current.setCode}.svg`}
-            alt=""
-            width={22}
-            height={22}
-            className="shrink-0 invert"
-            // Scryfallにアイコンが無いセット（GK1等の一部）だとブラウザ標準の壊れた画像アイコンが
-            // 出てしまうため、読み込み失敗時は非表示にする
-            onError={(e) => {
-              e.currentTarget.style.visibility = "hidden";
-            }}
-          />
+          {isAlternate ? (
+            // eslint-disable-next-line @next/next/no-img-element -- ScryfallのSVGアイコンCDN、next/imageの最適化対象外の小さな外部SVG
+            <img
+              src={`https://svgs.scryfall.io/sets/${current.setCode}.svg`}
+              alt=""
+              width={22}
+              height={22}
+              className="shrink-0 invert"
+              // Scryfallにアイコンが無いセット（GK1等の一部）だとブラウザ標準の壊れた画像アイコンが
+              // 出てしまうため、読み込み失敗時は非表示にする
+              onError={(e) => {
+                e.currentTarget.style.visibility = "hidden";
+              }}
+            />
+          ) : (
+            // 「カードデータ」は特定の1セットに属さない集約表示なので、Scryfallのセットアイコンでは
+            // なく自前のアイコン（複数プリントを重ねたイラスト）を使う
+            // eslint-disable-next-line @next/next/no-img-element -- 自前の静的SVG、next/imageの最適化不要
+            <img src="/icons/all-prints.svg" alt="" width={22} height={22} className="shrink-0" />
+          )}
           <div className="min-w-0">
-            <p className="truncate text-sm leading-snug font-semibold">
-              {current.setName} ({current.setCode.toUpperCase()})
-            </p>
-            <p className="text-xs leading-snug text-neutral-300">
-              #{current.collectorNumber}
-              {!isAlternate && ` ・ ${defaultPrint.rarityLabel}`}
-            </p>
+            {isAlternate ? (
+              <>
+                <p className="truncate text-sm leading-snug font-semibold">
+                  {current.setName} ({current.setCode.toUpperCase()})
+                </p>
+                <p className="text-xs leading-snug text-neutral-300">#{current.collectorNumber}</p>
+              </>
+            ) : (
+              // 「カードデータ」は特定の1プリントではなく全プリント集約の表示なので、
+              // 代表プリント1件のセット名・コレクター番号ではなく、プリント総数とレアリティ集約を出す
+              <>
+                <p className="truncate text-sm leading-snug font-semibold">全{allPrints.length}種のプリント</p>
+                <p className="text-xs leading-snug text-neutral-300">{defaultPrint.rarityLabel}</p>
+              </>
+            )}
           </div>
         </div>
         {current.notTournamentLegal && (
