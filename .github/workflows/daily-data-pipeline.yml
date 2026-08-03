@@ -38,7 +38,13 @@ jobs:
       # card_price_snapshots（代表プリント単体の日次価格）はgetPriceHistoryForCard/
       # getLatestPriceSnapshotの参照元をcard_cheapest_price_snapshots（全プリント横断の最安値）に
       # 置き換えた後も書き込みだけが残っていた未使用テーブルだったため、snapshot-prices.mjsの
-      # 実行自体を削除した（DB容量超過対応）。代わりに使うのはこの下のsnapshot-print-prices.mjs。
+      # 実行自体を削除した（DB容量超過対応）。ただし同スクリプトはexchange_rates（為替レート）の
+      # 更新も兼ねていたため、削除時に為替レート更新まで巻き添えで止まっていた
+      # （当日分のレートが無いとUSD建て価格がJPYに換算できず、価格表示が丸ごと欠落する事故が
+      # 実際に発生した）。為替レート取得だけを独立したスクリプトとして復活させ、価格取得より先に置く。
+      - name: Snapshot exchange rates
+        run: node scripts/snapshot-exchange-rates.mjs
+
       - name: Snapshot today's print prices (all versions)
         run: node scripts/snapshot-print-prices.mjs
 

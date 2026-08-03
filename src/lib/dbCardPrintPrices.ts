@@ -97,18 +97,27 @@ export async function getLatestPricesForPrints(scryfallIds: string[]): Promise<L
   }
   if (neededDates.size === 0) return { normal: new Map(), foil: new Map() };
 
+  // 最新日（今日）分のレートがまだ取り込まれていないタイミングがある（為替レート取得と
+  // 価格スナップショット取得は別バッチで、後者が先に終わることがあるため）。その日だけ
+  // 価格が丸ごと非表示になるのを避けるため、直近の日付のレートが無ければ、それより前で
+  // 一番近い日のレートを暫定値として使う。過去に遡ってのlte検索で済むよう、
+  // neededDatesの最大値以前を全部まとめて取得しておく。
+  const maxNeededDate = [...neededDates].sort().at(-1)!;
   const { data: rateRows } = await supabase
     .from("exchange_rates")
     .select("date, usd_to_jpy")
-    .in("date", [...neededDates]);
-  const rateByDate = new Map<string, number>(
-    (rateRows ?? []).map((r) => [r.date, Number(r.usd_to_jpy)]),
-  );
+    .lte("date", maxNeededDate)
+    .order("date", { ascending: false });
+  const sortedRates = (rateRows ?? []).map((r) => ({ date: r.date, rate: Number(r.usd_to_jpy) }));
+
+  function rateAtOrBefore(date: string): number | undefined {
+    return sortedRates.find((r) => r.date <= date)?.rate;
+  }
 
   function toJpyMap(byPrint: Map<string, { date: string; usd: number }>): Map<string, number> {
     const result = new Map<string, number>();
     for (const [scryfallId, { date, usd }] of byPrint) {
-      const rate = rateByDate.get(date);
+      const rate = rateAtOrBefore(date);
       if (rate === undefined) continue;
       result.set(scryfallId, Math.round(usd * rate * 100) / 100);
     }
