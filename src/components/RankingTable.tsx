@@ -12,15 +12,15 @@ import type { RankingRow } from "@/lib/sampleRankingData";
 type SortKey = "priceChangePct" | "usageRatePct";
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
-  { key: "priceChangePct", label: "値上がり率" },
   { key: "usageRatePct", label: "採用率" },
+  { key: "priceChangePct", label: "値上がり率" },
 ];
 
 const COLOR_FILTER_OPTIONS = ["W", "U", "B", "R", "G"] as const;
 const VISIBLE_COUNT = 20;
 
 export default function RankingTable({ rows }: { rows: RankingRow[] }) {
-  const [sortKey, setSortKey] = useState<SortKey>("priceChangePct");
+  const [sortKey, setSortKey] = useState<SortKey>("usageRatePct");
   const [colorFilter, setColorFilter] = useState<Set<string>>(new Set());
 
   const filtered = useMemo(() => {
