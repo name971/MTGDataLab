@@ -47,3 +47,10 @@ next-env.d.ts
 
 # Scryfallバルクデータのローカルキャッシュ（scripts/lib/scryfallBulk.mjs）
 /.cache/
+
+# 価格予測モデル（ml/）: venv・取得データ・MTGJSONキャッシュはPostgres DBに入れない方針
+# （db/schema.sqlの運用メモ参照）なので、リポジトリにもコミットしない
+/ml/.venv/
+/ml/data/
+__pycache__/
+*.pyc

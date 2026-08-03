@@ -1,0 +1,32 @@
+name: Price prediction model (weekly, experimental)
+
+# 価格予測モデル（ml/）の学習・ウォークフォワード評価を週次で実行する。
+# 現時点では実験段階のため、予測結果をSupabase DBには書き戻さない
+# （ml/README.md参照）。ログの評価指標を見るためだけのワークフロー。
+on:
+  schedule:
+    - cron: "0 4 * * 1" # 毎週月曜 13:00 JST
+  workflow_dispatch:
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r ml/requirements.txt
+
+      - name: Fetch data (Supabase + MTGJSON backfill)
+        run: python ml/fetch_data.py
+
+      - name: Train baseline model / walk-forward evaluation
+        run: python ml/train_baseline.py
