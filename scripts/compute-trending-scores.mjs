@@ -1,7 +1,7 @@
 /**
  * trending_scores（注目カードランキング、db/schema.sql）を計算する。
  * 価格・採用率それぞれの「3日前との変化」を比較する必要があるため、
- * card_price_snapshots / card_usage_stats に3日以上前のデータが無い場合は
+ * card_cheapest_price_snapshots / card_usage_stats に3日以上前のデータが無い場合は
  * 何も投入せずスキップする（0%や偽の変化率を書き込まない）。
  *
  * 取引量（volume）は無料データソースが無いため対象外（docs/spec.md 2章）。
@@ -270,6 +270,10 @@ async function main() {
   await supabaseDelete(`trending_scores?calculated_date=eq.${todayStr}`);
   await supabaseUpsert("trending_scores", rows, "oracle_id,format,calculated_date,category");
   console.log(`trending_scores 保存: ${rows.length}件（${formats.length}フォーマット分）`);
+
+  // 保持ポリシー: 継続日数(streak_days)の引き継ぎには前日分だけ必要で、それより古い行は
+  // 表示・計算のどちらにも使われず積み上がるだけなので削除する
+  await supabaseDelete(`trending_scores?calculated_date=lt.${yesterdayStr}`);
 }
 
 main().catch((err) => {

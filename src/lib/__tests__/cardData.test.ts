@@ -7,7 +7,7 @@ vi.mock("@/lib/supabase", () => ({
 }));
 
 import { supabase } from "@/lib/supabase";
-import { getCardDetailFromDb, getLatestPriceSnapshot } from "@/lib/cardData";
+import { getCardDetailFromDb } from "@/lib/cardData";
 
 function mockOracleThenCards(oracleResult: unknown, cardsResult: unknown) {
   const maybeSingle = vi.fn().mockResolvedValue(oracleResult);
@@ -78,30 +78,6 @@ describe("getCardDetailFromDb", () => {
   it("returns null when the oracle lookup errors", async () => {
     mockOracleThenCards({ data: null, error: { message: "network error" } }, { data: [], error: null });
     const result = await getCardDetailFromDb("Solitude");
-    expect(result).toBeNull();
-  });
-});
-
-describe("getLatestPriceSnapshot", () => {
-  function mockSnapshotChain(result: unknown) {
-    const maybeSingle = vi.fn().mockResolvedValue(result);
-    const limit = vi.fn().mockReturnValue({ maybeSingle });
-    const order = vi.fn().mockReturnValue({ limit });
-    const eq2 = vi.fn().mockReturnValue({ order });
-    const eq1 = vi.fn().mockReturnValue({ eq: eq2 });
-    const select = vi.fn().mockReturnValue({ eq: eq1 });
-    (supabase.from as ReturnType<typeof vi.fn>).mockReturnValue({ select });
-  }
-
-  it("returns the snapshot's usd and jpy_est when found", async () => {
-    mockSnapshotChain({ data: { usd: 43.84, jpy_est: 7096.38 }, error: null });
-    const result = await getLatestPriceSnapshot("oid-1", "en");
-    expect(result).toEqual({ usd: 43.84, jpyEst: 7096.38 });
-  });
-
-  it("returns null when no snapshot exists yet", async () => {
-    mockSnapshotChain({ data: null, error: null });
-    const result = await getLatestPriceSnapshot("oid-1", "en");
     expect(result).toBeNull();
   });
 });

@@ -11,6 +11,19 @@ function symbolImageUrl(inner: string): string {
   return `https://svgs.scryfall.io/card-symbols/${inner.replace(/\//g, "")}.svg`;
 }
 
+// Scryfallの一部プリント（特に新セット）のprinted_text（日本語版含む翻訳側テキスト）に、
+// "{1}{U}"と打つべき箇所が"{1U}"のように"}{"が抜けて連結された壊れたデータが稀に混入している
+// （oracle_text側は正しく分かれている）。本来のScryfallシンボルはハイブリッドでも必ず"/"を挟む
+// （例: "W/U"）ため、"/"なしで数字の直後に文字が続く形は実在しないシンボル＝この種の連結崩れと
+// 判定できる。該当した場合は数字部分と各文字を別シンボルに分割して復元する。
+const CONCATENATED_SYMBOLS = /^(\d+)([A-Za-z]+)$/;
+
+function splitSymbol(inner: string): string[] {
+  const match = inner.match(CONCATENATED_SYMBOLS);
+  if (!match) return [inner];
+  return [match[1], ...match[2].split("")];
+}
+
 export default function ManaText({
   text,
   className,
@@ -33,7 +46,7 @@ export default function ManaText({
   for (const match of text.matchAll(SYMBOL_PATTERN)) {
     if (match.index === undefined) continue;
     if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
-    parts.push({ symbol: match[1] });
+    for (const symbol of splitSymbol(match[1])) parts.push({ symbol });
     lastIndex = match.index + match[0].length;
   }
   if (lastIndex < text.length) parts.push(text.slice(lastIndex));

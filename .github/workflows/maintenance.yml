@@ -14,9 +14,9 @@ on:
           - rebuild-card-prints
           - import-full-catalog
           - cleanup-duplicate-cards
-          - snapshot-prices
           - snapshot-print-prices
           - compute-deck-stats
+          - compute-card-streaks
 
 jobs:
   run:

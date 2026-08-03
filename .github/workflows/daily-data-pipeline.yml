@@ -35,14 +35,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # デッキ取り込み（TopDeck.gg/mtgo.com）は外部サイト依存で失敗しやすい。以前は価格スナップ
-      # ショットがこれより後ろにあったため、デッキ取り込みが1件失敗しただけでジョブ全体が止まり、
-      # 本来は無関係なはずの価格データまで日次で取得できなくなる事故が実際に起きた。
-      # 価格スナップショットはcards/card_printsのみに依存し当日のデッキ取り込みと無関係なので、
-      # 先に済ませておく。
-      - name: Snapshot today's card prices
-        run: node scripts/snapshot-prices.mjs
-
+      # card_price_snapshots（代表プリント単体の日次価格）はgetPriceHistoryForCard/
+      # getLatestPriceSnapshotの参照元をcard_cheapest_price_snapshots（全プリント横断の最安値）に
+      # 置き換えた後も書き込みだけが残っていた未使用テーブルだったため、snapshot-prices.mjsの
+      # 実行自体を削除した（DB容量超過対応）。代わりに使うのはこの下のsnapshot-print-prices.mjs。
       - name: Snapshot today's print prices (all versions)
         run: node scripts/snapshot-print-prices.mjs
 
@@ -131,3 +127,9 @@ jobs:
 
       - name: Compute trending scores
         run: node scripts/compute-trending-scores.mjs
+
+      # card_streaks（トップページ「継続注目カード」）はcard_cheapest_price_snapshots
+      # （このワークフロー前半）とcard_usage_stats（ひとつ上のステップ）の両方を必要とするため、
+      # 両方が終わった後の最後に置く。
+      - name: Compute card streaks
+        run: node scripts/compute-card-streaks.mjs

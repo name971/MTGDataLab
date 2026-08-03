@@ -3,13 +3,40 @@ import type { Format } from "./formats";
 import type { ArchetypeRow } from "./sampleDeckData";
 import { COLOR_ORDER, colorsFromManaCost } from "./manaColors";
 
+// MTG Arenaのワイルドカード1枚あたりの実質価値をJPYに換算する目安。ワイルドカード4枚で
+// レア1500円/神話レア3000円ぶんの購入プランを単価に割り戻した値。コモン・アンコモンは
+// ワイルドカードがほぼ余るため0円扱いにする。
+const ARENA_WILDCARD_JPY: Record<string, number> = {
+  common: 0,
+  uncommon: 0,
+  rare: 1500 / 4,
+  mythic: 3000 / 4,
+};
+
+function arenaPriceJpy(rarity: string | null | undefined): number {
+  if (!rarity) return 0;
+  return ARENA_WILDCARD_JPY[rarity] ?? 0;
+}
+
+function median(nums: number[]): number {
+  if (nums.length === 0) return 0;
+  const sorted = [...nums].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
 /**
- * archetypes / archetype_price_stats / decks（db/schema.sql）から実データのアーキタイプ
- * ランキングを組み立てる。archetype_price_statsに価格が無いアーキタイプは除外する
- * （中央値が出せないカードは順位に出しても意味がないため）。
- * usageRatePctは「そのフォーマットの全デッキ数に対する、このアーキタイプの分類デッキ数」の割合。
+ * archetypes / decks（db/schema.sql）から実データのアーキタイプランキングを組み立てる。
+ * periodDays（7/30/90）で指定した直近日数（トーナメント開催日基準）のデッキだけを集計対象にする。
+ * 価格の中央値はcard_cheapest_price_snapshots（全プリント横断の最安値）から代表デッキ窓
+ * （getMedianPriceByArchetype）でその場で計算する。価格が1件も出せないアーキタイプは
+ * 中央値が出せず順位に出しても意味がないため除外する。
+ * usageRatePctは「その期間・フォーマットの全デッキ数に対する、このアーキタイプの分類デッキ数」の割合。
  */
-export async function getArchetypesFromDb(format: Format): Promise<ArchetypeRow[]> {
+export async function getArchetypesFromDb(
+  format: Format,
+  periodDays: 7 | 30 | 90 = 30,
+): Promise<ArchetypeRow[]> {
   const { data: archetypes, error: archetypeError } = await supabase
     .from("archetypes")
     .select("id, name, name_ja")
@@ -17,23 +44,9 @@ export async function getArchetypesFromDb(format: Format): Promise<ArchetypeRow[
 
   if (archetypeError || !archetypes || archetypes.length === 0) return [];
 
-  const archetypeIds = archetypes.map((a) => a.id);
-
-  const { data: priceStats } = await supabase
-    .from("archetype_price_stats")
-    .select("archetype_id, median_price_jpy, sample_size, calculated_at")
-    .in("archetype_id", archetypeIds)
-    .order("calculated_at", { ascending: false });
-
-  const latestPriceByArchetype = new Map<number, { medianPriceJpy: number; sampleSize: number }>();
-  for (const row of priceStats ?? []) {
-    if (!latestPriceByArchetype.has(row.archetype_id)) {
-      latestPriceByArchetype.set(row.archetype_id, {
-        medianPriceJpy: Number(row.median_price_jpy),
-        sampleSize: row.sample_size,
-      });
-    }
-  }
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - (periodDays - 1));
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
 
   // Supabase/PostgRESTはデフォルトで1ページ最大1000件までしか返さないため、
   // デッキ数がそれを超えるフォーマット（Legacy等）でもtotalDecksが欠けないようページングする。
@@ -42,8 +55,9 @@ export async function getArchetypesFromDb(format: Format): Promise<ArchetypeRow[
   for (let offset = 0; ; offset += PAGE_SIZE) {
     const { data: page } = await supabase
       .from("decks")
-      .select("id, archetype_id, tournaments!inner(format)")
+      .select("id, archetype_id, tournaments!inner(format, event_date)")
       .eq("tournaments.format", format)
+      .gte("tournaments.event_date", cutoffStr)
       .range(offset, offset + PAGE_SIZE - 1);
     if (!page || page.length === 0) break;
     decks.push(...page);
@@ -57,7 +71,6 @@ export async function getArchetypesFromDb(format: Format): Promise<ArchetypeRow[
   for (const deck of decks) {
     if (!deck.archetype_id) continue;
     deckCountByArchetype.set(deck.archetype_id, (deckCountByArchetype.get(deck.archetype_id) ?? 0) + 1);
-    if (!latestPriceByArchetype.has(deck.archetype_id)) continue;
     const ids = deckIdsByArchetype.get(deck.archetype_id) ?? [];
     if (ids.length < REPRESENTATIVE_CARD_DECK_WINDOW) {
       ids.push(deck.id);
@@ -72,9 +85,15 @@ export async function getArchetypesFromDb(format: Format): Promise<ArchetypeRow[
       ? await getCommanderArtByArchetype(archetypes)
       : await getRepresentativeArtByArchetype(deckIdsByArchetype);
 
+  // MTG Arenaで実際に組む対象はローテーション中のStandardが中心なため、換算はStandardのみ計算する
+  const arenaMedianByArchetype =
+    format === "Standard" ? await getArenaMedianByArchetype(deckIdsByArchetype) : new Map<number, number>();
+
+  const medianPriceByArchetype = await getMedianPriceByArchetype(deckIdsByArchetype);
+
   const rows: ArchetypeRow[] = archetypes
     .map((a) => {
-      const price = latestPriceByArchetype.get(a.id);
+      const price = medianPriceByArchetype.get(a.id);
       if (!price) return null;
       const deckCount = deckCountByArchetype.get(a.id) ?? 0;
       const artUrls = artUrlsByArchetype.get(a.id) ?? [];
@@ -85,6 +104,7 @@ export async function getArchetypesFromDb(format: Format): Promise<ArchetypeRow[
         medianPriceJpy: price.medianPriceJpy,
         usageRatePct: totalDecks > 0 ? Math.round((deckCount / totalDecks) * 10000) / 100 : 0,
         sampleSize: price.sampleSize,
+        arenaMedianPriceJpy: arenaMedianByArchetype.get(a.id),
         colors: colorsByArchetype.get(a.id) ?? [],
         representativeArtUrl: artUrls[0] ?? null,
         representativeArtUrls: artUrls.length > 1 ? artUrls : undefined,
@@ -263,4 +283,152 @@ async function getRepresentativeArtByArchetype(
     }
   }
   return { art, colors };
+}
+
+/**
+ * アーキタイプごとのMTG Arenaワイルドカード換算デッキ合計（中央値）。
+ * scripts/compute-deck-stats.mjsのarchetype_price_stats（実勢価格の中央値）と同じ考え方で、
+ * 直近デッキ（deckIdsByArchetypeの代表ウィンドウ、最大20件）それぞれのメインボードを
+ * レアリティ別ワイルドカード単価×枚数で合計し、その中央値をアーキタイプの代表値にする。
+ */
+async function getArenaMedianByArchetype(
+  deckIdsByArchetype: Map<number, number[]>,
+): Promise<Map<number, number>> {
+  const allDeckIds = [...deckIdsByArchetype.values()].flat();
+  if (allDeckIds.length === 0) return new Map();
+
+  const PAGE_SIZE = 200;
+  const ROW_PAGE_SIZE = 1000;
+  const deckCards: { deck_id: number; oracle_id: string | null; quantity: number }[] = [];
+  for (let i = 0; i < allDeckIds.length; i += PAGE_SIZE) {
+    const chunk = allDeckIds.slice(i, i + PAGE_SIZE);
+    for (let offset = 0; ; offset += ROW_PAGE_SIZE) {
+      const { data } = await supabase
+        .from("deck_cards")
+        .select("deck_id, oracle_id, quantity")
+        .in("deck_id", chunk)
+        .eq("board", "main")
+        .range(offset, offset + ROW_PAGE_SIZE - 1);
+      if (!data || data.length === 0) break;
+      deckCards.push(...data);
+      if (data.length < ROW_PAGE_SIZE) break;
+    }
+  }
+  if (deckCards.length === 0) return new Map();
+
+  const allOracleIds = [...new Set(deckCards.map((dc) => dc.oracle_id).filter((id): id is string => !!id))];
+  const rarityByOracle = new Map<string, string>();
+  for (let i = 0; i < allOracleIds.length; i += PAGE_SIZE) {
+    const chunk = allOracleIds.slice(i, i + PAGE_SIZE);
+    const { data } = await supabase.from("cards").select("oracle_id, rarity").eq("lang", "en").in("oracle_id", chunk);
+    for (const c of data ?? []) {
+      if (c.rarity) rarityByOracle.set(c.oracle_id, c.rarity);
+    }
+  }
+
+  const deckIdToArchetypeId = new Map<number, number>();
+  for (const [archetypeId, deckIds] of deckIdsByArchetype) {
+    for (const id of deckIds) deckIdToArchetypeId.set(id, archetypeId);
+  }
+
+  const totalByDeck = new Map<number, number>();
+  for (const dc of deckCards) {
+    if (!dc.oracle_id) continue;
+    const price = arenaPriceJpy(rarityByOracle.get(dc.oracle_id));
+    totalByDeck.set(dc.deck_id, (totalByDeck.get(dc.deck_id) ?? 0) + price * dc.quantity);
+  }
+
+  const totalsByArchetype = new Map<number, number[]>();
+  for (const [deckId, total] of totalByDeck) {
+    const archetypeId = deckIdToArchetypeId.get(deckId);
+    if (archetypeId === undefined) continue;
+    const list = totalsByArchetype.get(archetypeId) ?? [];
+    list.push(total);
+    totalsByArchetype.set(archetypeId, list);
+  }
+
+  const result = new Map<number, number>();
+  for (const [archetypeId, totals] of totalsByArchetype) {
+    result.set(archetypeId, Math.round(median(totals)));
+  }
+  return result;
+}
+
+/**
+ * アーキタイプごとの実勢デッキ価格の中央値（円）。scripts/compute-deck-stats.mjsの
+ * archetype_price_statsと同じ考え方だが、periodDaysで絞り込んだ代表デッキ窓
+ * （deckIdsByArchetype、最大20件）をその場で集計する。カード詳細ページ・デッキランキングの
+ * メイン価格と同じ基準に揃えるため、card_cheapest_price_snapshots（全プリント横断の最安値）
+ * の最新日の値を使う。
+ */
+async function getMedianPriceByArchetype(
+  deckIdsByArchetype: Map<number, number[]>,
+): Promise<Map<number, { medianPriceJpy: number; sampleSize: number }>> {
+  const allDeckIds = [...deckIdsByArchetype.values()].flat();
+  if (allDeckIds.length === 0) return new Map();
+
+  const PAGE_SIZE = 200;
+  const ROW_PAGE_SIZE = 1000;
+  const deckCards: { deck_id: number; oracle_id: string | null; quantity: number }[] = [];
+  for (let i = 0; i < allDeckIds.length; i += PAGE_SIZE) {
+    const chunk = allDeckIds.slice(i, i + PAGE_SIZE);
+    for (let offset = 0; ; offset += ROW_PAGE_SIZE) {
+      const { data } = await supabase
+        .from("deck_cards")
+        .select("deck_id, oracle_id, quantity")
+        .in("deck_id", chunk)
+        .eq("board", "main")
+        .range(offset, offset + ROW_PAGE_SIZE - 1);
+      if (!data || data.length === 0) break;
+      deckCards.push(...data);
+      if (data.length < ROW_PAGE_SIZE) break;
+    }
+  }
+  if (deckCards.length === 0) return new Map();
+
+  const allOracleIds = [...new Set(deckCards.map((dc) => dc.oracle_id).filter((id): id is string => !!id))];
+  const priceByOracle = new Map<string, number>();
+  for (let i = 0; i < allOracleIds.length; i += PAGE_SIZE) {
+    const chunk = allOracleIds.slice(i, i + PAGE_SIZE);
+    // date降順なので最初に出てきた行がoracle_idごとの最新スナップショット
+    const { data } = await supabase
+      .from("card_cheapest_price_snapshots")
+      .select("oracle_id, jpy_est, date")
+      .in("oracle_id", chunk)
+      .order("date", { ascending: false });
+    for (const p of data ?? []) {
+      if (!priceByOracle.has(p.oracle_id) && p.jpy_est !== null) priceByOracle.set(p.oracle_id, Number(p.jpy_est));
+    }
+  }
+
+  const deckIdToArchetypeId = new Map<number, number>();
+  for (const [archetypeId, deckIds] of deckIdsByArchetype) {
+    for (const id of deckIds) deckIdToArchetypeId.set(id, archetypeId);
+  }
+
+  const totalByDeck = new Map<number, number>();
+  const hasPriceByDeck = new Map<number, boolean>();
+  for (const dc of deckCards) {
+    if (!dc.oracle_id) continue;
+    const price = priceByOracle.get(dc.oracle_id);
+    if (price == null) continue;
+    hasPriceByDeck.set(dc.deck_id, true);
+    totalByDeck.set(dc.deck_id, (totalByDeck.get(dc.deck_id) ?? 0) + price * dc.quantity);
+  }
+
+  const totalsByArchetype = new Map<number, number[]>();
+  for (const [deckId, hasPrice] of hasPriceByDeck) {
+    if (!hasPrice) continue;
+    const archetypeId = deckIdToArchetypeId.get(deckId);
+    if (archetypeId === undefined) continue;
+    const list = totalsByArchetype.get(archetypeId) ?? [];
+    list.push(totalByDeck.get(deckId) ?? 0);
+    totalsByArchetype.set(archetypeId, list);
+  }
+
+  const result = new Map<number, { medianPriceJpy: number; sampleSize: number }>();
+  for (const [archetypeId, totals] of totalsByArchetype) {
+    result.set(archetypeId, { medianPriceJpy: Math.round(median(totals)), sampleSize: totals.length });
+  }
+  return result;
 }

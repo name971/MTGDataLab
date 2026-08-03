@@ -2,7 +2,6 @@ import { notFound } from "next/navigation";
 import { getSampleDeckDetail } from "@/lib/sampleDeckDetail";
 import { getDeckDetailFromDb } from "@/lib/dbDeckDetail";
 import DeckDetailView, { type DeckCardDisplay } from "@/components/DeckDetailView";
-import { totalPriceJpy } from "@/lib/deckPricing";
 
 /** "2026-07-26" -> "2026/7/26" */
 function formatDateShort(isoDate: string): string {
@@ -51,6 +50,7 @@ async function resolveDeck(deckId: string): Promise<PageDeck | null> {
         manaCost: null,
         quantity: c.quantity,
         board: c.board,
+        rarity: null,
       })),
     };
   }
@@ -77,20 +77,5 @@ export default async function DeckDetailPage({
   const deck = await resolveDeck(deckId);
   if (!deck) notFound();
 
-  const totalJpy = totalPriceJpy(deck.cards);
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-baseline justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold">{deck.title}</h1>
-          <p className="text-sm text-neutral-500">{deck.subtitle}</p>
-        </div>
-        <p className="whitespace-nowrap text-lg font-semibold">
-          ¥{totalJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
-        </p>
-      </div>
-      <DeckDetailView cards={deck.cards} format={deck.format} />
-    </div>
-  );
+  return <DeckDetailView cards={deck.cards} format={deck.format} title={deck.title} subtitle={deck.subtitle} />;
 }

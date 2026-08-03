@@ -17,6 +17,11 @@ export interface ArchetypeRow {
   representativeArtUrls?: string[];
   /** そのアーキタイプの色（WUBRG順）。デッキ全体の採用枚数から推定した色identity */
   colors?: string[];
+  /**
+   * MTG Arenaワイルドカード換算のデッキ合計（中央値）。実装対象はStandardのみ
+   * （Arenaで実際に組む対象はローテーション中のStandardが中心なため）。他フォーマットはundefined。
+   */
+  arenaMedianPriceJpy?: number;
 }
 
 const SAMPLE_ARCHETYPES: Record<string, ArchetypeRow[]> = {

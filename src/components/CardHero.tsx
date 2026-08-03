@@ -19,6 +19,101 @@ function formatDateSlash(isoDate: string): string {
   return `${y}/${Number(m)}/${Number(d)}`;
 }
 
+const FOIL_GRADIENT_STOPS = (
+  <>
+    <stop offset="0%" stopColor="#ff0080" />
+    <stop offset="16%" stopColor="#ff8c00" />
+    <stop offset="32%" stopColor="#ffed00" />
+    <stop offset="48%" stopColor="#00ff8c" />
+    <stop offset="64%" stopColor="#00c8ff" />
+    <stop offset="80%" stopColor="#8c00ff" />
+    <stop offset="100%" stopColor="#ff0080" />
+  </>
+);
+
+/** 一覧のFoil/通常価格切り替えボタンのアイコン。案比較用に3種類実装している（DESIGN定数で切り替え）。 */
+function FoilToggleIcon({ active, variant }: { active: boolean; variant: "sparkle" | "switch" | "cards" }) {
+  const gradId = `foilToggleGrad-${variant}`;
+  const stroke = active ? `url(#${gradId})` : "currentColor";
+  const fill = active ? `url(#${gradId})` : "currentColor";
+  const colorClass = active ? "" : "text-neutral-400";
+
+  if (variant === "sparkle") {
+    // ON時は星自体には色を付けず、輪郭だけにしてボタン背景の虹色ウォッシュを中から透かして見せる。
+    // 輪郭の色はカード名横の「Foil」タブがON時に使う色（border-neutral-500・text-neutral-900）に揃える
+    return (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="inline-block align-[-2px]">
+        <path
+          d="M12 2l2.2 6.8L21 11l-6.8 2.2L12 20l-2.2-6.8L3 11l6.8-2.2L12 2z"
+          fill={active ? "none" : "currentColor"}
+          stroke={active ? "currentColor" : "none"}
+          strokeWidth={active ? 1.3 : 0}
+          strokeLinejoin="round"
+          className={active ? "text-neutral-900" : colorClass}
+        />
+        <path
+          d="M19 15l0.9 2.1L22 18l-2.1 0.9L19 21l-0.9-2.1L16 18l2.1-0.9L19 15z"
+          fill={active ? "none" : "currentColor"}
+          stroke={active ? "currentColor" : "none"}
+          strokeWidth={active ? 1.1 : 0}
+          strokeLinejoin="round"
+          className={active ? "text-neutral-900" : colorClass}
+        />
+      </svg>
+    );
+  }
+
+  if (variant === "switch") {
+    return (
+      <svg width="22" height="13" viewBox="0 0 34 20" fill="none" className="inline-block align-[-3px]">
+        {active && (
+          <defs>
+            <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="1">
+              {FOIL_GRADIENT_STOPS}
+            </linearGradient>
+          </defs>
+        )}
+        <rect
+          x="1"
+          y="1"
+          width="32"
+          height="18"
+          rx="9"
+          stroke="currentColor"
+          strokeWidth="2"
+          className="text-neutral-300"
+        />
+        <circle cx={active ? 25 : 9} cy="10" r="6" fill={fill} className={colorClass} />
+      </svg>
+    );
+  }
+
+  // variant === "cards"
+  return (
+    <svg width="16" height="14" viewBox="0 0 24 22" fill="none" className="inline-block align-[-2px]">
+      {active && (
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="1">
+            {FOIL_GRADIENT_STOPS}
+          </linearGradient>
+        </defs>
+      )}
+      <rect x="2" y="3" width="13" height="17" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-neutral-300" />
+      <rect
+        x="9"
+        y="1"
+        width="13"
+        height="17"
+        rx="1.5"
+        fill={active ? fill : "white"}
+        className={active ? "" : "text-neutral-100"}
+        stroke={stroke}
+        strokeWidth="1.5"
+      />
+    </svg>
+  );
+}
+
 interface DefaultPrint {
   scryfallId: string | null;
   imageUrl: string | null;
@@ -62,8 +157,9 @@ export default function CardHero({
   foilPricesByScryfallId: Record<string, number>;
   legalities: Record<string, string>;
 }) {
-  // カードデータ（このページの主役プリント）も「一覧の中の1件」として扱い、選ばれているものだけ
-  // 一覧の先頭に出す（クリックすると画像・価格がその場で入れ替わる＝スワップの見た目にする）。
+  // card_prints未反映など、otherPrintsに代表プリント自身の行がまだ無い場合の最終フォールバック用
+  // （currentの解決・resetToAggregateの画像表示に使う。通常はotherPrintsに実プリントとして
+  // 含まれているため、下のallPrintsには二重登録しない）。
   const defaultAsPrint: CardPrint = {
     scryfallId: defaultPrint.scryfallId ?? "",
     setCode: defaultPrint.setCode,
@@ -74,7 +170,9 @@ export default function CardHero({
     notTournamentLegal: false,
     rarity: null,
   };
-  const allPrints = [defaultAsPrint, ...otherPrints];
+  const allPrints = otherPrints.some((p) => p.scryfallId === defaultAsPrint.scryfallId)
+    ? otherPrints
+    : [defaultAsPrint, ...otherPrints];
 
   const [currentScryfallId, setCurrentScryfallId] = useState(defaultPrint.scryfallId ?? "");
   // 「カードデータ」＝全プリント中の最安値（毎日どのプリントが最安かは変わりうる集約値）と、
@@ -87,23 +185,54 @@ export default function CardHero({
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [finish, setFinish] = useState<"normal" | "foil">("normal");
+  const [printSortKey, setPrintSortKey] = useState<"releaseDate" | "price">("releaseDate");
+  // 発売日順のデフォルトは新しい順（サーバー側のクエリと合わせる）、価格順のデフォルトは安い順。
+  // 同じボタンをもう一度押すと逆順に切り替わる。
+  const [printSortDir, setPrintSortDir] = useState<"asc" | "desc">("desc");
+  // Foil価格で一覧を見るモード。ON中は価格順ソート・各行の価格表示（太字/小さい文字）がFoil基準になる。
+  // メインのカード表示（画像・現在価格、finish）とは独立しており、切り替えても連動しない。
+  const [listSortFoil, setListSortFoil] = useState(false);
+
+  function clickSort(key: "releaseDate" | "price") {
+    if (printSortKey === key) {
+      setPrintSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setPrintSortKey(key);
+      setPrintSortDir(key === "price" ? "asc" : "desc");
+    }
+  }
 
   const isAlternate = !isAggregateView;
   const current = allPrints.find((p) => p.scryfallId === currentScryfallId) ?? defaultAsPrint;
-  const listPrints = allPrints.filter((p) => p.scryfallId !== currentScryfallId);
-  const visiblePrints = expanded ? listPrints : listPrints.slice(0, VISIBLE_COUNT);
+  // 集約表示（カードデータ）中は、たまたまcurrentが指すプリント自身の画像ではなく、
+  // getBestCardImageで選んだ画像（defaultPrint.imageUrl、安い順+日本語版一致）を必ず使う。
+  // currentScryfallIdが代表プリントと一致していても、それはcard_printsの実プリント行を
+  // 指しているだけで、そのプリント自身の画像（日本語版が無ければ英語版）とは限らない。
+  const mainImageUrl = isAlternate ? current.imageUrl : defaultPrint.imageUrl;
 
-  const allPrices: Record<string, number> = { ...pricesByScryfallId };
-  if (defaultPrint.scryfallId && defaultPrint.jpyPrice !== null) {
-    allPrices[defaultPrint.scryfallId] = defaultPrint.jpyPrice;
-  }
-  // otherPrintsにはカードデータ自身のプリントが含まれないため、foilPricesByScryfallIdにも
-  // その分が無い。ここで補っておかないと、一覧でカードデータの行だけFoil価格が
-  // 表示されない（allPricesと同じ理由・同じ対応）。
-  const allFoilPrices: Record<string, number> = { ...foilPricesByScryfallId };
-  if (defaultPrint.scryfallId && defaultPrint.jpyPriceFoil !== null) {
-    allFoilPrices[defaultPrint.scryfallId] = defaultPrint.jpyPriceFoil;
-  }
+  // otherPrintsは代表プリント自身も含む全プリントなので、各行の価格はpricesByScryfallId/
+  // foilPricesByScryfallId（プリント自身の実勢価格）をそのまま使う。以前はここでdefaultPrint.jpyPrice
+  // （全プリント中の最安値＝集約値）を代表プリントの行に上書きしていたが、集約値の最安プリントが
+  // 代表プリントと別の日には、代表プリントの行に他プリントの価格が出てしまう不整合があったため廃止。
+  const allPrices: Record<string, number> = pricesByScryfallId;
+  const allFoilPrices: Record<string, number> = foilPricesByScryfallId;
+
+  // 一覧の並び順。発売日順・価格順どちらも選べ、同じボタンをもう一度押すと逆順になる。
+  // listSortFoil中は価格順の基準がFoil価格になる。
+  const priceSortSource = listSortFoil ? allFoilPrices : allPrices;
+  const listPrints = [...otherPrints].sort((a, b) => {
+    if (printSortKey === "price") {
+      const priceA = priceSortSource[a.scryfallId];
+      const priceB = priceSortSource[b.scryfallId];
+      if (priceA === undefined && priceB === undefined) return 0;
+      if (priceA === undefined) return 1; // 価格不明は順序に関わらず常に末尾
+      if (priceB === undefined) return -1;
+      return printSortDir === "asc" ? priceA - priceB : priceB - priceA;
+    }
+    const cmp = (a.releasedAt ?? "").localeCompare(b.releasedAt ?? ""); // 昇順基準（古い→新しい）
+    return printSortDir === "asc" ? cmp : -cmp;
+  });
+  const visiblePrints = expanded ? listPrints : listPrints.slice(0, VISIBLE_COUNT);
 
   // 特定のプリントを選ぶ（defaultPrintと同じscryfallIdであっても、常にそのプリント自身の
   // 価格推移をAPIから取得する＝集約値と混同しない）。
@@ -164,7 +293,7 @@ export default function CardHero({
       <div className="flex flex-col gap-6 sm:flex-row">
       <div className="flex flex-1 flex-col gap-4">
         <div className="flex flex-col gap-6 sm:flex-row">
-          {current.imageUrl && (
+          {mainImageUrl && (
             <div className="w-[180px] shrink-0">
               {isAlternate ? (
                 <button
@@ -187,7 +316,7 @@ export default function CardHero({
                 }`}
               >
               <Image
-                src={current.imageUrl}
+                src={mainImageUrl}
                 alt={defaultPrint.nameEn}
                 width={223}
                 height={311}
@@ -404,56 +533,57 @@ export default function CardHero({
           </p>
         )}
 
-        {allPrints.length > 0 && (
+        {otherPrints.length > 0 && (
           <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-1 text-xs">
+              <span className="text-neutral-400">並び順:</span>
+              {(
+                [
+                  { key: "releaseDate", label: "発売日順" },
+                  { key: "price", label: "価格順" },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.key}
+                  onClick={() => clickSort(opt.key)}
+                  className={`rounded-md border px-2 py-0.5 ${
+                    printSortKey === opt.key
+                      ? "border-neutral-500 bg-neutral-100 text-neutral-900"
+                      : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
+                  }`}
+                >
+                  {opt.label}
+                  {printSortKey === opt.key && (printSortDir === "asc" ? " ▲" : " ▼")}
+                </button>
+              ))}
+              <button
+                onClick={() => setListSortFoil((v) => !v)}
+                title={listSortFoil ? "通常価格で見る" : "Foil価格で見る"}
+                aria-label={listSortFoil ? "通常価格で見る" : "Foil価格で見る"}
+                aria-pressed={listSortFoil}
+                className={`ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
+                  listSortFoil ? "border-neutral-500" : "border-neutral-300 hover:border-neutral-500"
+                }`}
+                style={
+                  listSortFoil
+                    ? {
+                        // 「Foil」タブと同じ虹色（アルファ付き）を円の背景にも敷いて、
+                        // アイコンだけでなくボタン全体でFoilっぽさが一目で伝わるようにする
+                        background:
+                          "linear-gradient(115deg, #ff008033, #ff8c0033, #ffed0033, #00ff8c33, #00c8ff33, #8c00ff33)",
+                      }
+                    : undefined
+                }
+              >
+                <FoilToggleIcon active={listSortFoil} variant="sparkle" />
+              </button>
+            </div>
             <table className="w-full table-fixed border-collapse text-sm">
               <colgroup>
                 <col className="w-auto" />
                 <col className="w-20" />
               </colgroup>
               <tbody>
-                {/* カードデータも一覧の中の1件として常に先頭に表示する（他プリントと並べて
-                    見比べられるように）。URLは変えず、他の行と同じselectPrintでその場の表示
-                    （画像・価格・下のセット情報行）を切り替える。 */}
-                <tr className="border-b border-neutral-100 bg-neutral-50 last:border-0">
-                  <td className="min-w-0 py-2 pr-2">
-                    <button
-                      onClick={() => selectPrint(defaultAsPrint)}
-                      className="flex min-w-0 w-full items-center gap-2 text-left text-neutral-900 hover:underline"
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element -- ScryfallのSVGアイコンCDN、next/imageの最適化対象外の小さな外部SVG */}
-                      <img
-                        src={`https://svgs.scryfall.io/sets/${current.setCode}.svg`}
-                        alt=""
-                        width={14}
-                        height={14}
-                        className="shrink-0"
-                        onError={(e) => {
-                          e.currentTarget.style.visibility = "hidden";
-                        }}
-                      />
-                      <span className="min-w-0 truncate font-semibold">{current.setName}</span>
-                      {current.notTournamentLegal && (
-                        <span className="shrink-0 rounded bg-red-50 px-1 text-[10px] text-red-700">使用不可</span>
-                      )}
-                    </button>
-                  </td>
-                  <td className="overflow-hidden py-2 text-right text-ellipsis whitespace-nowrap tabular-nums text-neutral-900">
-                    <p>
-                      {allPrices[current.scryfallId] !== undefined
-                        ? `¥${allPrices[current.scryfallId].toLocaleString("ja-JP", { maximumFractionDigits: 0 })}`
-                        : "-"}
-                    </p>
-                    {allFoilPrices[current.scryfallId] !== undefined && (
-                      <p className="text-[10px] text-neutral-400">
-                        Foil ¥
-                        {allFoilPrices[current.scryfallId].toLocaleString("ja-JP", {
-                          maximumFractionDigits: 0,
-                        })}
-                      </p>
-                    )}
-                  </td>
-                </tr>
                 {visiblePrints.map((p) => {
                   const jpy = allPrices[p.scryfallId];
                   const jpyFoil = allFoilPrices[p.scryfallId];
@@ -483,13 +613,28 @@ export default function CardHero({
                           )}
                         </button>
                       </td>
-                      <td className="overflow-hidden py-2 text-right text-ellipsis whitespace-nowrap tabular-nums text-neutral-700">
-                        <p>{jpy !== undefined ? `¥${jpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}` : "-"}</p>
-                        {jpyFoil !== undefined && (
-                          <p className="text-[10px] text-neutral-400">
-                            Foil ¥{jpyFoil.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
-                          </p>
-                        )}
+                      <td className="overflow-hidden py-2 text-right tabular-nums text-neutral-700">
+                        {/* 行の並び・行数は常に固定（通常行が上、Foil行が下）にし、切り替えボタンでは
+                            太字/小さい文字のスタイルだけを入れ替える。値が無い方は"-"を出して行数を
+                            揃えることで、切り替え時に他の行のテキストや高さがずれないようにしている。
+                            overflow/text-ellipsis/whitespace-nowrapはtdに付けても子のpに継承されないため、
+                            各pに個別に付ける（付け忘れると長い金額が折り返して行の高さが伸びてしまう） */}
+                        <p
+                          className={`overflow-hidden text-ellipsis whitespace-nowrap ${
+                            listSortFoil ? "text-[10px] text-neutral-400" : ""
+                          }`}
+                        >
+                          {jpy !== undefined ? `¥${jpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}` : "-"}
+                        </p>
+                        <p
+                          className={`overflow-hidden text-ellipsis whitespace-nowrap ${
+                            listSortFoil ? "" : "text-[10px] text-neutral-400"
+                          }`}
+                        >
+                          {jpyFoil !== undefined
+                            ? `Foil ¥${jpyFoil.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}`
+                            : "Foil -"}
+                        </p>
                       </td>
                     </tr>
                   );

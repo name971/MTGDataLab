@@ -396,5 +396,67 @@ export const TYPE_GLOSSARY_JA_TO_EN: Record<string, string> = {
   "罠": "Trap",
   "蟲": "Worm",
   "蠍": "Scorpion",
-  "麒麟": "Kirin"
+  "麒麟": "Kirin",
+  "トークン": "Token",
+  "紋章": "Emblem",
+  "ロバ": "Donkey",
+  "サイボーグ": "Cyborg",
+  "アスリート": "Athlete",
+  // 「同族」の旧名称（このセッションで既出：Kindredは元Tribalという名前だった）
+  "部族": "Tribal"
 };
+
+// TYPE_GLOSSARY_JA_TO_EN上で同じ英語に複数の日本語が対応してしまっているもの
+// （表記ゆれ・旧クリーチャー・タイプ等）の逆引き優先語。cardsテーブルの実際の
+// printed_type_line分布で多数派だった方を採用している（scripts/generate-type-glossary.mjs
+// 生成時の統計推定で紛れ込んだ側や、Oracle変更前の旧タイプ名側を捨てる）。
+const TYPE_GLOSSARY_EN_TO_JA_OVERRIDES: Record<string, string> = {
+  octopus: "タコ",
+  lizard: "トカゲ",
+  snake: "蛇",
+  dog: "犬",
+};
+
+/** タイプ行の英語→日本語。TYPE_GLOSSARY_JA_TO_ENの逆引き（最初に出現した対応を採用）＋上の優先語で上書き */
+const TYPE_GLOSSARY_EN_TO_JA: Record<string, string> = (() => {
+  const map: Record<string, string> = {};
+  for (const [ja, en] of Object.entries(TYPE_GLOSSARY_JA_TO_EN)) {
+    const key = en.toLowerCase();
+    if (!(key in map)) map[key] = ja;
+  }
+  return { ...map, ...TYPE_GLOSSARY_EN_TO_JA_OVERRIDES };
+})();
+
+/** タイプ行には出るがクリーチャー・タイプ/カード・タイプの一覧には含まれない基本の超タイプ */
+const SUPERTYPE_EN_TO_JA: Record<string, string> = {
+  legendary: "伝説の",
+  basic: "基本",
+  snow: "氷雪",
+  world: "ワールド",
+  ongoing: "進行中の",
+  elite: "エリート",
+  host: "ホスト",
+};
+
+function translateTypeWord(word: string): string {
+  const key = word.toLowerCase();
+  return SUPERTYPE_EN_TO_JA[key] ?? TYPE_GLOSSARY_EN_TO_JA[key] ?? word;
+}
+
+/**
+ * 日本語版プリントを持たないカードのタイプ行を、辞書を使って日本語に翻訳する
+ * （カード詳細ページ「カードデータ」欄用）。辞書に無い語（未知のクリーチャー・タイプ等）は
+ * 英語のまま残す。em dashの前後（カード・タイプ側／サブタイプ側）は"・"区切りで結合し、
+ * 実際の日本語版プリントの表記（クリーチャー — 吸血鬼・ウィザード 等）に合わせる。
+ * 両面カードのtype_line（"Creature — Human // Creature — Wolf"）は最初の面のみ扱う。
+ */
+export function translateTypeLine(typeLine: string): string {
+  const frontFace = typeLine.split(" // ")[0];
+  const [typesPart, subtypesPart] = frontFace.split(" — ").map((s) => s.trim());
+
+  const translatedTypes = typesPart.split(" ").map(translateTypeWord).join("");
+  if (subtypesPart === undefined) return translatedTypes;
+
+  const translatedSubtypes = subtypesPart.split(" ").map(translateTypeWord).join("・");
+  return `${translatedTypes} — ${translatedSubtypes}`;
+}

@@ -107,9 +107,6 @@ async function main() {
   for (let i = 0; i < safeToDelete.length; i += 50) {
     const chunk = safeToDelete.slice(i, i + 50);
     const idsParam = chunk.join(",");
-    await supabaseDelete(`card_price_snapshots?oracle_id=in.(${idsParam})`);
-    await supabaseDelete(`card_price_snapshots_weekly?oracle_id=in.(${idsParam})`);
-    await supabaseDelete(`card_price_snapshots_monthly?oracle_id=in.(${idsParam})`);
     await supabaseDelete(`card_print_prices?oracle_id=in.(${idsParam})`);
     await supabaseDelete(`language_premium_stats?oracle_id=in.(${idsParam})`);
     await supabaseDelete(`favorite_cards?oracle_id=in.(${idsParam})`);

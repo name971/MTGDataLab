@@ -176,33 +176,6 @@ export async function getLatestUsdToJpyRate(): Promise<number | null> {
 }
 
 /**
- * card_price_snapshots（db/schema.sql、scripts/snapshot-prices.mjsで日次投入）から
- * oracle_id + series の最新スナップショットを取得する。
- * まだ一度もスナップショットが取られていないカードはnullを返す（呼び出し側でライブ取得にフォールバック）。
- */
-export async function getLatestPriceSnapshot(
-  oracleId: string,
-  series: "en" | "ja",
-): Promise<{
-  usd: number | null;
-  jpyEst: number | null;
-  usdFoil: number | null;
-  jpyEstFoil: number | null;
-} | null> {
-  const { data, error } = await supabase
-    .from("card_price_snapshots")
-    .select("usd, jpy_est, usd_foil, jpy_est_foil")
-    .eq("oracle_id", oracleId)
-    .eq("series", series)
-    .order("date", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error || !data) return null;
-  return { usd: data.usd, jpyEst: data.jpy_est, usdFoil: data.usd_foil, jpyEstFoil: data.jpy_est_foil };
-}
-
-/**
  * 英語名のリストから card_oracles.oracle_id を一括取得する（ランキング表示等での複数カード一括問い合わせ用）。
  * 見つからなかった名前はMapに含まれない。
  */

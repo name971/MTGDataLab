@@ -97,9 +97,6 @@ async function main() {
       continue;
     }
 
-    await supabaseDelete(
-      `card_price_snapshots?oracle_id=eq.${row.oracle_id}&series=eq.en&scryfall_id=eq.${row.scryfall_id}`,
-    );
     await supabaseDelete(`cards?scryfall_id=eq.${row.scryfall_id}`);
     await supabaseUpsert("cards", [toCardRow(better, row.oracle_id)], "scryfall_id");
 

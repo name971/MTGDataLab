@@ -127,14 +127,11 @@ async function main() {
       continue;
     }
 
-    // 差し替え対象の古い行は、外部キー制約のあるcard_price_snapshotsを先に消してから削除する
+    // 差し替え対象の古い行を削除する
     for (const row of existingRows) {
       const isStaleEn = row.lang === "en" && enChanged;
       const isStaleJa = row.lang === "ja" && jaChanged;
       if (!isStaleEn && !isStaleJa) continue;
-      await supabaseDelete(
-        `card_price_snapshots?oracle_id=eq.${oracle.oracle_id}&series=eq.${row.lang}&scryfall_id=eq.${row.scryfall_id}`,
-      );
       await supabaseDelete(`cards?scryfall_id=eq.${row.scryfall_id}`);
     }
 

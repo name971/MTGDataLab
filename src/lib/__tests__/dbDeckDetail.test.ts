@@ -68,6 +68,7 @@ describe("getDeckDetailFromDb", () => {
         manaCost: null,
         quantity: 4,
         board: "main",
+        rarity: null,
       },
     ]);
   });

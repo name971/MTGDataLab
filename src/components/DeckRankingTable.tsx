@@ -18,6 +18,10 @@ const PRICE_HIGHLIGHT_WINDOW = 10;
 export default function DeckRankingTable({ rows }: { rows: ArchetypeRow[] }) {
   const [sortKey, setSortKey] = useState<SortKey>("usageRatePct");
   const [expanded, setExpanded] = useState(false);
+  // StandardのみarenaMedianPriceJpyが付く（dbArchetypeStats.ts参照）。それ以外のフォーマットでは
+  // 全行undefinedなので、チェックボックス自体を出さない。
+  const hasArenaData = rows.some((r) => r.arenaMedianPriceJpy !== undefined);
+  const [arenaMode, setArenaMode] = useState(false);
 
   const sorted = useMemo(
     () => [...rows].sort((a, b) => b[sortKey] - a[sortKey]),
@@ -25,33 +29,52 @@ export default function DeckRankingTable({ rows }: { rows: ArchetypeRow[] }) {
   );
   const visible = expanded ? sorted : sorted.slice(0, VISIBLE_COUNT);
 
+  const displayPrice = (r: ArchetypeRow) =>
+    arenaMode && r.arenaMedianPriceJpy !== undefined ? r.arenaMedianPriceJpy : r.medianPriceJpy;
+
   // 上位10件（表示件数に関わらずこの10件固定）の中で中央値価格が最大・最小のものを色分けする
   const top10 = sorted.slice(0, PRICE_HIGHLIGHT_WINDOW);
   const maxPriceArchetypeId =
     top10.length > 0
-      ? top10.reduce((max, r) => (r.medianPriceJpy > max.medianPriceJpy ? r : max)).archetypeId
+      ? top10.reduce((max, r) => (displayPrice(r) > displayPrice(max) ? r : max)).archetypeId
       : null;
   const minPriceArchetypeId =
     top10.length > 0
-      ? top10.reduce((min, r) => (r.medianPriceJpy < min.medianPriceJpy ? r : min)).archetypeId
+      ? top10.reduce((min, r) => (displayPrice(r) < displayPrice(min) ? r : min)).archetypeId
       : null;
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex gap-2">
-        {SORT_OPTIONS.map((opt) => (
-          <button
-            key={opt.key}
-            onClick={() => setSortKey(opt.key)}
-            className={`rounded-md border px-3 py-1.5 text-sm ${
-              sortKey === opt.key
-                ? "border-neutral-500 bg-neutral-100 text-neutral-900"
-                : "border-neutral-300 text-neutral-600 hover:border-neutral-500"
-            }`}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex gap-2">
+          {SORT_OPTIONS.map((opt) => (
+            <button
+              key={opt.key}
+              onClick={() => setSortKey(opt.key)}
+              className={`rounded-md border px-3 py-1.5 text-sm ${
+                sortKey === opt.key
+                  ? "border-neutral-500 bg-neutral-100 text-neutral-900"
+                  : "border-neutral-300 text-neutral-600 hover:border-neutral-500"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        {hasArenaData && (
+          <label
+            title="ワイルドカード換算：レア¥1,500/4枚、神話レア¥3,000/4枚、コモン・アンコモン¥0"
+            className="ml-auto flex w-fit cursor-help items-center gap-2 rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-600"
           >
-            {opt.label}
-          </button>
-        ))}
+            <input
+              type="checkbox"
+              checked={arenaMode}
+              onChange={(e) => setArenaMode(e.target.checked)}
+              className="h-4 w-4"
+            />
+            MTG Arena換算で表示
+          </label>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
@@ -59,6 +82,7 @@ export default function DeckRankingTable({ rows }: { rows: ArchetypeRow[] }) {
           <ArchetypeCard
             key={row.archetypeId}
             row={row}
+            displayPriceJpy={displayPrice(row)}
             priceHighlight={
               row.archetypeId === maxPriceArchetypeId
                 ? "max"
@@ -84,9 +108,11 @@ export default function DeckRankingTable({ rows }: { rows: ArchetypeRow[] }) {
 
 function ArchetypeCard({
   row,
+  displayPriceJpy,
   priceHighlight,
 }: {
   row: ArchetypeRow;
+  displayPriceJpy: number;
   priceHighlight: "max" | "min" | null;
 }) {
   // archetypeIdが数字ならDB由来（archetypes.id）、それ以外は旧サンプルデータのスラグ。
@@ -156,7 +182,7 @@ function ArchetypeCard({
                     : ""
               }
             >
-              ¥{row.medianPriceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
+              ¥{displayPriceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
             </span>
           </span>
         </div>

@@ -21,6 +21,7 @@ import type { PricePoint } from "@/lib/dbPriceHistory";
 import { getCheapestPriceHistory, getLatestCheapestPrice } from "@/lib/dbCheapestPrice";
 import { getOtherPrintsForCard, getBestCardImage } from "@/lib/dbCardPrints";
 import { getLatestPricesForPrints } from "@/lib/dbCardPrintPrices";
+import { translateTypeLine } from "@/lib/typeGlossary";
 import CardHero from "@/components/CardHero";
 import {
   getCardDetailFromDb,
@@ -90,7 +91,13 @@ async function resolveCardFromDbDetail(dbResult: DbCardDetail): Promise<Resolved
     setCode: enCard.set_code,
     collectorNumber: enCard.collector_number,
     rarity: enCard.rarity,
-    typeLine: (jaCard?.printed_type_line || fallbackTypeLineJa || enCard.type_line) ?? null,
+    // 実際の日本語版プリント訳が無ければ、辞書（typeGlossary.ts）で機械的に翻訳する。
+    // 辞書に無い語（未知のクリーチャー・タイプ等）はそのまま英語で残る。
+    typeLine:
+      (jaCard?.printed_type_line ||
+        fallbackTypeLineJa ||
+        (enCard.type_line ? translateTypeLine(enCard.type_line) : null)) ??
+      null,
     manaCost: enCard.mana_cost,
     power: enCard.power,
     toughness: enCard.toughness,
@@ -144,8 +151,10 @@ async function resolveCard(searchName: string): Promise<ResolvedCard | null> {
     rarity: enCard.rarity,
     typeLine:
       (jaCard && resolveFrontFacePrintedTypeLine(jaCard)) ??
-      resolveFrontFaceTypeLine(enCard) ??
-      null,
+      (() => {
+        const en = resolveFrontFaceTypeLine(enCard);
+        return en ? translateTypeLine(en) : null;
+      })(),
     manaCost: enCard.mana_cost ?? enCard.card_faces?.[0]?.mana_cost ?? null,
     power: enCard.power ?? enCard.card_faces?.[0]?.power ?? null,
     toughness: enCard.toughness ?? enCard.card_faces?.[0]?.toughness ?? null,
@@ -260,12 +269,9 @@ export default async function CardDetailPage({
     : [[], []];
   const priceExtremes = getPriceExtremes(enPriceHistory);
   const priceExtremesFoil = getPriceExtremes(enFoilPriceHistory);
-  const otherPrints = card.oracleId
-    ? await getOtherPrintsForCard(card.oracleId, {
-        setCode: card.setCode,
-        collectorNumber: card.collectorNumber,
-      })
-    : [];
+  // 「代表プリント」を先頭固定表示で除外する仕組みは廃止したため、除外条件無しで全プリントを取得する
+  // （カードデータが参照している最安値のプリントも、他のプリントと同列の1行として一覧に出したい）。
+  const otherPrints = card.oracleId ? await getOtherPrintsForCard(card.oracleId) : [];
   const otherPrintPrices = await getLatestPricesForPrints(otherPrints.map((p) => p.scryfallId));
 
   // 「カードデータ」欄のレアリティは代表プリント1件のものではなく、これまでに出た全プリントの

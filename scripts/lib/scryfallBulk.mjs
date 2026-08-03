@@ -389,7 +389,7 @@ export function findAnyJapaneseCard(index, oracleId) {
   return best;
 }
 
-/** scryfall_idから現在価格だけを引く（snapshot-prices.mjs用の軽量ルックアップ） */
+/** scryfall_idから現在価格だけを引く（snapshot-print-prices.mjs用の軽量ルックアップ） */
 export function findPriceById(index, scryfallId) {
   return index.priceById.get(scryfallId) ?? null;
 }
@@ -441,13 +441,16 @@ export function combinedOracleText(card) {
 /**
  * ルールテキストの日本語訳（printed_text）。日本語版プリントの一部にしか無い。
  * oracle_textと同様、両面カードは表裏を連結する。
+ * stripFuriganaは適用しない：printed_nameのふりがなと違い、ルールテキスト中の全角括弧は
+ * ストーム・ワード等キーワード能力の説明文（リマインダーテキスト）そのものであることが多く、
+ * 一律に取り除くと本文が消えてしまう（実際に190件超のカードでこれが起きていた）。
  */
 export function combinedPrintedText(card) {
   if (card.card_faces?.length) {
-    const texts = card.card_faces.map((f) => stripFurigana(f.printed_text)).filter(Boolean);
+    const texts = card.card_faces.map((f) => f.printed_text).filter(Boolean);
     return texts.length > 0 ? texts.join("\n//\n") : null;
   }
-  return card.printed_text ? stripFurigana(card.printed_text) : null;
+  return card.printed_text ?? null;
 }
 
 export function imageUris(card) {

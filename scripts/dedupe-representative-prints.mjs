@@ -147,10 +147,6 @@ async function main() {
     if (staleEnIds.length === 0 && staleJaIds.length === 0) continue;
 
     for (const scryfallId of [...staleEnIds, ...staleJaIds]) {
-      // card_price_snapshotsはoracle_id+series+scryfall_idの組み合わせだけでなく、過去の
-      // オラクル統合等でずれた行が残っていることもあるため、scryfall_id一致だけで確実に消す
-      // （このscryfall_id自体をcardsから消す以上、紐づく snapshot は無条件に不要）。
-      await supabaseDelete(`card_price_snapshots?scryfall_id=eq.${scryfallId}`);
       await supabaseDelete(`cards?scryfall_id=eq.${scryfallId}`);
     }
 

@@ -49,7 +49,6 @@ CREATE TABLE cards (
 -- 代表プリントの選定ルール（一覧・ランキングでどのプリントの画像/価格を使うか）:
 -- 1. 通常版nonfoil（is_showcase/is_borderless/is_promoが全てfalse、finishesにnonfoilを含む）があればそれを優先
 -- 2. 該当がなければ、Scryfallから取得した現在価格が最安のものを採用
--- この判定は自前のcard_price_snapshots（後述、代表プリントのみ日次保持）ではなく、
 -- 判定タイミングでScryfallから直接取得した現在価格を使う（全プリントの日次履歴は持たないため）。
 -- 再評価は新セット追加時・再録検知時など、代表プリントが変わりうるタイミングでのみ実行すれば十分。
 --
@@ -59,9 +58,6 @@ CREATE TABLE cards (
 --   ('nonfoil' = ANY(c.finishes) AND NOT c.is_showcase AND NOT c.is_borderless AND NOT c.is_promo) DESC,
 --   c.current_usd_from_scryfall ASC  -- バッチ実行時にScryfallから都度取得した値（保存はしない）
 -- LIMIT 1;
---
--- 代表プリントが切り替わっても価格履歴が途切れないよう、card_price_snapshotsは
--- scryfall_id単位ではなく oracle_id + series（en/ja）単位で継続的に記録する（後述）。
 
 -- card_oracles.printed_name_ja の更新ルール（日次バッチ）:
 -- エラッタ等で再録時に日本語名が変わるケースがあるため、単純な「最初に見つけた日本語名」で
@@ -166,33 +162,9 @@ CREATE TABLE exchange_rates (
   eur_to_jpy  NUMERIC(10, 4) NOT NULL
 );
 
--- カード単価の日次スナップショット（トレンドチャート・ランキングの元データ）
---
--- 重要: scryfall_id単位ではなく oracle_id + series（'en'/'ja'）単位で記録する。
--- 代表プリントは再録等で切り替わることがあるが、oracle_id+seriesをキーにしておけば
--- 切り替わりをまたいでも同じ系列として履歴が連続する（scryfall_idをキーにすると
--- 切り替わるたびに新しい行が始まり、価格チャートの履歴が途切れてしまう）。
--- scryfall_idは「その日実際に価格を取得したプリントがどれだったか」の監査用に保持する。
-CREATE TABLE card_price_snapshots (
-  id           BIGSERIAL PRIMARY KEY,
-  oracle_id    UUID NOT NULL REFERENCES card_oracles (oracle_id),
-  series       TEXT NOT NULL CHECK (series IN ('en', 'ja')),
-  scryfall_id  UUID NOT NULL REFERENCES cards (scryfall_id),
-  date         DATE NOT NULL,
-  usd          NUMERIC(10, 2),
-  eur          NUMERIC(10, 2),
-  -- jpy_estはアプリ側でusd × exchange_rates.usd_to_jpyから算出してもよいが、
-  -- 集計クエリの負荷軽減のためバッチ処理時点で計算して保存しておく
-  jpy_est      NUMERIC(12, 2),
-  -- Foil価格（このプリントにfoil仕様が存在しない場合はNULL）。非Foil(usd/jpy_est)とは別軸の値。
-  usd_foil     NUMERIC(10, 2),
-  jpy_est_foil NUMERIC(12, 2),
-  UNIQUE (oracle_id, series, date)
-);
-
--- UNIQUE (oracle_id, series, date) が生成する索引がそのまま
--- 「あるカード・系列の日付順の履歴を取る」検索にも使えるため、別途インデックスは張らない
--- （scryfall_id基準の旧インデックスと重複していたので統合した）。
+-- card_price_snapshots（代表プリント単体の日次価格）は§8参照の理由で削除済み。
+-- 現在の日次価格スナップショットはcard_cheapest_price_snapshots（全プリント横断の最安値、
+-- このファイル後半）とcard_print_prices（プリント単位、JSONB追記式）の2本立てで持つ。
 
 -- シールド商品（パック・ボックス）の日次スナップショット（TCGCSV由来）
 CREATE TABLE sealed_price_snapshots (
@@ -205,11 +177,12 @@ CREATE TABLE sealed_price_snapshots (
   UNIQUE (set_code, product_type, date)
 );
 
--- 言語プレミアム用（将来対応。TCGTracking等のSKU単位価格を想定）
--- 言語プレミアム（EN版とJP版の価格差）は新規の外部データソース不要で、
--- 既存のcards/card_price_snapshotsだけから計算できる。対象はScryfallが
+-- 言語プレミアム用（将来対応・未実装。TCGTracking等のSKU単位価格を想定）
+-- 言語プレミアム（EN版とJP版の価格差）は新規の外部データソース不要で、既存のcards/
+-- card_print_prices（プリント単位のJSONB日次価格）だけから計算できる。対象はScryfallが
 -- JP版プリントに独自のUSD価格を持つカードのみ（対象は限定的）。
--- 日次バッチで計算しキャッシュする。
+-- 日次バッチで計算しキャッシュする想定（下の集計例は旧card_price_snapshots前提の擬似コードなので
+-- 実装時はcard_print_pricesのJSONB演算子ベースで書き直すこと）。
 CREATE TABLE language_premium_stats (
   id              BIGSERIAL PRIMARY KEY,
   oracle_id       UUID NOT NULL REFERENCES card_oracles (oracle_id),
@@ -326,22 +299,20 @@ CREATE TABLE archetype_price_stats (
 
 CREATE INDEX idx_archetype_price_lookup ON archetype_price_stats (calculated_at, median_price_jpy DESC);
 
--- 集計クエリの例（バッチ処理で日次実行）:
+-- 集計クエリの例（scripts/compute-deck-stats.mjsのJS実装が実際に行っている計算）:
 -- 重要: total_price_jpy_est（取り込み時点の固定値）をそのまま集計に使うと、
 -- 古いデッキほど当時の価格のまま計算され、実勢と乖離する（鮮度問題）。
--- 必ずdeck_cards × 当日のcard_price_snapshotsで再計算すること。
--- card_price_snapshotsはoracle_id単位で代表プリント（'en'系列）のみ保持しているため、
--- 複数プリントの中から最安値を選ぶ処理は不要（代表プリントの選定自体は1章のバッチで別途行う）。
+-- 必ずdeck_cards × 当日のcard_cheapest_price_snapshots（全プリント横断の最安値）で再計算すること。
 --
 -- WITH deck_totals_today AS (
 --   SELECT
 --     d.id AS deck_id, d.archetype_id,
---     SUM(dc.quantity * cps.jpy_est) AS total_today,
+--     SUM(dc.quantity * ccps.jpy_est) AS total_today,
 --     ROW_NUMBER() OVER (PARTITION BY d.archetype_id ORDER BY d.created_at DESC) AS rn
 --   FROM decks d
 --   JOIN deck_cards dc ON dc.deck_id = d.id
---   JOIN card_price_snapshots cps
---     ON cps.oracle_id = dc.oracle_id AND cps.series = 'en' AND cps.date = CURRENT_DATE
+--   JOIN card_cheapest_price_snapshots ccps
+--     ON ccps.oracle_id = dc.oracle_id AND ccps.date = CURRENT_DATE
 --   WHERE d.archetype_id IS NOT NULL
 --   GROUP BY d.id, d.archetype_id, d.created_at
 -- )
@@ -380,6 +351,27 @@ CREATE TABLE trending_scores (
   streak_days         INT NOT NULL DEFAULT 1,  -- 連続で同カテゴリ1位を維持している日数
   UNIQUE (oracle_id, format, calculated_date, category)
 );
+
+-- 「継続注目カード」（トップページ、src/lib/dbTrendingCards.ts）専用。trending_scores（1日あたり
+-- 上位10件しか保存しない、直近3日変化ベース）とは別物で、こちらはカード詳細ページのグラフと
+-- 同じ生データ（card_cheapest_price_snapshots・card_usage_stats）を全カード対象に毎日走査し、
+-- 「前日比で実際に何日連続で上がり続けているか」を正確に計算して保存する
+-- （scripts/compute-card-streaks.mjs）。streak_days=0（今日は上がっていない）の行は保存しない。
+-- 価格はフォーマット非依存（card_cheapest_price_snapshotsがそもそもフォーマット横断の最安値）
+-- なのでformatは常に'ALL'固定、採用率はフォーマットごとに別値なのでformatに実際のフォーマット名が入る。
+CREATE TABLE card_streaks (
+  oracle_id       UUID NOT NULL REFERENCES card_oracles (oracle_id),
+  category        TEXT NOT NULL,     -- 'price' | 'usage'
+  format          TEXT NOT NULL,     -- price行は常に'ALL'、usage行は実際のフォーマット名
+  calculated_date DATE NOT NULL,
+  streak_days     INT NOT NULL,      -- 当日を含め何日連続で前日比プラスが続いているか（>=1のみ保存）
+  -- streak開始直前の値→当日の値の累積変化量。priceは%、usageはpt（採用率の単位に合わせる。
+  -- どちらも「率のパーセント」ではなく実際の単位そのままなので同着比較にそのまま使える）
+  change_value    NUMERIC(8, 2) NOT NULL,
+  PRIMARY KEY (oracle_id, category, format, calculated_date)
+);
+
+CREATE INDEX idx_card_streaks_lookup ON card_streaks (category, calculated_date, streak_days DESC);
 
 CREATE INDEX idx_trending_lookup ON trending_scores (format, calculated_date, category, score DESC);
 
@@ -506,91 +498,13 @@ CREATE POLICY "own alerts only" ON price_alerts
 -- ════════════════════════════════════════════
 -- 8. データ保持ポリシー（肥大化対策）
 -- ════════════════════════════════════════════
-
--- 【前提となる見積もり】
--- ・card_oracles は約30,000件（Scryfallの英語オラクル数、新セットで年間+1,000〜2,000件）。
--- ・card_price_snapshots を「全プリンティング」で日次取得すると、1オラクルあたり平均3〜5プリント
---   ×30,000オラクル = 10万行/日 規模になり、年間3,000万〜4,000万行に達する。
---   Supabase無料枠（DB 500MB）はもちろん、Proプラン（8GB込み）でも1〜2年で圧迫する規模。
 --
--- 【対策1: 価格追跡の対象を絞る】
--- card_price_snapshots は「全プリンティング」ではなく、oracle_idごとに以下の代表プリントのみ対象にする。
---   1. 代表プリント（cards選定ルール参照。通常版nonfoil優先、なければ最安値）
---   2. 日本語版プリントが存在する場合はそれも追加（JP/EN比較チャート・言語プレミアム計算に必要）
--- これにより日次行数は 約30,000（代表） + 約12,000〜15,000（JP版が存在するオラクルの概算） ≒ 4万〜5万行/日 に抑えられる。
--- 上記以外のプリント（ショーケース・ボーダーレス・プロモ等）は価格追跡対象外とし、
--- カード詳細ページの「その他のプリント」表示が必要になった場合はオンデマンドでScryfallから取得する
--- （常時DBに保持しない）。
---
--- 【対策2: 日次→週次→月次の3段階で解像度を落としながら長期保存する】
--- カード詳細ページの価格チャートの期間切替は具体的な日数がまだ未定だが、直近1ヶ月分の
--- 生データがあれば当面の表示要件は満たせる。
---   ・直近30日: card_price_snapshots に日次の生データ
---   ・30日〜365日: card_price_snapshots_weekly に週次の平均/最高/最安
---   ・365日超: card_price_snapshots_monthly に月次の平均/最高/最安（無期限保持）
--- 週次のみで無期限保持すると年間約4,500万行×バイト数で数年後にまた無料枠を圧迫するため、
--- 1年より古いデータはさらに月次（週次の約4分の1のペース）に丸めて増加を抑える。
--- 引き換えに1年より前の価格は月次の粒度でしか見られなくなる点はトレードオフとして許容する。
-
--- weekly/monthlyもcard_price_snapshotsと同じ理由でoracle_id + seriesをキーにする
--- （scryfall_id基準だと代表プリント切り替わり時にロールアップ後の履歴まで途切れてしまうため）。
-
-CREATE TABLE card_price_snapshots_weekly (
-  id            BIGSERIAL PRIMARY KEY,
-  oracle_id     UUID NOT NULL REFERENCES card_oracles (oracle_id),
-  series        TEXT NOT NULL CHECK (series IN ('en', 'ja')),
-  week_start    DATE NOT NULL,     -- 週の開始日（月曜日始まり）
-  avg_jpy       NUMERIC(12, 2) NOT NULL,
-  min_jpy       NUMERIC(12, 2) NOT NULL,
-  max_jpy       NUMERIC(12, 2) NOT NULL,
-  sample_days   INT NOT NULL,      -- 実際に値が取れた日数（欠損があれば7未満）
-  UNIQUE (oracle_id, series, week_start)
-);
-
-CREATE TABLE card_price_snapshots_monthly (
-  id            BIGSERIAL PRIMARY KEY,
-  oracle_id     UUID NOT NULL REFERENCES card_oracles (oracle_id),
-  series        TEXT NOT NULL CHECK (series IN ('en', 'ja')),
-  month_start   DATE NOT NULL,     -- 月の開始日（1日）
-  avg_jpy       NUMERIC(12, 2) NOT NULL,
-  min_jpy       NUMERIC(12, 2) NOT NULL,
-  max_jpy       NUMERIC(12, 2) NOT NULL,
-  sample_weeks  INT NOT NULL,      -- 集計に使えた週次レコード数（欠損があれば4〜5未満）
-  UNIQUE (oracle_id, series, month_start)
-);
-
--- weekly/monthlyともUNIQUE制約の索引がそのまま履歴取得に使えるため、
--- card_price_snapshotsと同様に別途の検索用インデックスは張らない。
-
--- 週次ロールアップ＋古い日次データの削除（週1回、日次バッチとは別ジョブとして実行）:
---
--- INSERT INTO card_price_snapshots_weekly (oracle_id, series, week_start, avg_jpy, min_jpy, max_jpy, sample_days)
--- SELECT
---   oracle_id, series,
---   date_trunc('week', date)::date AS week_start,
---   ROUND(AVG(jpy_est), 2), MIN(jpy_est), MAX(jpy_est), COUNT(*)
--- FROM card_price_snapshots
--- WHERE date < CURRENT_DATE - INTERVAL '30 days'
---   AND date >= CURRENT_DATE - INTERVAL '37 days'  -- 直近で未集計の1週間分だけを対象にする
---   AND jpy_est IS NOT NULL
--- GROUP BY oracle_id, series, date_trunc('week', date)
--- ON CONFLICT (oracle_id, series, week_start) DO NOTHING;
---
--- DELETE FROM card_price_snapshots WHERE date < CURRENT_DATE - INTERVAL '30 days';
---
--- 月次ロールアップ＋古い週次データの削除（月1回、別ジョブとして実行）:
---
--- INSERT INTO card_price_snapshots_monthly (oracle_id, series, month_start, avg_jpy, min_jpy, max_jpy, sample_weeks)
--- SELECT
---   oracle_id, series,
---   date_trunc('month', week_start)::date AS month_start,
---   ROUND(AVG(avg_jpy), 2), MIN(min_jpy), MAX(max_jpy), COUNT(*)
--- FROM card_price_snapshots_weekly
--- WHERE week_start < CURRENT_DATE - INTERVAL '365 days'
--- GROUP BY oracle_id, series, date_trunc('month', week_start)
--- ON CONFLICT (oracle_id, series, month_start) DO NOTHING;
---
--- DELETE FROM card_price_snapshots_weekly WHERE week_start < CURRENT_DATE - INTERVAL '365 days';
+-- ここには元々card_price_snapshots（代表プリント単体の日次価格）向けの日次→週次→月次
+-- ロールアップ計画があったが、getPriceHistoryForCard/getLatestPriceSnapshotの参照元を
+-- card_cheapest_price_snapshots（全プリント横断の最安値）に置き換えた後、card_price_snapshots
+-- 自体がどのページ・APIからも読まれない未使用テーブルになっていた（ロールアップも一度も
+-- 実装・自動化されないまま）。DB容量超過（無料枠500MB）の主要因の一つだったため、
+-- テーブルごと削除した。全件のバックアップはDB外（JSONL、ユーザーに提供済み）に退避してある。
 --
 -- 【対策3: 集計・ランキング系テーブルは「現在の状態」中心なので短期で間引く】
 -- card_usage_stats / trending_scores はランキング表示用の最新値が主目的で、

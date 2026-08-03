@@ -1,10 +1,9 @@
 /**
  * card_usage_stats（フォーマット別・カード別の採用率）と
  * archetype_price_stats（アーキタイプ別デッキ価格の中央値）を
- * decks / deck_cards / card_price_snapshots の実データから計算して保存する。
+ * decks / deck_cards / card_cheapest_price_snapshots の実データから計算して保存する。
  *
- * db/schema.sql 8章のコメントに書かれた集計ロジックのJS実装版
- * （anonキーではraw SQLのCTEクエリを実行できないため、アプリ側で計算してUPSERTする）。
+ * anonキーではraw SQLのCTEクエリを実行できないため、アプリ側で計算してUPSERTする。
  *
  * 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... node scripts/compute-deck-stats.mjs
  */
@@ -40,6 +39,14 @@ async function supabaseGet(path) {
     offset += PAGE_SIZE;
   }
   return rows;
+}
+
+async function supabaseDelete(path) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    method: "DELETE",
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+  });
+  if (!res.ok) throw new Error(`DELETE ${path} failed: ${res.status} ${await res.text()}`);
 }
 
 async function supabaseUpsert(table, rows, conflictColumn) {
@@ -103,9 +110,11 @@ async function main() {
   }
   const decks = deckMetas.map((d) => ({ ...d, deck_cards: deckCardsByDeckId.get(d.id) ?? [] }));
 
-  // card_price_snapshots（本日分、'en'系列）を oracle_id -> jpy_est でマップ化
+  // card_cheapest_price_snapshots（本日分、全プリント横断の最安値）を oracle_id -> jpy_est でマップ化
+  // （旧card_price_snapshots＝代表プリント単体の日次価格は、どこからも読まれない未使用テーブルに
+  // なっていたため削除済み。カード詳細ページと同じ基準に統一する意味でもこちらへの移行が適切）
   const snapshots = await supabaseGet(
-    `card_price_snapshots?select=oracle_id,jpy_est&series=eq.en&date=eq.${today}`
+    `card_cheapest_price_snapshots?select=oracle_id,jpy_est&date=eq.${today}`
   );
   const priceByOracle = new Map(snapshots.map((s) => [s.oracle_id, Number(s.jpy_est)]));
   console.log(`本日の価格スナップショット: ${priceByOracle.size}件`);
@@ -161,6 +170,21 @@ async function main() {
   }
   console.log(`card_usage_stats 保存: ${usageRows.length}件（${PERIOD_DAYS_OPTIONS.join("/")}日分）`);
 
+  // 保持ポリシー: アプリはランキング表示(getCardRankingFromDb)で最新calculated_atの行しか
+  // 読まず、streak計算(scripts/compute-card-streaks.mjs)だけがperiod_days=7を
+  // STREAK_LOOKBACK_DAYS(60日)分さかのぼって参照する。それ以外の過去分は無期限に
+  // 積み上がるだけの無駄なので、日次実行のたびに不要な古い行を削除する
+  // （2026-08時点でこの間引きが無くDB容量が無料枠500MBを超過した実績があるため）。
+  const USAGE_STREAK_LOOKBACK_DAYS = 60;
+  const usageStreakCutoff = new Date();
+  usageStreakCutoff.setDate(usageStreakCutoff.getDate() - USAGE_STREAK_LOOKBACK_DAYS);
+  await supabaseDelete(
+    `card_usage_stats?period_days=in.(30,90)&calculated_at=lt.${today}`,
+  );
+  await supabaseDelete(
+    `card_usage_stats?period_days=eq.7&calculated_at=lt.${isoDate(usageStreakCutoff)}`,
+  );
+
   // ── archetype_price_stats: アーキタイプ別デッキ価格の中央値 ──
   const decksByArchetype = new Map(); // archetype_id -> deck[]
   for (const deck of decks) {
@@ -202,6 +226,9 @@ async function main() {
     await supabaseUpsert("archetype_price_stats", priceRows.slice(i, i + PAGE_SIZE), "archetype_id,calculated_at");
   }
   console.log(`archetype_price_stats 保存: ${priceRows.length}件`);
+
+  // 保持ポリシー: dbArchetypeStats.tsは最新calculated_atの行しか読まないため、過去分は不要
+  await supabaseDelete(`archetype_price_stats?calculated_at=lt.${today}`);
 }
 
 main().catch((err) => {

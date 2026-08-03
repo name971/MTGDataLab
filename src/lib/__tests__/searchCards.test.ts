@@ -36,7 +36,8 @@ describe("searchCardsInDb", () => {
         // getBestCardImages: このテストのオラクルはcard_prints未反映という想定にし、
         // cardsテーブルの代表プリント画像（アサーション対象）がそのまま使われるようにする
         const rangeMock = vi.fn().mockResolvedValue({ data: [], error: null });
-        const eqMock = vi.fn().mockReturnValue({ range: rangeMock });
+        const orderMock = vi.fn().mockReturnValue({ range: rangeMock });
+        const eqMock = vi.fn().mockReturnValue({ order: orderMock });
         const inMock = vi.fn().mockReturnValue({ eq: eqMock });
         return { select: vi.fn().mockReturnValue({ in: inMock }) };
       }

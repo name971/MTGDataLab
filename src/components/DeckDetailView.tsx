@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
-import { totalPriceJpy, formatJpy } from "@/lib/deckPricing";
+import { totalPriceJpy, totalArenaPriceJpy, arenaPriceJpy, formatJpy } from "@/lib/deckPricing";
 import ManaCost from "./ManaCost";
 
 export interface DeckCardDisplay {
@@ -17,6 +17,8 @@ export interface DeckCardDisplay {
   manaCost: string | null;
   quantity: number;
   board: "main" | "side";
+  /** common/uncommon/rare/mythic。MTG Arenaワイルドカード換算表示用（Standardのみ） */
+  rarity: string | null;
 }
 
 type Tab = "list" | "image";
@@ -88,11 +90,23 @@ function totalQuantity(cards: DeckCardDisplay[]) {
 export default function DeckDetailView({
   cards,
   format,
+  title,
+  subtitle,
 }: {
   cards: DeckCardDisplay[];
   format?: string;
+  /** 未指定ならタイトル行自体を出さない（呼び出し側が既に独自のヘッダーを持つ場合。
+   * src/app/decks/archetype/[archetypeId]/page.tsx参照） */
+  title?: string;
+  subtitle?: string;
 }) {
   const [tab, setTab] = useState<Tab>("image");
+  // MTG Arenaで実際に組む対象はローテーション中のStandardが中心なため、換算表示はStandardのみ出す。
+  const isStandard = format === "Standard";
+  const [arenaMode, setArenaMode] = useState(false);
+  // ヘッダーの合計金額もチェックボックスと連動して切り替える（メイン・サイド両方の合計、
+  // 従来page.tsx側で計算していたtotalPriceJpy(deck.cards)と同じ範囲）
+  const grandTotalJpy = arenaMode ? totalArenaPriceJpy(cards) : totalPriceJpy(cards);
 
   const mainboard = groupCards(cards, "main");
   const sideboard = groupCards(cards, "side");
@@ -103,7 +117,20 @@ export default function DeckDetailView({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex gap-2 text-sm">
+      {title !== undefined && (
+        <div className="flex items-baseline justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-semibold">{title}</h1>
+            <p className="text-sm text-neutral-500">{subtitle}</p>
+          </div>
+          <p className="whitespace-nowrap text-lg font-semibold">
+            {arenaMode && "Arena換算 "}
+            {formatJpy(grandTotalJpy)}
+          </p>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2 text-sm">
         <button
           onClick={() => setTab("list")}
           className={`rounded-md border px-3 py-1.5 ${
@@ -124,26 +151,40 @@ export default function DeckDetailView({
         >
           画像（グリッド）
         </button>
+        {isStandard && (
+          <label
+            title="ワイルドカード換算：レア¥1,500/4枚、神話レア¥3,000/4枚、コモン・アンコモン¥0"
+            className="ml-auto flex w-fit cursor-help items-center gap-2 rounded-md border border-neutral-300 px-3 py-1.5 text-neutral-600"
+          >
+            <input
+              type="checkbox"
+              checked={arenaMode}
+              onChange={(e) => setArenaMode(e.target.checked)}
+              className="h-4 w-4"
+            />
+            MTG Arena換算で表示
+          </label>
+        )}
       </div>
 
       {tab === "list" ? (
         <div className="flex flex-col gap-6">
           {isCommander && sideboard.length > 0 && (
-            <DeckCardList title={sideboardTitle} cards={sideboard} grouped={false} />
+            <DeckCardList title={sideboardTitle} cards={sideboard} grouped={false} arenaMode={arenaMode} />
           )}
-          <DeckCardList title="メインボード" cards={mainboard} grouped />
+          <DeckCardList title="メインボード" cards={mainboard} grouped arenaMode={arenaMode} />
           {!isCommander && sideboard.length > 0 && (
-            <DeckCardList title={sideboardTitle} cards={sideboard} grouped={false} />
+            <DeckCardList title={sideboardTitle} cards={sideboard} grouped={false} arenaMode={arenaMode} />
           )}
         </div>
       ) : (
         <div className="flex flex-col gap-6">
           {isCommander && sideboard.length > 0 && (
-            <DeckCardGrid title={sideboardTitle} cards={sideboard} grouped={false} />
+            <DeckCardGrid title={sideboardTitle} cards={sideboard} grouped={false} arenaMode={arenaMode} />
           )}
-          <DeckCardGrid title="メインボード" cards={mainboard} grouped />
+          <DeckCardGrid title="メインボード" cards={mainboard} grouped arenaMode={arenaMode} />
           {!isCommander && sideboard.length > 0 && (
-            <DeckCardGrid title={sideboardTitle} cards={sideboard} grouped={false} />
+            <DeckCardGrid title={sideboardTitle} cards={sideboard} grouped={false} arenaMode={arenaMode} />
           )}
         </div>
       )}
@@ -156,7 +197,10 @@ export default function DeckDetailView({
  * 中の4つのspanが親のグリッド列（名前・単価・枚数・合計）にそのまま並ぶことで、
  * カード名の長さに関わらず単価/枚数/合計が縦に揃う。
  */
-function CardListRow({ card }: { card: DeckCardDisplay }) {
+function CardListRow({ card, arenaMode }: { card: DeckCardDisplay; arenaMode: boolean }) {
+  // arenaMode中はレアリティさえ分かれば必ず金額が出せる（不明なレアリティ・コモン/アンコモンは0円）ため、
+  // 実勢価格が無いカードでも「価格データなし」にはならない
+  const unitPriceJpy = arenaMode ? arenaPriceJpy(card.rarity) : card.priceJpy;
   return (
     <li key={`${card.nameEn}-${card.board}`} className="contents">
       <span className="flex min-w-0 items-center gap-1.5 truncate border-b border-neutral-100 py-1">
@@ -172,16 +216,16 @@ function CardListRow({ card }: { card: DeckCardDisplay }) {
         </span>
         <ManaCost cost={card.manaCost} />
       </span>
-      {card.priceJpy !== null ? (
+      {unitPriceJpy !== null ? (
         <>
           <span className="whitespace-nowrap border-b border-neutral-100 py-1 text-right text-neutral-400 tabular-nums">
-            ¥{card.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
+            ¥{unitPriceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
           </span>
           <span className="whitespace-nowrap border-b border-neutral-100 py-1 text-right text-neutral-400 tabular-nums">
             ×{card.quantity}
           </span>
           <span className="whitespace-nowrap border-b border-neutral-100 py-1 text-right text-neutral-600 tabular-nums">
-            ¥{(card.priceJpy * card.quantity).toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
+            ¥{(unitPriceJpy * card.quantity).toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
           </span>
         </>
       ) : (
@@ -197,10 +241,12 @@ function DeckCardList({
   title,
   cards,
   grouped,
+  arenaMode,
 }: {
   title: string;
   cards: DeckCardDisplay[];
   grouped: boolean;
+  arenaMode: boolean;
 }) {
   return (
     <div>
@@ -216,7 +262,7 @@ function DeckCardList({
               </p>
               <ul className="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 text-sm">
                 {group.cards.map((card) => (
-                  <CardListRow key={`${card.nameEn}-${card.board}`} card={card} />
+                  <CardListRow key={`${card.nameEn}-${card.board}`} card={card} arenaMode={arenaMode} />
                 ))}
               </ul>
             </div>
@@ -225,12 +271,12 @@ function DeckCardList({
       ) : (
         <ul className="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 text-sm">
           {sortByKind(cards).map((card) => (
-            <CardListRow key={`${card.nameEn}-${card.board}`} card={card} />
+            <CardListRow key={`${card.nameEn}-${card.board}`} card={card} arenaMode={arenaMode} />
           ))}
         </ul>
       )}
       <p className="mt-2 text-right text-sm font-medium text-neutral-700">
-        合計: {formatJpy(totalPriceJpy(cards))}
+        合計: {formatJpy(arenaMode ? totalArenaPriceJpy(cards) : totalPriceJpy(cards))}
       </p>
     </div>
   );
@@ -275,10 +321,12 @@ function DeckCardGrid({
   title,
   cards,
   grouped,
+  arenaMode,
 }: {
   title: string;
   cards: DeckCardDisplay[];
   grouped: boolean;
+  arenaMode: boolean;
 }) {
   return (
     <div>
@@ -308,7 +356,7 @@ function DeckCardGrid({
         </div>
       )}
       <p className="mt-2 text-right text-sm font-medium text-neutral-700">
-        合計: {formatJpy(totalPriceJpy(cards))}
+        合計: {formatJpy(arenaMode ? totalArenaPriceJpy(cards) : totalPriceJpy(cards))}
       </p>
     </div>
   );

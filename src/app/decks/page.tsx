@@ -10,17 +10,34 @@ function resolveFormat(slug: string | undefined): Format {
   return FORMATS.find((f) => formatSlug(f) === slug) ?? "Standard";
 }
 
+const PERIOD_OPTIONS = [7, 30, 90] as const;
+type PeriodDays = (typeof PERIOD_OPTIONS)[number];
+
+function resolvePeriod(raw: string | undefined): PeriodDays {
+  const n = Number(raw);
+  return (PERIOD_OPTIONS as readonly number[]).includes(n) ? (n as PeriodDays) : 30;
+}
+
 export const metadata = { title: "デッキランキング - MTG DataLab" };
 
 export default async function DeckRankingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ format?: string }>;
+  searchParams: Promise<{ format?: string; period?: string }>;
 }) {
-  const { format: formatParam } = await searchParams;
+  const { format: formatParam, period } = await searchParams;
   const format = resolveFormat(formatParam);
-  const dbRows = await getArchetypesFromDb(format);
-  const rows = dbRows.length > 0 ? dbRows : getSampleArchetypes(format);
+  const periodDays = resolvePeriod(period);
+  const dbRows = await getArchetypesFromDb(format, periodDays);
+  // サンプルデータへのフォールバックは「このフォーマットはDBにまだ実データが無い」場合のみに限る。
+  // 期間だけ絞り込んだ結果が0件（分類バッチがまだ直近分を処理していない等）の場合にサンプルへ
+  // 差し替えると、無関係なハードコード値が実データのように表示されてしまう
+  // （画像URLも持たないため「画像なし」になり、一見バグに見える）。その場合は空状態を出す。
+  let rows = dbRows;
+  if (dbRows.length === 0) {
+    const hasAnyDbData = periodDays === 30 ? false : (await getArchetypesFromDb(format, 30)).length > 0;
+    rows = hasAnyDbData ? [] : getSampleArchetypes(format);
+  }
   const { caveatNote } = await getFormatSettings(format);
   const recentDecks = await getRecentDecksFromDb(format);
 
@@ -28,6 +45,12 @@ export default async function DeckRankingPage({
   const top10AvgPriceJpy =
     top10.length > 0
       ? Math.round(top10.reduce((sum, r) => sum + r.medianPriceJpy, 0) / top10.length)
+      : null;
+  // arenaMedianPriceJpyはStandardのみ付く（dbArchetypeStats.ts参照）。値がある行だけで平均を取る
+  const top10ArenaRows = top10.filter((r) => r.arenaMedianPriceJpy !== undefined);
+  const top10ArenaAvgPriceJpy =
+    top10ArenaRows.length > 0
+      ? Math.round(top10ArenaRows.reduce((sum, r) => sum + r.arenaMedianPriceJpy!, 0) / top10ArenaRows.length)
       : null;
 
   return (
@@ -37,12 +60,25 @@ export default async function DeckRankingPage({
           <h1 className="text-xl font-semibold">デッキ単位のランキング（アーキタイプランキング）</h1>
         </div>
         {top10AvgPriceJpy !== null && (
-          <p className="whitespace-nowrap text-sm text-neutral-600">
-            上位{top10.length}デッキ平均:{" "}
-            <span className="text-lg font-semibold text-neutral-900">
-              ¥{top10AvgPriceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
-            </span>
-          </p>
+          <div className="flex flex-col items-end gap-0.5">
+            <p className="whitespace-nowrap text-sm text-neutral-600">
+              上位{top10.length}デッキ平均:{" "}
+              <span className="text-lg font-semibold text-neutral-900">
+                ¥{top10AvgPriceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
+              </span>
+            </p>
+            {top10ArenaAvgPriceJpy !== null && (
+              <p
+                title="ワイルドカード換算：レア¥1,500/4枚、神話レア¥3,000/4枚、コモン・アンコモン¥0"
+                className="cursor-help whitespace-nowrap text-xs text-neutral-500"
+              >
+                MTG Arena換算平均:{" "}
+                <span className="font-medium text-neutral-700">
+                  ¥{top10ArenaAvgPriceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
+                </span>
+              </p>
+            )}
+          </div>
         )}
       </div>
 
@@ -50,7 +86,7 @@ export default async function DeckRankingPage({
         {FORMATS.map((f) => (
           <Link
             key={f}
-            href={`/decks?format=${formatSlug(f)}`}
+            href={`/decks?format=${formatSlug(f)}${periodDays !== 30 ? `&period=${periodDays}` : ""}`}
             className={`rounded-md border px-3 py-1.5 text-sm ${
               f === format
                 ? "border-neutral-500 bg-neutral-100 text-neutral-900"
@@ -58,6 +94,23 @@ export default async function DeckRankingPage({
             }`}
           >
             {f}
+          </Link>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-neutral-500">集計期間:</span>
+        {PERIOD_OPTIONS.map((p) => (
+          <Link
+            key={p}
+            href={`/decks?format=${formatSlug(format)}&period=${p}`}
+            className={`rounded-md border px-2 py-1 text-xs ${
+              p === periodDays
+                ? "border-neutral-500 bg-neutral-100 text-neutral-900"
+                : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
+            }`}
+          >
+            直近{p}日
           </Link>
         ))}
       </div>

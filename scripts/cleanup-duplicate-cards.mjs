@@ -3,7 +3,7 @@
  * rebuild-representative-prints.mjs実行中に(削除→挿入)の途中でスクリプトが割り込んだ等の理由で、
  * 古い代表プリント行が消し忘れられて重複することがある。
  * 各(oracle_id, lang)ペアについて、最も新しくupdated_atされた行（＝最新の選定ロジックで
- * 確定した代表プリント）だけを残し、それ以外を削除する（先に外部キーのcard_price_snapshotsを消す）。
+ * 確定した代表プリント）だけを残し、それ以外を削除する。
  *
  * 1件ずつDELETEすると重複数が多いとき（1万件超）に非常に遅い（実際に数十分〜時間規模になった）ため、
  * 削除対象のscryfall_idをまとめてin.()で一括削除する。
@@ -20,7 +20,7 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 }
 
 const PAGE_SIZE = 1000;
-const DELETE_CHUNK = 50; // 大きすぎるとcard_price_snapshots側のDELETEがタイムアウトするため小分けにする
+const DELETE_CHUNK = 50; // 大きすぎるとDELETEがタイムアウトするため小分けにする
 
 async function supabaseGet(path) {
   const rows = [];
@@ -95,7 +95,6 @@ async function main() {
   let done = 0;
   await runWithConcurrency(chunks, 8, async (chunk) => {
     const idsParam = chunk.join(",");
-    await supabaseDelete(`card_price_snapshots?scryfall_id=in.(${idsParam})`);
     await supabaseDelete(`cards?scryfall_id=in.(${idsParam})`);
     done += chunk.length;
     console.log(`  ...${done}/${staleIds.length}件削除済み`);

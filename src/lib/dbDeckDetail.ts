@@ -12,6 +12,8 @@ export interface DbDeckCard {
   manaCost: string | null;
   quantity: number;
   board: "main" | "side";
+  /** common/uncommon/rare/mythic。MTG Arenaワイルドカード換算表示用（デッキ詳細ページ、Standardのみ） */
+  rarity: string | null;
 }
 
 export interface DbDeckDetail {
@@ -179,6 +181,7 @@ export async function getDeckDetailFromDb(deckId: number): Promise<DbDeckDetail 
       imageNormalUrl: string | null;
       typeLine: string | null;
       manaCost: string | null;
+      rarity: string | null;
     }
   >();
   const priceByOracle = new Map<string, number>();
@@ -188,7 +191,7 @@ export async function getDeckDetailFromDb(deckId: number): Promise<DbDeckDetail 
       supabase.from("card_oracles").select("oracle_id, printed_name_ja").in("oracle_id", oracleIds),
       supabase
         .from("cards")
-        .select("oracle_id, lang, image_uri_art_crop, image_uri_normal, type_line, mana_cost")
+        .select("oracle_id, lang, image_uri_art_crop, image_uri_normal, type_line, mana_cost, rarity")
         .in("oracle_id", oracleIds),
       supabase
         .from("card_cheapest_price_snapshots")
@@ -205,6 +208,7 @@ export async function getDeckDetailFromDb(deckId: number): Promise<DbDeckDetail 
         imageNormalUrl: null,
         typeLine: null,
         manaCost: null,
+        rarity: null,
       });
     }
     for (const c of cardRows ?? []) {
@@ -221,6 +225,11 @@ export async function getDeckDetailFromDb(deckId: number): Promise<DbDeckDetail 
       // マナコストは英語版の値で統一する（日本語版でも同じはずだが、表記ゆれを避けるため）
       if (existing && c.mana_cost && (c.lang === "en" || !existing.manaCost)) {
         existing.manaCost = c.mana_cost;
+      }
+      // レアリティは再録で変わることがあるが、MTG Arenaワイルドカード換算はおおよその目安表示
+      // なので厳密なプリント単位ではなく代表として英語版の値を使う
+      if (existing && c.rarity && (c.lang === "en" || !existing.rarity)) {
+        existing.rarity = c.rarity;
       }
     }
     // カード詳細ページの「カードデータ」画像選定（安い順+日本語版一致、getBestCardImage）と揃える。
@@ -260,6 +269,7 @@ export async function getDeckDetailFromDb(deckId: number): Promise<DbDeckDetail 
         manaCost: info?.manaCost ?? null,
         quantity: c.quantity,
         board: c.board,
+        rarity: info?.rarity ?? null,
       };
     }),
   };

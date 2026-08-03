@@ -50,10 +50,7 @@ const CARD_PRINT_SELECT =
  * からカード詳細ページ「その他のプリント」欄用の一覧を取得する。ライブAPI呼び出しはしない。
  * set_nameは正規化されたsetsテーブルから結合して取得する（容量削減、db/schema.sql参照）。
  */
-export async function getOtherPrintsForCard(
-  oracleId: string,
-  excludePrint?: { setCode: string; collectorNumber: string },
-): Promise<CardPrint[]> {
+export async function getOtherPrintsForCard(oracleId: string): Promise<CardPrint[]> {
   // 基本土地等は700件超のプリントを持ち、PostgRESTのデフォルト上限（1000行）に近い/超える
   // ことがある。降順ソートなので今のところ先頭（新しい方）は守られるが、将来的に
   // 1000件を超えるカードが増えることも考え、念のためページングしておく。
@@ -73,12 +70,7 @@ export async function getOtherPrintsForCard(
     if (page.length < PAGE_SIZE) break;
   }
 
-  return data
-    .filter(
-      (p) =>
-        !excludePrint || p.set_code !== excludePrint.setCode || p.collector_number !== excludePrint.collectorNumber,
-    )
-    .map(toCardPrint);
+  return data.map(toCardPrint);
 }
 
 /**
@@ -97,6 +89,9 @@ export async function getBestCardImage(oracleId: string): Promise<string | null>
       .select("scryfall_id, image_uri_normal, image_uri_normal_ja")
       .eq("oracle_id", oracleId)
       .eq("not_tournament_legal", false)
+      // 順序が不定だと、価格がどのプリントにも無い場合のフォールバック（rows[0]）が呼び出しごとに
+      // ばらつき、「カードデータ」とデッキ詳細で表示される画像が食い違う原因になるため固定する
+      .order("scryfall_id", { ascending: true })
       .range(offset, offset + PAGE_SIZE - 1);
     if (error) return null;
     if (!page || page.length === 0) break;
@@ -106,9 +101,14 @@ export async function getBestCardImage(oracleId: string): Promise<string | null>
   if (rows.length === 0) return null;
 
   const prices = await getLatestPricesForPrints(rows.map((r) => r.scryfall_id));
+  // 「安い順」の判定には通常価格を優先しつつ、通常価格が無いFoil専用プリント（Secret Lair等）も
+  // Foil価格で価格ありとして扱う。通常価格だけを見ていると、Foil専用カードは全プリントが
+  // 「価格不明」扱いになってJA画像チェックが素通りされ、日本語版があっても英語版画像に
+  // フォールバックしてしまっていた。
+  const priceOf = (scryfallId: string) => prices.normal.get(scryfallId) ?? prices.foil.get(scryfallId);
   const priced = rows
-    .filter((r) => prices.normal.has(r.scryfall_id))
-    .sort((a, b) => prices.normal.get(a.scryfall_id)! - prices.normal.get(b.scryfall_id)!);
+    .filter((r) => priceOf(r.scryfall_id) !== undefined)
+    .sort((a, b) => priceOf(a.scryfall_id)! - priceOf(b.scryfall_id)!);
 
   for (const r of priced) {
     if (r.image_uri_normal_ja) return r.image_uri_normal_ja;
@@ -144,6 +144,9 @@ export async function getBestCardImages(oracleIds: string[]): Promise<Map<string
         .select("oracle_id, scryfall_id, image_uri_normal, image_uri_normal_ja")
         .in("oracle_id", chunk)
         .eq("not_tournament_legal", false)
+        // getBestCardImageと同様、価格がどのプリントにも無い場合のフォールバック（group[0]）が
+        // 呼び出しごとにばらつかないよう固定する
+        .order("scryfall_id", { ascending: true })
         .range(offset, offset + PAGE_SIZE - 1);
       if (error) break;
       if (!page || page.length === 0) break;
@@ -161,11 +164,14 @@ export async function getBestCardImages(oracleIds: string[]): Promise<Map<string
     rowsByOracle.get(r.oracle_id)!.push(r);
   }
 
+  // getBestCardImageと同じ理由で、通常価格が無いFoil専用プリントもFoil価格で「価格あり」として扱う
+  const priceOf = (scryfallId: string) => prices.normal.get(scryfallId) ?? prices.foil.get(scryfallId);
+
   const result = new Map<string, string>();
   for (const [oracleId, group] of rowsByOracle) {
     const priced = group
-      .filter((r) => prices.normal.has(r.scryfall_id))
-      .sort((a, b) => prices.normal.get(a.scryfall_id)! - prices.normal.get(b.scryfall_id)!);
+      .filter((r) => priceOf(r.scryfall_id) !== undefined)
+      .sort((a, b) => priceOf(a.scryfall_id)! - priceOf(b.scryfall_id)!);
 
     const jaHit = priced.find((r) => r.image_uri_normal_ja);
     const imageUrl = jaHit?.image_uri_normal_ja ?? (priced[0] ?? group[0]).image_uri_normal;
