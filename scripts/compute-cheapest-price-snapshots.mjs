@@ -60,8 +60,29 @@ async function supabaseUpsert(table, rows, conflictColumn) {
 
 async function main() {
   console.log("為替レートを取得中...");
-  const rateRows = await supabaseGet("exchange_rates?select=date,usd_to_jpy");
+  const rateRows = await supabaseGet("exchange_rates?select=date,usd_to_jpy&order=date.asc");
   const usdToJpyByDate = new Map(rateRows.map((r) => [r.date, Number(r.usd_to_jpy)]));
+  // 為替レート取得（Frankfurter API）がその日だけ失敗する等でexchange_ratesにその日の行が
+  // 無いと、usdはあるのにjpy_estだけ永続的にnullになり、card_print_prices（USD）と
+  // card_cheapest_price_snapshots（JPY）の間に恒久的な剥離が残る。日付ソート済みの配列から
+  // 二分探索的に「その日以前で一番近い日」のレートを暫定値として使い、この剥離を防ぐ
+  // （src/lib/dbCardPrintPrices.tsの表示側フォールバックと同じ考え方）。
+  const sortedRateDates = rateRows.map((r) => r.date).sort();
+  function rateAtOrBefore(date) {
+    let lo = 0;
+    let hi = sortedRateDates.length - 1;
+    let result = null;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (sortedRateDates[mid] <= date) {
+        result = sortedRateDates[mid];
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return result ? usdToJpyByDate.get(result) : undefined;
+  }
 
   console.log("使用不可プリントの一覧を取得中...");
   const notLegalRows = await supabaseGet(
@@ -115,7 +136,7 @@ async function main() {
   }
 
   const rows = [...merged.values()].map((m) => {
-    const rate = usdToJpyByDate.get(m.date);
+    const rate = rateAtOrBefore(m.date);
     return {
       oracle_id: m.oracleId,
       date: m.date,
