@@ -54,6 +54,23 @@ async function supabasePatch(path, body) {
   if (!res.ok) throw new Error(`PATCH ${path} failed: ${res.status} ${await res.text()}`);
 }
 
+// Supabase無料枠は同時接続数に上限があるため、無制限並列は429/接続エラーの原因になる。
+// 同時実行数を固定プールで絞りつつ並列化する（全件Promise.allで一気に投げない）。
+const CONCURRENCY = 8;
+async function mapWithConcurrency(items, fn) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  async function worker() {
+    for (;;) {
+      const i = nextIndex++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, items.length) }, worker));
+  return results;
+}
+
 async function main() {
   console.log("Commanderデッキの統率者名を取得中...");
 
@@ -79,8 +96,11 @@ async function main() {
   const archetypeNameToNameJa = new Map();
   const oracleIdToNameJa = new Map();
 
-  for (let i = 0; i < decks.length; i += 50) {
-    const batch = decks.slice(i, i + 50);
+  const batches = [];
+  for (let i = 0; i < decks.length; i += 50) batches.push(decks.slice(i, i + 50));
+
+  let processedCount = 0;
+  await mapWithConcurrency(batches, async (batch) => {
     const ids = batch.map((d) => d.id).join(",");
     const cards = await supabaseGet(
       `deck_cards?deck_id=in.(${ids})&board=eq.side&select=deck_id,card_name,oracle_id`,
@@ -101,8 +121,12 @@ async function main() {
         archetypeNameToNameJa.set(archetypeName, commanderCards.map((c) => c.oracle_id));
       }
     }
-    if ((i / 50) % 10 === 0) console.log(`  ...${i + batch.length}件処理済み`);
-  }
+    // 並列実行のため完了順は前後するが、進捗の目安として500件おきに出す
+    processedCount += batch.length;
+    if (Math.floor(processedCount / 500) !== Math.floor((processedCount - batch.length) / 500)) {
+      console.log(`  ...${processedCount}件処理済み`);
+    }
+  });
 
   console.log(
     `統率者判明: ${deckIdToCommanderName.size}/${decks.length}件、アーキタイプ${archetypeNameToNameJa.size}種`,
@@ -132,13 +156,14 @@ async function main() {
   );
   const nameToId = new Map(existing.map((a) => [a.name, a.id]));
 
-  let updated = 0;
-  for (const [deckId, name] of deckIdToCommanderName) {
-    const archetypeId = nameToId.get(name);
-    if (!archetypeId) continue;
-    await supabasePatch(`decks?id=eq.${deckId}`, { archetype_id: archetypeId });
-    updated++;
-  }
+  const patchTargets = [...deckIdToCommanderName.entries()]
+    .map(([deckId, name]) => ({ deckId, archetypeId: nameToId.get(name) }))
+    .filter((t) => t.archetypeId);
+
+  await mapWithConcurrency(patchTargets, ({ deckId, archetypeId }) =>
+    supabasePatch(`decks?id=eq.${deckId}`, { archetype_id: archetypeId }),
+  );
+  const updated = patchTargets.length;
 
   console.log(`完了: ${updated}件分類、${decks.length - updated}件未分類`);
 }
