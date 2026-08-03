@@ -52,6 +52,35 @@ async function supabaseGet(path: string) {
   return res.json();
 }
 
+// PostgRESTはデフォルトで1リクエスト最大1000行までしか返さない。orderもRangeも無いまま
+// decksを取得すると、対象デッキが1000件を超えたタイミングで（順序不定の）先頭1000件しか
+// 得られず、新しく取り込まれたデッキが分類対象から静かに漏れ続ける事故が実際に起きていた。
+// id昇順で固定し、.range()でページングする。
+const PAGE_SIZE = 1000;
+async function supabaseGetAll(pathWithoutOrder: string): Promise<unknown[]> {
+  const separator = pathWithoutOrder.includes("?") ? "&" : "?";
+  const rows: unknown[] = [];
+  let offset = 0;
+  for (;;) {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/${pathWithoutOrder}${separator}order=id.asc`,
+      {
+        headers: {
+          apikey: SUPABASE_ANON_KEY!,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          Range: `${offset}-${offset + PAGE_SIZE - 1}`,
+        },
+      },
+    );
+    if (!res.ok) throw new Error(`GET ${pathWithoutOrder} failed: ${res.status} ${await res.text()}`);
+    const page = (await res.json()) as unknown[];
+    rows.push(...page);
+    if (page.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
+  return rows;
+}
+
 async function supabaseUpsert(table: string, rows: unknown[], conflictColumn: string) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?on_conflict=${conflictColumn}`, {
     method: "POST",
@@ -119,12 +148,12 @@ async function main() {
   const archetypeIdByName = new Map(savedArchetypes.map((a) => [a.name, a.id]));
 
   // 対象フォーマットのデッキを取得して分類
-  const decks: {
+  const decks = (await supabaseGetAll(
+    `decks?tournaments.format=eq.${FORMAT}&select=id,deck_cards(card_name,quantity,board),tournaments!inner(format)`,
+  )) as {
     id: number;
     deck_cards: { card_name: string; quantity: number; board: "main" | "side" }[];
-  }[] = await supabaseGet(
-    `decks?tournaments.format=eq.${FORMAT}&select=id,deck_cards(card_name,quantity,board),tournaments!inner(format)`,
-  );
+  }[];
 
   let classified = 0;
   let unclassified = 0;
