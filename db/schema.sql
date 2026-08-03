@@ -536,3 +536,17 @@ CREATE POLICY "own alerts only" ON price_alerts
 --   集計テーブルの間引き）は8章を参照。
 -- ・archetypes.name_ja は自動翻訳ではなく人力でメンテナンスする前提
 --   （英語のアーキタイプ名をそのまま日本語直訳すると不自然になるケースが多いため）。
+-- ・get_database_size_bytes()（SECURITY DEFINER関数）は、Supabase無料枠（500MB）の
+--   容量超過にscripts/check-db-size.mjs（日次パイプライン最後のステップ）が気づけるよう、
+--   pg_database_size()をPostgREST経由（RPC）で呼べるようにするためのラッパー。
+--   pg_database_size()自体はテーブルAPIから直接呼べないため必要。
+CREATE OR REPLACE FUNCTION public.get_database_size_bytes()
+RETURNS bigint
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT pg_database_size(current_database());
+$$;
+
+GRANT EXECUTE ON FUNCTION public.get_database_size_bytes() TO anon, authenticated;

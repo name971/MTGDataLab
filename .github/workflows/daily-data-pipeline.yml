@@ -139,3 +139,10 @@ jobs:
       # 両方が終わった後の最後に置く。
       - name: Compute card streaks
         run: node scripts/compute-card-streaks.mjs
+
+      # Supabase無料枠（500MB）超過に日次で気づけるよう、パイプラインの最後にDB容量を
+      # チェックする。VACUUM自体はPostgRESTから実行できない（トランザクション内で使えない
+      # コマンドのため）ので自動修復はせず、閾値超過をジョブサマリーに警告として出すのみ。
+      - name: Check DB size
+        continue-on-error: true
+        run: node scripts/check-db-size.mjs
