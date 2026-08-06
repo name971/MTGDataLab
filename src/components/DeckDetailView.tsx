@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { totalPriceJpy, totalArenaPriceJpy, arenaPriceJpy, formatJpy } from "@/lib/deckPricing";
 import ManaCost from "./ManaCost";
+import DeckStatsBar from "./DeckStatsBar";
 
 export interface DeckCardDisplay {
   oracleId: string | null;
@@ -166,6 +167,8 @@ export default function DeckDetailView({
           </label>
         )}
       </div>
+
+      <DeckStatsBar mainboard={mainboard} />
 
       {tab === "list" ? (
         <div className="flex flex-col gap-6">
