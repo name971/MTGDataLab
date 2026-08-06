@@ -1,4 +1,10 @@
 import type { NextConfig } from "next";
+import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
+
+// `next dev`（Node.jsランタイム）でもgetCloudflareContext()経由でD1バインディング
+// （PRICE_ARCHIVE_DB、価格履歴アーカイブ用、wrangler.jsonc参照）にアクセスできるようにする。
+// 本番（Cloudflare Workers）では不要だが、ローカル開発時のみ効くのでどちらでも安全に呼べる。
+initOpenNextCloudflareForDev();
 
 const nextConfig: NextConfig = {
   images: {

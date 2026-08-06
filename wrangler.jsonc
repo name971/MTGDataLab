@@ -7,5 +7,14 @@
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
-  }
+  },
+  // 古い価格履歴のアーカイブ用（Supabase無料枠500MB対策、db/schema.sql運用メモ参照）。
+  // 直近はSupabase、90日より前の履歴はこちらのD1（無料枠5GB）に移す。
+  "d1_databases": [
+    {
+      "binding": "PRICE_ARCHIVE_DB",
+      "database_name": "jp-mtgstocks-archive",
+      "database_id": "a3f8dcb4-80d1-4dba-81dd-9ecd900e7623"
+    }
+  ]
 }

@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import type { PricePoint } from "./dbPriceHistory";
+import { getArchivedPriceHistory } from "./priceArchiveDb";
 
 export interface CheapestPriceSnapshot {
   usd: number | null;
@@ -40,6 +41,11 @@ export async function getLatestCheapestPrice(oracleId: string): Promise<Cheapest
  * カード詳細ページのメイン価格推移グラフ用。finish="foil"でFoil版の最安値推移を返す。
  * 各日の最安値がどのセットだったか（setCode）も一緒に返す。日によって最安のセットが
  * 入れ替わっていることが伝わるよう、価格推移グラフのホバー時にセットのアイコンを出すため。
+ *
+ * Supabase無料枠対策で、90日より古いcard_cheapest_price_snapshotsはD1（アーカイブ用、
+ * scripts/archive-old-price-snapshots.mjs）へ移してSupabase側からは削除している。
+ * そのため「全期間」表示はSupabase（直近）とD1（それ以前）の両方から取得して結合する
+ * （アーカイブ分にはsetCode/setNameが無いため、そこはundefinedのまま表示側でフォールバックする）。
  */
 export async function getCheapestPriceHistory(
   oracleId: string,
@@ -86,10 +92,20 @@ export async function getCheapestPriceHistory(
     }
   }
 
-  return rows.map((row) => ({
+  const recent = rows.map((row) => ({
     date: row.date,
     jpy: Number(row.price),
     setCode: row.scryfall_id ? setCodeByScryfallId.get(row.scryfall_id) : undefined,
     setName: row.scryfall_id ? setNameByScryfallId.get(row.scryfall_id) : undefined,
   }));
+
+  // アーカイブ側はSupabaseの最も古い日付より前の分だけを使う（重複除去）。
+  // D1が使えない・アーカイブがまだ無い環境では空配列が返るだけで、直近データの表示に影響しない。
+  const earliestRecentDate = recent[0]?.date;
+  const archived = await getArchivedPriceHistory(oracleId, finish);
+  const archivedBeforeRecent = earliestRecentDate
+    ? archived.filter((p) => p.date < earliestRecentDate)
+    : archived;
+
+  return [...archivedBeforeRecent, ...recent];
 }
