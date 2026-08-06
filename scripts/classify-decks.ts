@@ -147,25 +147,32 @@ async function main() {
   );
   const archetypeIdByName = new Map(savedArchetypes.map((a) => [a.name, a.id]));
 
-  // 対象フォーマットのデッキを取得して分類
+  // 対象フォーマットのデッキを取得して分類。oracle_id解決済みの行はcard_nameをNULLに
+  // 間引いている（db/schema.sql参照）ため、card_oracles(name)を埋め込み取得してフォールバックする。
   const decks = (await supabaseGetAll(
-    `decks?tournaments.format=eq.${FORMAT}&select=id,deck_cards(card_name,quantity,board),tournaments!inner(format)`,
+    `decks?tournaments.format=eq.${FORMAT}&select=id,deck_cards(card_name,quantity,board,card_oracles(name)),tournaments!inner(format)`,
   )) as {
     id: number;
-    deck_cards: { card_name: string; quantity: number; board: "main" | "side" }[];
+    deck_cards: {
+      card_name: string | null;
+      quantity: number;
+      board: "main" | "side";
+      card_oracles: { name: string } | null;
+    }[];
   }[];
 
   let classified = 0;
   let unclassified = 0;
 
   for (const deckRow of decks) {
+    const cardName = (c: (typeof deckRow.deck_cards)[number]) => c.card_name ?? c.card_oracles?.name ?? "";
     const deck: Deck = {
       mainboard: deckRow.deck_cards
         .filter((c) => c.board === "main")
-        .map((c) => ({ name: c.card_name, count: c.quantity })),
+        .map((c) => ({ name: cardName(c), count: c.quantity })),
       sideboard: deckRow.deck_cards
         .filter((c) => c.board === "side")
-        .map((c) => ({ name: c.card_name, count: c.quantity })),
+        .map((c) => ({ name: cardName(c), count: c.quantity })),
     };
 
     const result = classifyDeck(deck, formatData);

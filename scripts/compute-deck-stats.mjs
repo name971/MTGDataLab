@@ -101,7 +101,7 @@ async function main() {
   for (let i = 0; i < deckMetas.length; i += DECK_ID_CHUNK) {
     const idsChunk = deckMetas.slice(i, i + DECK_ID_CHUNK).map((d) => d.id);
     const cards = await supabaseGet(
-      `deck_cards?select=deck_id,card_name,oracle_id,quantity,board&deck_id=in.(${idsChunk.join(",")})`,
+      `deck_cards?select=deck_id,oracle_id,quantity,board&deck_id=in.(${idsChunk.join(",")})`,
     );
     for (const c of cards) {
       if (!deckCardsByDeckId.has(c.deck_id)) deckCardsByDeckId.set(c.deck_id, []);

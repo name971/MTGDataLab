@@ -176,6 +176,7 @@ export async function getDeckDetailFromDb(deckId: number): Promise<DbDeckDetail 
   const oracleInfo = new Map<
     string,
     {
+      name: string;
       printedNameJa: string | null;
       artCropUrl: string | null;
       imageNormalUrl: string | null;
@@ -188,7 +189,7 @@ export async function getDeckDetailFromDb(deckId: number): Promise<DbDeckDetail 
 
   if (oracleIds.length > 0) {
     const [{ data: oracles }, { data: cardRows }, { data: priceRows }, bestImageByOracle] = await Promise.all([
-      supabase.from("card_oracles").select("oracle_id, printed_name_ja").in("oracle_id", oracleIds),
+      supabase.from("card_oracles").select("oracle_id, name, printed_name_ja").in("oracle_id", oracleIds),
       supabase
         .from("cards")
         .select("oracle_id, lang, image_uri_art_crop, image_uri_normal, type_line, mana_cost, rarity")
@@ -203,6 +204,7 @@ export async function getDeckDetailFromDb(deckId: number): Promise<DbDeckDetail 
 
     for (const o of oracles ?? []) {
       oracleInfo.set(o.oracle_id, {
+        name: o.name,
         printedNameJa: o.printed_name_ja,
         artCropUrl: null,
         imageNormalUrl: null,
@@ -260,7 +262,9 @@ export async function getDeckDetailFromDb(deckId: number): Promise<DbDeckDetail 
       const info = c.oracle_id ? oracleInfo.get(c.oracle_id) : undefined;
       return {
         oracleId: c.oracle_id ?? null,
-        nameEn: c.card_name,
+        // oracle_id解決済みの行はcard_nameをNULLに間引いている（db/schema.sql参照）ため、
+        // card_oracles.nameにフォールバックする
+        nameEn: c.card_name ?? info?.name ?? "（不明なカード）",
         nameJa: info?.printedNameJa ?? null,
         artCropUrl: info?.artCropUrl ?? null,
         imageNormalUrl: info?.imageNormalUrl ?? null,

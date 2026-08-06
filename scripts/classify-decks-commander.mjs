@@ -102,20 +102,23 @@ async function main() {
   let processedCount = 0;
   await mapWithConcurrency(batches, async (batch) => {
     const ids = batch.map((d) => d.id).join(",");
+    // oracle_id解決済みの行はcard_nameをNULLに間引いている（db/schema.sql参照）ため、
+    // card_oracles(name)を埋め込み取得してフォールバックする
     const cards = await supabaseGet(
-      `deck_cards?deck_id=in.(${ids})&board=eq.side&select=deck_id,card_name,oracle_id`,
+      `deck_cards?deck_id=in.(${ids})&board=eq.side&select=deck_id,card_name,oracle_id,card_oracles(name)`,
     );
     const byDeck = new Map();
     for (const c of cards) {
+      const name = c.card_name ?? c.card_oracles?.name;
       if (!byDeck.has(c.deck_id)) byDeck.set(c.deck_id, []);
-      byDeck.get(c.deck_id).push(c);
+      byDeck.get(c.deck_id).push({ ...c, name });
     }
     for (const d of batch) {
       const commanderCards = (byDeck.get(d.id) ?? []).sort((a, b) =>
-        a.card_name.localeCompare(b.card_name),
+        a.name.localeCompare(b.name),
       );
       if (commanderCards.length === 0) continue;
-      const archetypeName = commanderCards.map((c) => c.card_name).join(" / ");
+      const archetypeName = commanderCards.map((c) => c.name).join(" / ");
       deckIdToCommanderName.set(d.id, archetypeName);
       if (!archetypeNameToNameJa.has(archetypeName)) {
         archetypeNameToNameJa.set(archetypeName, commanderCards.map((c) => c.oracle_id));

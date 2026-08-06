@@ -174,9 +174,11 @@ async function main() {
   let exactResolved = 0;
   await runWithConcurrency(resolvedNames, 20, async ({ name, oracleId }) => {
     try {
+      // oracle_id解決後はcard_name（card_oracles.nameの完全な重複、db/schema.sql参照）を
+      // NULLにして容量を節約する。読み取り側はcard_name ?? card_oracles.nameで表示する。
       await supabasePatch(
         `deck_cards?card_name=eq.${encodeURIComponent(name)}&oracle_id=is.null`,
-        { oracle_id: oracleId },
+        { oracle_id: oracleId, card_name: null },
       );
       exactResolved++;
       if (exactResolved % 100 === 0) console.log(`  ...${exactResolved}件処理済み`);
@@ -211,7 +213,7 @@ async function main() {
       });
       const oracleId = rpcRows[0]?.oracle_id;
       if (oracleId) {
-        await supabasePatch(`deck_cards?id=eq.${row.id}`, { oracle_id: oracleId });
+        await supabasePatch(`deck_cards?id=eq.${row.id}`, { oracle_id: oracleId, card_name: null });
         resolved++;
       }
     } catch (err) {

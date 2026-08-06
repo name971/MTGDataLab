@@ -266,7 +266,11 @@ CREATE INDEX idx_decks_archetype ON decks (archetype_id);
 CREATE TABLE deck_cards (
   id        BIGSERIAL PRIMARY KEY,
   deck_id   BIGINT NOT NULL REFERENCES decks (id) ON DELETE CASCADE,
-  card_name TEXT NOT NULL,      -- 取得元の表記そのまま（正規化はアプリ側でoracle_idに紐付け）
+  -- 取得元の表記そのまま。oracle_id解決前（名寄せ待ち）の一時データとしてのみ使う。
+  -- oracle_id解決後はscripts/import-deck-cards.mjsがNULLに戻す（card_oracles.nameと
+  -- 完全に重複する値を全行分持つと容量を無駄に食う。実際にDB容量超過対応で発覚した。
+  -- 読み取り側はcard_name ?? card_oracles.nameで表示する）。
+  card_name TEXT,
   oracle_id UUID REFERENCES card_oracles (oracle_id), -- 名寄せ失敗時はNULL許容
   board     TEXT NOT NULL CHECK (board IN ('main', 'side')),
   quantity  INT NOT NULL
