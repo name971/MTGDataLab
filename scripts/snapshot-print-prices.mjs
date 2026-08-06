@@ -4,6 +4,13 @@
  * と違い、DB容量（無料枠500MB）を圧迫しないよう「1プリント=1行、日付ごとの価格はJSONBに追記」
  * という設計にしている（db/schema.sqlのコメント参照）。
  *
+ * 差分方式: 前日と同じ値なら今日の日付キーは書かない（プリント単位の価格はサンプル調査で
+ * 実際に変化する日が3〜4割程度しか無く、毎日フル書き込みすると容量を無駄に消費していた）。
+ * 読み取り側（getLatestPricesForPrints/getPrintPriceHistory）は「一番新しい日付キーの値」を
+ * そのまま今日時点の価格として扱うため、これで問題ない。ただしcard_cheapest_price_snapshotsを
+ * 計算するscripts/compute-cheapest-price-snapshots.mjs側は、書き込みが無かった日も
+ * 前回の値を引き継ぐ「forward fill」をして最安値を計算する必要がある（そちらも合わせて変更済み）。
+ *
  * 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... node scripts/snapshot-print-prices.mjs
  */
 
@@ -56,6 +63,13 @@ async function supabaseUpsert(table, rows, conflictColumn) {
   }
 }
 
+/** JSONBオブジェクトの日付キーのうち一番新しいものの値を返す（無ければnull） */
+function lastValue(pricesObj) {
+  const dates = Object.keys(pricesObj).sort();
+  const last = dates.at(-1);
+  return last === undefined ? null : pricesObj[last];
+}
+
 async function main() {
   const today = new Date().toISOString().slice(0, 10);
 
@@ -84,13 +98,18 @@ async function main() {
 
     const prices = pricesByScryfallId.get(p.scryfall_id) ?? {};
     const pricesFoil = pricesFoilByScryfallId.get(p.scryfall_id) ?? {};
+
+    // 直近の日付キーの値と比較し、変化が無ければ今日分のキーは追加しない（差分方式）
+    const lastNormal = lastValue(prices);
+    const lastFoil = lastValue(pricesFoil);
+
     if (usd !== null) {
-      prices[today] = usd;
       priced++;
+      if (usd !== lastNormal) prices[today] = usd;
     }
     if (usdFoil !== null) {
-      pricesFoil[today] = usdFoil;
       foilPriced++;
+      if (usdFoil !== lastFoil) pricesFoil[today] = usdFoil;
     }
     rows.push({ scryfall_id: p.scryfall_id, oracle_id: p.oracle_id, prices, prices_foil: pricesFoil });
   }

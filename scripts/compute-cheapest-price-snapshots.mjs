@@ -7,6 +7,11 @@
  * 毎日全プリントを横断して見るため、実際に今一番安く買えるプリントの価格を遅延なく反映できる。
  * カード詳細ページのメイン価格・グラフはこちらを見る。
  *
+ * snapshot-print-prices.mjsは差分方式（前日と同じ値なら日付キーを書かない）に変更したため、
+ * ここでは「値が書かれていない日＝前回書かれた値のまま」とみなすforward fillをしてから
+ * 日付ごとの最安値を計算する（そうしないと、値が変わらず書き込みが無かったプリントが
+ * その日の最安値候補から漏れ、実際より高い価格を「最安値」として記録してしまう）。
+ *
  * 全期間を毎回計算し直す設計（card_print_pricesのJSONBは日数分しか無くまだ軽いため）。
  * 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... node scripts/compute-cheapest-price-snapshots.mjs
  */
@@ -97,31 +102,48 @@ async function main() {
   );
   console.log(`${printPriceRows.length}件のプリント価格履歴を走査`);
 
+  // 差分方式で書かれたJSONBを前提に、全プリントを横断した「その日時点で有効な日付」の
+  // 一覧を作る（誰かしら値を書いた日＝実際にバッチが動いた日、という前提で十分カバーできる）。
+  const allDates = new Set();
+  for (const row of printPriceRows) {
+    for (const d of Object.keys(row.prices ?? {})) allDates.add(d);
+    for (const d of Object.keys(row.prices_foil ?? {})) allDates.add(d);
+  }
+  const sortedDates = [...allDates].sort();
+
   // oracle_id -> date -> { usd, scryfallId } の最安値を集計
   // 金縁(World Championship Decks等)・銀縁(Un-set)等のトーナメント使用不可プリントは
   // 実際には買っても使えないため「最安値」の候補から除外する（代表プリント選定と同じ方針）。
   const bestNormalByOracleDate = new Map();
   const bestFoilByOracleDate = new Map();
 
+  /**
+   * 1プリント分の疎な{date: usd}を、sortedDates全体にforward fillしてから、
+   * 各日付をbestByOracleDateの最安値候補として反映する。
+   */
+  function forwardFillAndAccumulate(row, priceObj, bestByOracleDate) {
+    const ownDates = Object.keys(priceObj).sort();
+    if (ownDates.length === 0) return;
+    let ownIdx = 0;
+    let current = null;
+    for (const date of sortedDates) {
+      while (ownIdx < ownDates.length && ownDates[ownIdx] <= date) {
+        current = priceObj[ownDates[ownIdx]];
+        ownIdx++;
+      }
+      if (current == null) continue; // まだこのプリントの最初の価格記録日に達していない
+      const key = `${row.oracle_id}|${date}`;
+      const existing = bestByOracleDate.get(key);
+      if (!existing || current < existing.usd) {
+        bestByOracleDate.set(key, { oracleId: row.oracle_id, date, usd: current, scryfallId: row.scryfall_id });
+      }
+    }
+  }
+
   for (const row of printPriceRows) {
     if (notTournamentLegalIds.has(row.scryfall_id)) continue;
-    const oracleId = row.oracle_id;
-    for (const [date, usd] of Object.entries(row.prices ?? {})) {
-      if (usd == null) continue;
-      const key = `${oracleId}|${date}`;
-      const current = bestNormalByOracleDate.get(key);
-      if (!current || usd < current.usd) {
-        bestNormalByOracleDate.set(key, { oracleId, date, usd, scryfallId: row.scryfall_id });
-      }
-    }
-    for (const [date, usd] of Object.entries(row.prices_foil ?? {})) {
-      if (usd == null) continue;
-      const key = `${oracleId}|${date}`;
-      const current = bestFoilByOracleDate.get(key);
-      if (!current || usd < current.usd) {
-        bestFoilByOracleDate.set(key, { oracleId, date, usd, scryfallId: row.scryfall_id });
-      }
-    }
+    forwardFillAndAccumulate(row, row.prices ?? {}, bestNormalByOracleDate);
+    forwardFillAndAccumulate(row, row.prices_foil ?? {}, bestFoilByOracleDate);
   }
 
   // normal/foilを oracle_id+date でマージして1行にする
