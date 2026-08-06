@@ -12,18 +12,17 @@ export interface CheapestPriceSnapshot {
 }
 
 /**
- * card_cheapest_price_snapshots（scripts/compute-cheapest-price-snapshots.mjsが日次計算、
- * db/schema.sql）から、そのオラクルの最新日の「全プリント中最安値」を取得する。
+ * card_current_prices（scripts/compute-cheapest-price-snapshots.mjsが日次更新、
+ * db/schema.sql）から、そのオラクルの「今、全プリント中最安値」を取得する。
  * 代表プリント（新セット追加時にしか選び直さない）と違い、日次で全プリントを見直しているため、
  * カード詳細ページのメイン価格表示はこちらを優先して使う。
+ * 1オラクル1行のキャッシュテーブルなので、date順のソートは不要（DB容量超過対応）。
  */
 export async function getLatestCheapestPrice(oracleId: string): Promise<CheapestPriceSnapshot | null> {
   const { data, error } = await supabase
-    .from("card_cheapest_price_snapshots")
+    .from("card_current_prices")
     .select("usd, jpy_est, usd_foil, jpy_est_foil, scryfall_id, scryfall_id_foil")
     .eq("oracle_id", oracleId)
-    .order("date", { ascending: false })
-    .limit(1)
     .maybeSingle();
 
   if (error || !data) return null;

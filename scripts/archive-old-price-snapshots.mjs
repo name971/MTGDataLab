@@ -79,7 +79,7 @@ function d1ExecuteFile(sql) {
     execFileSync(
       "npx",
       ["wrangler", "d1", "execute", D1_DATABASE_NAME, "--remote", `--file=${filePath}`],
-      { stdio: "inherit" },
+      { stdio: "inherit", shell: true },
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -90,12 +90,17 @@ function d1QueryJson(sql) {
   const out = execFileSync(
     "npx",
     ["wrangler", "d1", "execute", D1_DATABASE_NAME, "--remote", `--command=${sql}`, "--json"],
-    { encoding: "utf-8" },
+    { encoding: "utf-8", shell: true },
   );
   return JSON.parse(out);
 }
 
+// wranglerのサブプロセス起動オーバーヘッドを抑えるため、複数のINSERT文を1ファイルにまとめて
+// 実行回数を絞る（scripts/snapshot-print-prices.mjsと同じ理由）。
+const STATEMENTS_PER_FILE = 50;
+
 function insertBatchToD1(rows) {
+  const statements = [];
   for (let i = 0; i < rows.length; i += SQL_BATCH_SIZE) {
     const chunk = rows.slice(i, i + SQL_BATCH_SIZE);
     const values = chunk
@@ -104,9 +109,16 @@ function insertBatchToD1(rows) {
           `(${sqlLiteral(r.oracle_id)}, ${sqlLiteral(r.date)}, ${sqlLiteral(r.jpy_est)}, ${sqlLiteral(r.jpy_est_foil)})`,
       )
       .join(",\n  ");
-    const sql = `INSERT INTO price_history_archive (oracle_id, date, jpy_est, jpy_est_foil) VALUES\n  ${values}\nON CONFLICT (oracle_id, date) DO UPDATE SET jpy_est=excluded.jpy_est, jpy_est_foil=excluded.jpy_est_foil;`;
-    d1ExecuteFile(sql);
-    console.log(`  ...${Math.min(i + SQL_BATCH_SIZE, rows.length)}/${rows.length}行`);
+    statements.push(
+      `INSERT INTO price_history_archive (oracle_id, date, jpy_est, jpy_est_foil) VALUES\n  ${values}\nON CONFLICT (oracle_id, date) DO UPDATE SET jpy_est=excluded.jpy_est, jpy_est_foil=excluded.jpy_est_foil;`,
+    );
+  }
+  for (let i = 0; i < statements.length; i += STATEMENTS_PER_FILE) {
+    const fileStatements = statements.slice(i, i + STATEMENTS_PER_FILE);
+    d1ExecuteFile(fileStatements.join("\n"));
+    console.log(
+      `  ...D1書き込み ${Math.min(i + STATEMENTS_PER_FILE, statements.length)}/${statements.length}バッチ`,
+    );
   }
 }
 

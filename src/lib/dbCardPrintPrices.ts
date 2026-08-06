@@ -69,23 +69,18 @@ export interface LatestPrintPrices {
   foil: Map<string, number>;
 }
 
-/** {date: usd}形式のJSONBから最新日付のUSD値を取り出す（無ければnull） */
-function latestUsdEntry(usdByDate: Record<string, number>): { date: string; usd: number } | null {
-  const dates = Object.keys(usdByDate).sort();
-  const lastDate = dates.at(-1);
-  if (!lastDate) return null;
-  return { date: lastDate, usd: usdByDate[lastDate] };
-}
-
 export async function getLatestPricesForPrints(scryfallIds: string[]): Promise<LatestPrintPrices> {
   if (scryfallIds.length === 0) return { normal: new Map(), foil: new Map() };
 
-  const data: { scryfall_id: string; prices: unknown; prices_foil: unknown }[] = [];
+  // card_print_current_prices（1プリント1行の「今の価格」キャッシュ、DB容量超過対応で新設）を
+  // 見る。以前はcard_print_prices（JSONB全履歴）から最新日付キーを都度探していたが、
+  // このキャッシュテーブル自体が既に「各プリントの最新価格」を保持しているため不要になった。
+  const data: { scryfall_id: string; usd: number | null; usd_foil: number | null; date: string }[] = [];
   for (let i = 0; i < scryfallIds.length; i += SCRYFALL_ID_CHUNK) {
     const chunk = scryfallIds.slice(i, i + SCRYFALL_ID_CHUNK);
     const { data: page, error } = await supabase
-      .from("card_print_prices")
-      .select("scryfall_id, prices, prices_foil")
+      .from("card_print_current_prices")
+      .select("scryfall_id, usd, usd_foil, date")
       .in("scryfall_id", chunk);
     if (error) continue; // 1チャンク失敗しても他のプリントの価格は表示できるよう続行する
     if (page) data.push(...page);
@@ -97,15 +92,13 @@ export async function getLatestPricesForPrints(scryfallIds: string[]): Promise<L
   const latestFoilByPrint = new Map<string, { date: string; usd: number }>();
   const neededDates = new Set<string>();
   for (const row of data) {
-    const normalEntry = latestUsdEntry((row.prices ?? {}) as Record<string, number>);
-    if (normalEntry) {
-      latestNormalByPrint.set(row.scryfall_id, normalEntry);
-      neededDates.add(normalEntry.date);
+    if (row.usd != null) {
+      latestNormalByPrint.set(row.scryfall_id, { date: row.date, usd: Number(row.usd) });
+      neededDates.add(row.date);
     }
-    const foilEntry = latestUsdEntry((row.prices_foil ?? {}) as Record<string, number>);
-    if (foilEntry) {
-      latestFoilByPrint.set(row.scryfall_id, foilEntry);
-      neededDates.add(foilEntry.date);
+    if (row.usd_foil != null) {
+      latestFoilByPrint.set(row.scryfall_id, { date: row.date, usd: Number(row.usd_foil) });
+      neededDates.add(row.date);
     }
   }
   if (neededDates.size === 0) return { normal: new Map(), foil: new Map() };

@@ -1,23 +1,28 @@
 /**
  * card_prints（全プリント、db/schema.sql参照）の日次USD価格をScryfallバルクデータから取得し、
- * card_print_pricesに追記する。card_price_snapshots（代表プリントのみ、1日1行を積み上げる方式）
- * と違い、DB容量（無料枠500MB）を圧迫しないよう「1プリント=1行、日付ごとの価格はJSONBに追記」
- * という設計にしている（db/schema.sqlのコメント参照）。
+ * 2箇所に書き込む:
+ *   1. card_print_current_prices（Postgres）: 「今の価格」だけを1プリント1行で持つキャッシュ。
+ *      毎日上書きするだけなのでプリント数に比例するだけで、日数が経っても増えない。
+ *   2. print_price_history_archive（Cloudflare D1）: 日次の価格履歴そのもの。前日と同じ値なら
+ *      書かない差分方式（サンプル調査で実際に変化する日は3〜4割程度だった）。
  *
- * 差分方式: 前日と同じ値なら今日の日付キーは書かない（プリント単位の価格はサンプル調査で
- * 実際に変化する日が3〜4割程度しか無く、毎日フル書き込みすると容量を無駄に消費していた）。
- * 読み取り側（getLatestPricesForPrints/getPrintPriceHistory）は「一番新しい日付キーの値」を
- * そのまま今日時点の価格として扱うため、これで問題ない。ただしcard_cheapest_price_snapshotsを
- * 計算するscripts/compute-cheapest-price-snapshots.mjs側は、書き込みが無かった日も
- * 前回の値を引き継ぐ「forward fill」をして最安値を計算する必要がある（そちらも合わせて変更済み）。
+ * 以前はcard_print_prices（Postgres、プリント単位JSONB追記式）に書いていたが、無期限に
+ * 増え続けてSupabase無料枠（500MB）を圧迫し続けていた（DB容量超過対応、db/schema.sql参照）。
+ * 新規の書き込みはもう行わない。既存の古い行はscripts/archive-old-print-prices.mjsが
+ * 60日経過後にD1へ吸い出して削除するため、時間経過とともに空になっていく。
  *
  * 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... node scripts/snapshot-print-prices.mjs
  */
 
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { ensureBulkData, loadIndex, findPriceById } from "./lib/scryfallBulk.mjs";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const D1_DATABASE_NAME = process.env.D1_DATABASE_NAME ?? "jp-mtgstocks-archive";
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error("NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY を設定してください");
@@ -25,6 +30,7 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 }
 
 const PAGE_SIZE = 1000;
+const SQL_BATCH_SIZE = 150; // 1回のINSERT文に含める行数（SQLiteのバインド変数上限対策）
 
 async function supabaseGet(path) {
   const rows = [];
@@ -63,11 +69,52 @@ async function supabaseUpsert(table, rows, conflictColumn) {
   }
 }
 
-/** JSONBオブジェクトの日付キーのうち一番新しいものの値を返す（無ければnull） */
-function lastValue(pricesObj) {
-  const dates = Object.keys(pricesObj).sort();
-  const last = dates.at(-1);
-  return last === undefined ? null : pricesObj[last];
+function sqlLiteral(value) {
+  if (value === null || value === undefined) return "NULL";
+  if (typeof value === "number") return String(value);
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+function d1ExecuteFile(sql) {
+  const dir = mkdtempSync(join(tmpdir(), "d1-snapshot-"));
+  const filePath = join(dir, "batch.sql");
+  writeFileSync(filePath, sql, "utf-8");
+  try {
+    execFileSync(
+      "npx",
+      ["wrangler", "d1", "execute", D1_DATABASE_NAME, "--remote", `--file=${filePath}`],
+      { stdio: "inherit", shell: true },
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// `wrangler d1 execute`はサブプロセス起動のオーバーヘッドが大きいため、INSERT文1つごとに
+// 毎回呼び出すと（9万行規模だと数百回起動になり）非現実的に遅くなる。1回の--fileで
+// 複数のINSERT文をまとめて実行できるため、STATEMENTS_PER_FILE個ずつSQLファイルにまとめてから
+// 実行回数を絞る（wrangler呼び出し自体は数十回程度に収める）。
+const STATEMENTS_PER_FILE = 50;
+
+function insertArchiveRows(rows) {
+  const statements = [];
+  for (let i = 0; i < rows.length; i += SQL_BATCH_SIZE) {
+    const chunk = rows.slice(i, i + SQL_BATCH_SIZE);
+    const values = chunk
+      .map((r) => `(${sqlLiteral(r.scryfall_id)}, ${sqlLiteral(r.date)}, ${sqlLiteral(r.usd)}, ${sqlLiteral(r.usd_foil)})`)
+      .join(",\n  ");
+    statements.push(
+      `INSERT INTO print_price_history_archive (scryfall_id, date, usd, usd_foil) VALUES\n  ${values}\nON CONFLICT (scryfall_id, date) DO UPDATE SET usd=excluded.usd, usd_foil=excluded.usd_foil;`,
+    );
+  }
+
+  for (let i = 0; i < statements.length; i += STATEMENTS_PER_FILE) {
+    const fileStatements = statements.slice(i, i + STATEMENTS_PER_FILE);
+    d1ExecuteFile(fileStatements.join("\n"));
+    console.log(
+      `  ...D1書き込み ${Math.min(i + STATEMENTS_PER_FILE, statements.length)}/${statements.length}バッチ`,
+    );
+  }
 }
 
 async function main() {
@@ -79,44 +126,44 @@ async function main() {
   const prints = await supabaseGet("card_prints?select=scryfall_id,oracle_id&order=scryfall_id.asc");
   console.log(`対象プリント: ${prints.length}件`);
 
-  // 既存のJSONB（これまでの日付分）を取得し、今日分を追記した上で丸ごと上書きする
-  // （PostgRESTのupsertはJSONBの部分マージができないため、クライアント側でマージする）
-  const existing = await supabaseGet(
-    "card_print_prices?select=scryfall_id,prices,prices_foil&order=scryfall_id.asc",
+  console.log("現在価格キャッシュ（card_print_current_prices）を取得中...");
+  const currentRows = await supabaseGet(
+    "card_print_current_prices?select=scryfall_id,usd,usd_foil&order=scryfall_id.asc",
   );
-  const pricesByScryfallId = new Map(existing.map((r) => [r.scryfall_id, r.prices ?? {}]));
-  const pricesFoilByScryfallId = new Map(existing.map((r) => [r.scryfall_id, r.prices_foil ?? {}]));
+  const currentByScryfallId = new Map(
+    currentRows.map((r) => [r.scryfall_id, { usd: r.usd, usd_foil: r.usd_foil }]),
+  );
 
-  const rows = [];
+  const cacheRows = [];
+  const archiveRows = []; // 前日と値が変わったプリントだけ
   let priced = 0;
   let foilPriced = 0;
   for (const p of prints) {
     const price = findPriceById(index, p.scryfall_id);
     const usd = price?.usd != null ? parseFloat(price.usd) : null;
     const usdFoil = price?.usd_foil != null ? parseFloat(price.usd_foil) : null;
-    if (usd === null && usdFoil === null) continue; // 価格が全く付いていないプリントは追記しない
+    if (usd === null && usdFoil === null) continue; // 価格が全く付いていないプリントは対象外
 
-    const prices = pricesByScryfallId.get(p.scryfall_id) ?? {};
-    const pricesFoil = pricesFoilByScryfallId.get(p.scryfall_id) ?? {};
+    if (usd !== null) priced++;
+    if (usdFoil !== null) foilPriced++;
 
-    // 直近の日付キーの値と比較し、変化が無ければ今日分のキーは追加しない（差分方式）
-    const lastNormal = lastValue(prices);
-    const lastFoil = lastValue(pricesFoil);
+    cacheRows.push({ scryfall_id: p.scryfall_id, oracle_id: p.oracle_id, date: today, usd, usd_foil: usdFoil });
 
-    if (usd !== null) {
-      priced++;
-      if (usd !== lastNormal) prices[today] = usd;
+    const prev = currentByScryfallId.get(p.scryfall_id);
+    const changed = !prev || usd !== prev.usd || usdFoil !== prev.usd_foil;
+    if (changed) {
+      archiveRows.push({ scryfall_id: p.scryfall_id, date: today, usd, usd_foil: usdFoil });
     }
-    if (usdFoil !== null) {
-      foilPriced++;
-      if (usdFoil !== lastFoil) pricesFoil[today] = usdFoil;
-    }
-    rows.push({ scryfall_id: p.scryfall_id, oracle_id: p.oracle_id, prices, prices_foil: pricesFoil });
   }
-  console.log(`価格あり: ${priced}件（うちFoil ${foilPriced}件）を保存中...`);
+  console.log(`価格あり: ${priced}件（うちFoil ${foilPriced}件）、うち変化あり: ${archiveRows.length}件`);
 
-  await supabaseUpsert("card_print_prices", rows, "scryfall_id");
-  console.log(`\n完了: card_print_prices ${rows.length}件を更新`);
+  console.log("D1（print_price_history_archive）へ差分を書き込み中...");
+  if (archiveRows.length > 0) insertArchiveRows(archiveRows);
+
+  console.log("Postgres（card_print_current_prices）を更新中...");
+  await supabaseUpsert("card_print_current_prices", cacheRows, "scryfall_id");
+
+  console.log(`\n完了: 現在価格キャッシュ${cacheRows.length}件更新、D1へ${archiveRows.length}件書き込み`);
 }
 
 main().catch((err) => {

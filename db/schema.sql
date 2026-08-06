@@ -116,11 +116,14 @@ CREATE TABLE card_prints (
 
 CREATE INDEX idx_card_prints_oracle_id ON card_prints (oracle_id);
 
--- card_prints（全プリント、10万件超）の日次価格履歴。card_price_snapshots（代表プリントのみ、
--- 1日1行を積み上げる方式）と同じ設計にすると1日ごとにUUID・インデックスのオーバーヘッドが
--- プリント数分発生し、無料枠（DB 500MB）をすぐ食い潰す。そのため1プリント=1行を維持し、
--- 日付ごとの価格をJSONBに追記していく方式にする（例: {"2026-07-25": 123.45, ...}）。
--- scripts/snapshot-print-prices.mjsが日次で追記する。期間指定の絞り込みはJSONB演算子で行う。
+-- 【廃止予定・新規書き込み停止済み】card_prints（全プリント、10万件超）の日次価格履歴。
+-- 1プリント=1行、日付ごとの価格をJSONBに追記していく方式（例: {"2026-07-25": 123.45, ...}）
+-- だったが、それでも無期限に増え続けてSupabase無料枠（500MB）を圧迫し続けたため、
+-- scripts/snapshot-print-prices.mjsは新規の日付をこのテーブルに書かなくなった
+-- （代わりにcard_print_current_prices＝今の価格キャッシュとD1＝日次履歴に書く。
+-- DB容量超過対応）。既存の行はscripts/archive-old-print-prices.mjsが60日経過後に
+-- D1へ吸い出して削除するため、時間経過とともに空になっていく（完全に空になったら
+-- このテーブル自体を削除してよい）。
 CREATE TABLE card_print_prices (
   scryfall_id UUID PRIMARY KEY REFERENCES card_prints (scryfall_id),
   oracle_id   UUID NOT NULL REFERENCES card_oracles (oracle_id),
@@ -131,11 +134,24 @@ CREATE TABLE card_print_prices (
 
 CREATE INDEX idx_card_print_prices_oracle_id ON card_print_prices (oracle_id);
 
--- オラクル単位・日付単位で「その日、全プリント中で一番安かった価格」を集計したもの。
--- card_print_prices（全プリントの日次価格履歴）から日次バッチ（scripts/compute-cheapest-price-snapshots.mjs）
--- で計算する。「代表プリント」は新セット追加時にしか選び直さないため実勢と時差が生じるが、
--- こちらは全プリントを毎日横断して最安値を見るため、より実態に近い「今一番安く買えるプリントはいくら」を
--- 表示できる（カード詳細ページのメイン価格・グラフはここを見る）。
+-- card_print_pricesと同じ理由（DB容量超過対応）で新設した、プリント単位の「今の価格」キャッシュ。
+CREATE TABLE card_print_current_prices (
+  scryfall_id UUID PRIMARY KEY REFERENCES card_prints (scryfall_id),
+  oracle_id   UUID NOT NULL REFERENCES card_oracles (oracle_id),
+  date        DATE NOT NULL,
+  usd         NUMERIC(10, 2),
+  usd_foil    NUMERIC(10, 2),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_card_print_current_prices_oracle ON card_print_current_prices (oracle_id);
+
+-- 【廃止予定・新規書き込み停止済み】オラクル単位・日付単位で「その日、全プリント中で
+-- 一番安かった価格」を集計したもの。card_print_pricesと同じ理由で、
+-- scripts/compute-cheapest-price-snapshots.mjsは新規の日付をこのテーブルに書かなくなり、
+-- 代わりにcard_current_prices（今の価格キャッシュ）とD1（日次履歴）に書く
+-- （DB容量超過対応）。既存の行はscripts/archive-old-price-snapshots.mjsが60日経過後に
+-- D1へ吸い出して削除するため、時間経過とともに空になっていく。
 CREATE TABLE card_cheapest_price_snapshots (
   oracle_id       UUID NOT NULL REFERENCES card_oracles (oracle_id),
   date            DATE NOT NULL,
@@ -149,6 +165,24 @@ CREATE TABLE card_cheapest_price_snapshots (
 );
 
 CREATE INDEX idx_card_cheapest_price_oracle_date ON card_cheapest_price_snapshots (oracle_id, date);
+
+-- 「今の価格」だけを1オラクル1行で持つキャッシュ。日次の全履歴は（この下のcard_print_prices
+-- 含めて）D1（jp-mtgstocks-archive、db/archive-schema.sql）へ直接書くように変更したため、
+-- Postgres側で「最新価格」を高速に引くための代替として新設した（DB容量超過対応）。
+-- card_cheapest_price_snapshots / card_print_pricesは新規の日付が追記されなくなり、
+-- 既存の古い行はscripts/archive-old-price-snapshots.mjs等が60日経過後にD1へ吸い出して
+-- 削除するため、時間経過とともに空になっていく想定（完全に空になったら削除してよい）。
+CREATE TABLE card_current_prices (
+  oracle_id        UUID PRIMARY KEY REFERENCES card_oracles (oracle_id),
+  date             DATE NOT NULL,
+  scryfall_id      UUID REFERENCES card_prints (scryfall_id),
+  usd              NUMERIC(10, 2),
+  jpy_est          NUMERIC(12, 2),
+  scryfall_id_foil UUID REFERENCES card_prints (scryfall_id),
+  usd_foil         NUMERIC(10, 2),
+  jpy_est_foil     NUMERIC(12, 2),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 
 -- ════════════════════════════════════════════

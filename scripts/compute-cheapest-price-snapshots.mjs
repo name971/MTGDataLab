@@ -1,23 +1,27 @@
 /**
- * card_print_prices（全プリントの日次価格履歴、scripts/snapshot-print-prices.mjsが日次追記）から、
- * オラクル単位・日付単位で「その日、全プリント中の最安値」を計算し、
- * card_cheapest_price_snapshots（db/schema.sql）に保存する。
+ * card_print_current_prices（Postgres、各プリントの「今の価格」キャッシュ、
+ * scripts/snapshot-print-prices.mjsが日次更新）から、オラクル単位で「今、全プリント中の
+ * 最安値」を計算し、2箇所に書き込む:
+ *   1. card_current_prices（Postgres）: 「今の価格」だけを1オラクル1行で持つキャッシュ。
+ *      カード詳細ページのメイン価格等、頻繁に読まれる箇所はここを見る。
+ *   2. price_history_archive（Cloudflare D1）: 今日分を1日ぶんだけ追記する日次履歴
+ *      （価格推移グラフ用）。
  *
- * 「代表プリント」（scripts/rebuild-card-prints.mjs、新セット追加時にしか選び直さない）と違い、
- * 毎日全プリントを横断して見るため、実際に今一番安く買えるプリントの価格を遅延なく反映できる。
- * カード詳細ページのメイン価格・グラフはこちらを見る。
+ * 以前はcard_print_prices（Postgres、プリント単位JSONB全履歴）を毎回丸ごとスキャンして
+ * 過去に遡って全期間を再計算する設計だったが、card_print_current_prices自体が既に
+ * 「各プリントの最新価格」を保持しているため、その必要が無くなった（DB容量超過対応）。
  *
- * snapshot-print-prices.mjsは差分方式（前日と同じ値なら日付キーを書かない）に変更したため、
- * ここでは「値が書かれていない日＝前回書かれた値のまま」とみなすforward fillをしてから
- * 日付ごとの最安値を計算する（そうしないと、値が変わらず書き込みが無かったプリントが
- * その日の最安値候補から漏れ、実際より高い価格を「最安値」として記録してしまう）。
- *
- * 全期間を毎回計算し直す設計（card_print_pricesのJSONBは日数分しか無くまだ軽いため）。
  * 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... node scripts/compute-cheapest-price-snapshots.mjs
  */
 
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const D1_DATABASE_NAME = process.env.D1_DATABASE_NAME ?? "jp-mtgstocks-archive";
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error("NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY を設定してください");
@@ -25,6 +29,7 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 }
 
 const PAGE_SIZE = 1000;
+const SQL_BATCH_SIZE = 150;
 
 async function supabaseGet(path) {
   const rows = [];
@@ -63,117 +68,120 @@ async function supabaseUpsert(table, rows, conflictColumn) {
   }
 }
 
-async function main() {
-  console.log("為替レートを取得中...");
-  const rateRows = await supabaseGet("exchange_rates?select=date,usd_to_jpy&order=date.asc");
-  const usdToJpyByDate = new Map(rateRows.map((r) => [r.date, Number(r.usd_to_jpy)]));
-  // 為替レート取得（Frankfurter API）がその日だけ失敗する等でexchange_ratesにその日の行が
-  // 無いと、usdはあるのにjpy_estだけ永続的にnullになり、card_print_prices（USD）と
-  // card_cheapest_price_snapshots（JPY）の間に恒久的な剥離が残る。日付ソート済みの配列から
-  // 二分探索的に「その日以前で一番近い日」のレートを暫定値として使い、この剥離を防ぐ
-  // （src/lib/dbCardPrintPrices.tsの表示側フォールバックと同じ考え方）。
-  const sortedRateDates = rateRows.map((r) => r.date).sort();
-  function rateAtOrBefore(date) {
-    let lo = 0;
-    let hi = sortedRateDates.length - 1;
-    let result = null;
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1;
-      if (sortedRateDates[mid] <= date) {
-        result = sortedRateDates[mid];
-        lo = mid + 1;
-      } else {
-        hi = mid - 1;
-      }
-    }
-    return result ? usdToJpyByDate.get(result) : undefined;
+function sqlLiteral(value) {
+  if (value === null || value === undefined) return "NULL";
+  if (typeof value === "number") return String(value);
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+function d1ExecuteFile(sql) {
+  const dir = mkdtempSync(join(tmpdir(), "d1-cheapest-"));
+  const filePath = join(dir, "batch.sql");
+  writeFileSync(filePath, sql, "utf-8");
+  try {
+    execFileSync(
+      "npx",
+      ["wrangler", "d1", "execute", D1_DATABASE_NAME, "--remote", `--file=${filePath}`],
+      { stdio: "inherit", shell: true },
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// wranglerのサブプロセス起動オーバーヘッドを抑えるため、複数のINSERT文を1ファイルにまとめて
+// 実行回数を絞る（scripts/snapshot-print-prices.mjsと同じ理由）。
+const STATEMENTS_PER_FILE = 50;
+
+function insertArchiveRows(rows) {
+  const statements = [];
+  for (let i = 0; i < rows.length; i += SQL_BATCH_SIZE) {
+    const chunk = rows.slice(i, i + SQL_BATCH_SIZE);
+    const values = chunk
+      .map(
+        (r) =>
+          `(${sqlLiteral(r.oracle_id)}, ${sqlLiteral(r.date)}, ${sqlLiteral(r.jpy_est)}, ${sqlLiteral(r.jpy_est_foil)})`,
+      )
+      .join(",\n  ");
+    statements.push(
+      `INSERT INTO price_history_archive (oracle_id, date, jpy_est, jpy_est_foil) VALUES\n  ${values}\nON CONFLICT (oracle_id, date) DO UPDATE SET jpy_est=excluded.jpy_est, jpy_est_foil=excluded.jpy_est_foil;`,
+    );
   }
 
+  for (let i = 0; i < statements.length; i += STATEMENTS_PER_FILE) {
+    const fileStatements = statements.slice(i, i + STATEMENTS_PER_FILE);
+    d1ExecuteFile(fileStatements.join("\n"));
+    console.log(
+      `  ...D1書き込み ${Math.min(i + STATEMENTS_PER_FILE, statements.length)}/${statements.length}バッチ`,
+    );
+  }
+}
+
+async function main() {
+  const today = new Date().toISOString().slice(0, 10);
+
+  console.log("為替レートを取得中...");
+  const rateRows = await supabaseGet("exchange_rates?select=date,usd_to_jpy&order=date.desc&limit=1");
+  const rate = rateRows[0] ? Number(rateRows[0].usd_to_jpy) : null;
+  if (!rate) {
+    console.error("為替レートが1件も無いため中断します。scripts/snapshot-exchange-rates.mjsを先に実行してください。");
+    process.exit(1);
+  }
+  console.log(`使用するレート: ${rateRows[0].date} 時点 ${rate}円/$`);
+
   console.log("使用不可プリントの一覧を取得中...");
-  const notLegalRows = await supabaseGet(
-    "card_prints?not_tournament_legal=eq.true&select=scryfall_id",
-  );
+  const notLegalRows = await supabaseGet("card_prints?not_tournament_legal=eq.true&select=scryfall_id");
   const notTournamentLegalIds = new Set(notLegalRows.map((r) => r.scryfall_id));
   console.log(`${notTournamentLegalIds.size}件が使用不可プリント（最安値集計から除外）`);
 
-  console.log("全プリントの価格履歴を取得中...");
-  const printPriceRows = await supabaseGet(
-    "card_print_prices?select=scryfall_id,oracle_id,prices,prices_foil",
+  console.log("プリント単位の現在価格キャッシュ（card_print_current_prices）を取得中...");
+  const printRows = await supabaseGet(
+    "card_print_current_prices?select=scryfall_id,oracle_id,usd,usd_foil",
   );
-  console.log(`${printPriceRows.length}件のプリント価格履歴を走査`);
+  console.log(`${printRows.length}件のプリント現在価格を走査`);
 
-  // 差分方式で書かれたJSONBを前提に、全プリントを横断した「その日時点で有効な日付」の
-  // 一覧を作る（誰かしら値を書いた日＝実際にバッチが動いた日、という前提で十分カバーできる）。
-  const allDates = new Set();
-  for (const row of printPriceRows) {
-    for (const d of Object.keys(row.prices ?? {})) allDates.add(d);
-    for (const d of Object.keys(row.prices_foil ?? {})) allDates.add(d);
-  }
-  const sortedDates = [...allDates].sort();
-
-  // oracle_id -> date -> { usd, scryfallId } の最安値を集計
-  // 金縁(World Championship Decks等)・銀縁(Un-set)等のトーナメント使用不可プリントは
-  // 実際には買っても使えないため「最安値」の候補から除外する（代表プリント選定と同じ方針）。
-  const bestNormalByOracleDate = new Map();
-  const bestFoilByOracleDate = new Map();
-
-  /**
-   * 1プリント分の疎な{date: usd}を、sortedDates全体にforward fillしてから、
-   * 各日付をbestByOracleDateの最安値候補として反映する。
-   */
-  function forwardFillAndAccumulate(row, priceObj, bestByOracleDate) {
-    const ownDates = Object.keys(priceObj).sort();
-    if (ownDates.length === 0) return;
-    let ownIdx = 0;
-    let current = null;
-    for (const date of sortedDates) {
-      while (ownIdx < ownDates.length && ownDates[ownIdx] <= date) {
-        current = priceObj[ownDates[ownIdx]];
-        ownIdx++;
-      }
-      if (current == null) continue; // まだこのプリントの最初の価格記録日に達していない
-      const key = `${row.oracle_id}|${date}`;
-      const existing = bestByOracleDate.get(key);
-      if (!existing || current < existing.usd) {
-        bestByOracleDate.set(key, { oracleId: row.oracle_id, date, usd: current, scryfallId: row.scryfall_id });
-      }
-    }
-  }
-
-  for (const row of printPriceRows) {
+  // オラクル単位で最安値（通常・Foilそれぞれ）を求める
+  const bestByOracle = new Map(); // oracle_id -> { normal: {usd, scryfallId}|null, foil: {...}|null }
+  for (const row of printRows) {
     if (notTournamentLegalIds.has(row.scryfall_id)) continue;
-    forwardFillAndAccumulate(row, row.prices ?? {}, bestNormalByOracleDate);
-    forwardFillAndAccumulate(row, row.prices_foil ?? {}, bestFoilByOracleDate);
+    const entry = bestByOracle.get(row.oracle_id) ?? { normal: null, foil: null };
+    if (row.usd != null && (!entry.normal || row.usd < entry.normal.usd)) {
+      entry.normal = { usd: Number(row.usd), scryfallId: row.scryfall_id };
+    }
+    if (row.usd_foil != null && (!entry.foil || row.usd_foil < entry.foil.usd)) {
+      entry.foil = { usd: Number(row.usd_foil), scryfallId: row.scryfall_id };
+    }
+    bestByOracle.set(row.oracle_id, entry);
   }
 
-  // normal/foilを oracle_id+date でマージして1行にする
-  const merged = new Map();
-  for (const [key, v] of bestNormalByOracleDate) {
-    merged.set(key, { oracleId: v.oracleId, date: v.date, normal: v, foil: null });
-  }
-  for (const [key, v] of bestFoilByOracleDate) {
-    const existing = merged.get(key);
-    if (existing) existing.foil = v;
-    else merged.set(key, { oracleId: v.oracleId, date: v.date, normal: null, foil: v });
+  const cacheRows = [];
+  const archiveRows = [];
+  for (const [oracleId, entry] of bestByOracle) {
+    if (!entry.normal && !entry.foil) continue;
+    const jpyEst = entry.normal ? Math.round(entry.normal.usd * rate * 100) / 100 : null;
+    const jpyEstFoil = entry.foil ? Math.round(entry.foil.usd * rate * 100) / 100 : null;
+    cacheRows.push({
+      oracle_id: oracleId,
+      date: today,
+      scryfall_id: entry.normal?.scryfallId ?? null,
+      usd: entry.normal?.usd ?? null,
+      jpy_est: jpyEst,
+      scryfall_id_foil: entry.foil?.scryfallId ?? null,
+      usd_foil: entry.foil?.usd ?? null,
+      jpy_est_foil: jpyEstFoil,
+    });
+    archiveRows.push({ oracle_id: oracleId, date: today, jpy_est: jpyEst, jpy_est_foil: jpyEstFoil });
   }
 
-  const rows = [...merged.values()].map((m) => {
-    const rate = rateAtOrBefore(m.date);
-    return {
-      oracle_id: m.oracleId,
-      date: m.date,
-      scryfall_id: m.normal?.scryfallId ?? null,
-      usd: m.normal?.usd ?? null,
-      jpy_est: m.normal && rate ? Math.round(m.normal.usd * rate * 100) / 100 : null,
-      scryfall_id_foil: m.foil?.scryfallId ?? null,
-      usd_foil: m.foil?.usd ?? null,
-      jpy_est_foil: m.foil && rate ? Math.round(m.foil.usd * rate * 100) / 100 : null,
-    };
-  });
+  console.log(`${cacheRows.length}件（オラクル単位）の最安値を計算完了`);
 
-  console.log(`${rows.length}件（オラクル×日付）の最安値スナップショットを保存中...`);
-  await supabaseUpsert("card_cheapest_price_snapshots", rows, "oracle_id,date");
-  console.log("完了");
+  console.log("Postgres（card_current_prices）を更新中...");
+  await supabaseUpsert("card_current_prices", cacheRows, "oracle_id");
+
+  console.log("D1（price_history_archive）へ今日分を書き込み中...");
+  insertArchiveRows(archiveRows);
+
+  console.log(`\n完了: 現在価格キャッシュ${cacheRows.length}件更新、D1へ今日分${archiveRows.length}件書き込み`);
 }
 
 main().catch((err) => {

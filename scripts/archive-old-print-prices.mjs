@@ -88,7 +88,7 @@ function d1ExecuteFile(sql) {
     execFileSync(
       "npx",
       ["wrangler", "d1", "execute", D1_DATABASE_NAME, "--remote", `--file=${filePath}`],
-      { stdio: "inherit" },
+      { stdio: "inherit", shell: true },
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -99,19 +99,32 @@ function d1QueryJson(sql) {
   const out = execFileSync(
     "npx",
     ["wrangler", "d1", "execute", D1_DATABASE_NAME, "--remote", `--command=${sql}`, "--json"],
-    { encoding: "utf-8" },
+    { encoding: "utf-8", shell: true },
   );
   return JSON.parse(out);
 }
 
+// wranglerのサブプロセス起動オーバーヘッドを抑えるため、複数のINSERT文を1ファイルにまとめて
+// 実行回数を絞る（scripts/snapshot-print-prices.mjsと同じ理由）。
+const STATEMENTS_PER_FILE = 50;
+
 function insertArchiveRows(rows) {
+  const statements = [];
   for (let i = 0; i < rows.length; i += SQL_BATCH_SIZE) {
     const chunk = rows.slice(i, i + SQL_BATCH_SIZE);
     const values = chunk
       .map((r) => `(${sqlLiteral(r.scryfall_id)}, ${sqlLiteral(r.date)}, ${sqlLiteral(r.usd)}, ${sqlLiteral(r.usd_foil)})`)
       .join(",\n  ");
-    const sql = `INSERT INTO print_price_history_archive (scryfall_id, date, usd, usd_foil) VALUES\n  ${values}\nON CONFLICT (scryfall_id, date) DO UPDATE SET usd=excluded.usd, usd_foil=excluded.usd_foil;`;
-    d1ExecuteFile(sql);
+    statements.push(
+      `INSERT INTO print_price_history_archive (scryfall_id, date, usd, usd_foil) VALUES\n  ${values}\nON CONFLICT (scryfall_id, date) DO UPDATE SET usd=excluded.usd, usd_foil=excluded.usd_foil;`,
+    );
+  }
+  for (let i = 0; i < statements.length; i += STATEMENTS_PER_FILE) {
+    const fileStatements = statements.slice(i, i + STATEMENTS_PER_FILE);
+    d1ExecuteFile(fileStatements.join("\n"));
+    console.log(
+      `  ...D1書き込み ${Math.min(i + STATEMENTS_PER_FILE, statements.length)}/${statements.length}バッチ`,
+    );
   }
 }
 
