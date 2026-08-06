@@ -7,7 +7,6 @@ import {
   type RecentDeckSummary,
 } from "@/lib/dbDeckDetail";
 import DeckDetailView from "@/components/DeckDetailView";
-import { totalPriceJpy } from "@/lib/deckPricing";
 
 /** "2026-07-26" -> "2026/7/26" */
 function formatDateShort(isoDate: string): string {
@@ -84,8 +83,10 @@ export default async function ArchetypeDetailPage({
       </Link>
 
       {bestDeck && bestDeckDetail ? (
-        <div className="flex flex-col gap-4">
-          <div className="flex items-baseline justify-between gap-4">
+        <DeckDetailView
+          cards={bestDeckDetail.cards}
+          format={bestDeckDetail.format}
+          headerContent={
             <p className="text-sm text-neutral-500">
               代表デッキ（最多勝率）:{" "}
               <Link href={`/decks/${bestDeck.deckId}`} className="hover:underline">
@@ -93,12 +94,8 @@ export default async function ArchetypeDetailPage({
               </Link>{" "}
               （{bestDeckDetail.standing}） ・ {bestDeckDetail.eventName}
             </p>
-            <p className="whitespace-nowrap text-sm font-semibold">
-              ¥{totalPriceJpy(bestDeckDetail.cards).toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
-            </p>
-          </div>
-          <DeckDetailView cards={bestDeckDetail.cards} format={bestDeckDetail.format} />
-        </div>
+          }
+        />
       ) : (
         <p className="text-sm text-neutral-500">
           このアーキタイプに分類されたデッキは登録されていません。

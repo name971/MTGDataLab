@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { totalPriceJpy, totalArenaPriceJpy, arenaPriceJpy, formatJpy } from "@/lib/deckPricing";
 import ManaCost from "./ManaCost";
 import DeckStatsBar from "./DeckStatsBar";
@@ -93,13 +93,19 @@ export default function DeckDetailView({
   format,
   title,
   subtitle,
+  headerContent,
 }: {
   cards: DeckCardDisplay[];
   format?: string;
-  /** 未指定ならタイトル行自体を出さない（呼び出し側が既に独自のヘッダーを持つ場合。
-   * src/app/decks/archetype/[archetypeId]/page.tsx参照） */
+  /** 未指定・headerContent未指定ならヘッダー行自体を出さない */
   title?: string;
   subtitle?: string;
+  /** titleの代わりに任意のReactNodeをヘッダー左側に差し込む（例: 「代表デッキ（最多勝率）:
+   * playerNameへのリンク」等、呼び出し側が独自の文言を持つ場合。
+   * src/app/decks/archetype/[archetypeId]/page.tsx参照）。
+   * 合計金額（arenaMode連動）は呼び出し側で個別に計算せず、必ずこちらのヘッダーで
+   * 表示することで、MTG Arena換算トグルとの連動漏れを防ぐ。 */
+  headerContent?: ReactNode;
 }) {
   const [tab, setTab] = useState<Tab>("image");
   // MTG Arenaで実際に組む対象はローテーション中のStandardが中心なため、換算表示はStandardのみ出す。
@@ -118,12 +124,14 @@ export default function DeckDetailView({
 
   return (
     <div className="flex flex-col gap-4">
-      {title !== undefined && (
+      {(title !== undefined || headerContent !== undefined) && (
         <div className="flex items-baseline justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-semibold">{title}</h1>
-            <p className="text-sm text-neutral-500">{subtitle}</p>
-          </div>
+          {headerContent ?? (
+            <div>
+              <h1 className="text-xl font-semibold">{title}</h1>
+              <p className="text-sm text-neutral-500">{subtitle}</p>
+            </div>
+          )}
           <p className="whitespace-nowrap text-lg font-semibold">
             {arenaMode && "Arena換算 "}
             {formatJpy(grandTotalJpy)}
