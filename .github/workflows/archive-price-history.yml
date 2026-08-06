@@ -30,3 +30,6 @@ jobs:
 
       - name: Archive old price snapshots to D1
         run: node scripts/archive-old-price-snapshots.mjs
+
+      - name: Archive old print prices to D1
+        run: node scripts/archive-old-print-prices.mjs

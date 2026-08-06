@@ -44,3 +44,36 @@ export async function getArchivedPriceHistory(
     return [];
   }
 }
+
+/**
+ * print_price_history_archive（scripts/archive-old-print-prices.mjs）から、特定プリント
+ * （scryfall_id単位）の過去USD価格を取得する。個別プリントの価格推移グラフ用
+ * （src/lib/dbCardPrintPrices.ts、getPrintPriceHistory）。JPY換算は呼び出し側で行う
+ * （日付ごとのexchange_ratesが必要なため）。
+ */
+export async function getArchivedPrintPriceHistoryUsd(
+  scryfallId: string,
+  finish: "normal" | "foil" = "normal",
+): Promise<{ date: string; usd: number }[]> {
+  try {
+    const { getCloudflareContext } = await import("@opennextjs/cloudflare");
+    const { env } = await getCloudflareContext({ async: true });
+    const db = (env as unknown as Env).PRICE_ARCHIVE_DB;
+    if (!db) return [];
+
+    const column = finish === "foil" ? "usd_foil" : "usd";
+    const result = await db
+      .prepare(
+        `SELECT date, ${column} AS price FROM print_price_history_archive WHERE scryfall_id = ?1 AND ${column} IS NOT NULL ORDER BY date ASC`,
+      )
+      .bind(scryfallId)
+      .all<{ date: string; price: number }>();
+
+    return (result.results ?? []).map((row: { date: string; price: number }) => ({
+      date: row.date,
+      usd: Number(row.price),
+    }));
+  } catch {
+    return [];
+  }
+}
