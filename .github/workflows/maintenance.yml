@@ -17,6 +17,7 @@ on:
           - snapshot-print-prices
           - compute-deck-stats
           - compute-card-streaks
+          - prune-old-usage-stats
 
 jobs:
   run:

@@ -154,7 +154,10 @@ async function main() {
     });
   }
 
-  // 当日分は毎回作り直す（前日以前の古い行が残り続けないよう、当日分だけ一度消してから入れ直す）
+  // dbTrendingCards.tsは常に最新のcalculated_dateしか読まないため、過去日分は保持する意味が無い。
+  // 削除せず溜め続けるとcard_price_snapshots（削除済み、DB容量超過の原因の一つだった）と
+  // 同じ轍を踏むため、当日分以外は全て消してから当日分を入れ直す（=テーブルは常に1日分だけ保持）。
+  await supabaseDelete(`card_streaks?calculated_date=neq.${todayStr}`);
   await supabaseDelete(`card_streaks?calculated_date=eq.${todayStr}`);
   await supabaseUpsert("card_streaks", rows, "oracle_id,category,format,calculated_date");
   console.log(`card_streaks 保存: ${rows.length}件（price ${rows.filter((r) => r.category === "price").length}件 / usage ${rows.filter((r) => r.category === "usage").length}件）`);
