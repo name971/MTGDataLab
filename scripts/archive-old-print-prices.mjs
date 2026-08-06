@@ -32,10 +32,11 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 }
 
 // card_cheapest_price_snapshotsのアーカイブ閾値（scripts/archive-old-price-snapshots.mjs）と
-// 揃える。card_cheapest_price_snapshotsはcard_print_pricesの全履歴から毎回再計算する設計
-// （compute-cheapest-price-snapshots.mjs）のため、そちらが必要とする範囲より古くしてから
-// こちらを間引く（同じ日にどちらも初めて実行しても計算の土台が壊れないように）。
-const ARCHIVE_CUTOFF_DAYS = 90;
+// 揃える。compute-cheapest-price-snapshots.mjsはcard_print_pricesの現存する範囲だけを
+// 見て毎回計算し直す設計なので、両方とも同じ60日（streak計算が必要とする範囲）に揃えて
+// 間引いても計算の土台は壊れない（この2つのアーカイブは週次ワークフローで独立に動くため、
+// 実行順序を気にする必要もない）。
+const ARCHIVE_CUTOFF_DAYS = 60;
 const PAGE_SIZE = 1000;
 const SQL_BATCH_SIZE = 150; // 1行あたりusd/usd_foil2列×バインド変数、SQLite上限対策で保守的に
 

@@ -31,8 +31,9 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 
 // アプリのcard_cheapest_price_snapshots関連クエリ（streak計算・価格変化率等）が実際に
 // 参照するのは直近60日程度（compute-card-streaks.mjsのSTREAK_LOOKBACK_DAYS参照）。
-// 安全マージンを取って90日より古い行だけをアーカイブ対象にする。
-const ARCHIVE_CUTOFF_DAYS = 90;
+// 以前は安全マージンを取って90日にしていたが、増加ペースに対して緩すぎたため、
+// streak計算が必要とするちょうど60日（マージン無し）まで縮めた。
+const ARCHIVE_CUTOFF_DAYS = 60;
 const PAGE_SIZE = 1000;
 const SQL_BATCH_SIZE = 200; // 1回のINSERT文に含める行数（SQLiteのバインド変数上限対策）
 

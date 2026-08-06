@@ -1,6 +1,6 @@
 -- ────────────────────────────────────────────────────────────
 -- 価格履歴アーカイブ用DB（Cloudflare D1、SQLite）
--- Supabase無料枠（Postgres 500MB）超過対策。直近90日程度はSupabaseの
+-- Supabase無料枠（Postgres 500MB）超過対策。直近60日程度はSupabaseの
 -- card_cheapest_price_snapshotsに置いたまま、それより古い行はこちらに移し、
 -- Supabase側からは削除する（scripts/archive-old-price-snapshots.mjs）。
 -- カード詳細ページの価格推移グラフ「全期間」表示は、直近をSupabase・

@@ -1,7 +1,7 @@
 name: Archive old price history to D1 (weekly)
 
 # card_cheapest_price_snapshots（Supabase）が無期限に増え続けてSupabase無料枠500MBを
-# 圧迫する問題への対応。90日より古い行をCloudflare D1（jp-mtgstocks-archive、無料枠5GB）へ
+# 圧迫する問題への対応。60日より古い行をCloudflare D1（jp-mtgstocks-archive、無料枠5GB）へ
 # 移し、Supabase側から削除する（scripts/archive-old-price-snapshots.mjs、
 # db/archive-schema.sql参照）。日次では変化が小さいため週次で十分。
 on:

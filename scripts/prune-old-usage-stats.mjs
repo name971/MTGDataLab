@@ -3,8 +3,8 @@
  * 積み上がるだけの日次スナップショットだった。実際に読んでいるのは:
  *   - dbCardRanking.ts / dbTrendingRanking.ts: 最新1日分のみ
  *   - compute-card-streaks.mjs: 直近STREAK_LOOKBACK_DAYS（60日）分
- * なので、それより古い行は本当に不要。安全マージンを足してRETENTION_DAYS（90日）より
- * 古い行を削除する。
+ * なので、それより古い行は本当に不要。streak計算が必要とするちょうど60日
+ * （マージン無し）をRETENTION_DAYSとし、それより古い行を削除する。
  *
  * 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... node scripts/prune-old-usage-stats.mjs
  */
@@ -17,7 +17,7 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   process.exit(1);
 }
 
-const RETENTION_DAYS = 90;
+const RETENTION_DAYS = 60;
 
 function isoDate(d) {
   return d.toISOString().slice(0, 10);

@@ -132,7 +132,7 @@ jobs:
         run: node scripts/compute-deck-stats.mjs
 
       # card_usage_statsは削除されず積み上がる一方だった（DB容量超過の原因の一つ）。
-      # 実際に読まれるのは直近90日以内だけなので、それより古い行は日次で削除する。
+      # 実際に読まれるのは直近60日以内だけなので、それより古い行は日次で削除する。
       - name: Prune old usage stats
         run: node scripts/prune-old-usage-stats.mjs
 
