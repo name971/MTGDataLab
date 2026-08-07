@@ -13,7 +13,7 @@ type SortKey = "priceChangePct" | "usageRatePct";
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: "usageRatePct", label: "採用率" },
-  { key: "priceChangePct", label: "値上がり率" },
+  { key: "priceChangePct", label: "価格変化率" },
 ];
 
 const COLOR_FILTER_OPTIONS = ["W", "U", "B", "R", "G"] as const;
@@ -21,7 +21,17 @@ const VISIBLE_COUNT = 20;
 
 export default function RankingTable({ rows }: { rows: RankingRow[] }) {
   const [sortKey, setSortKey] = useState<SortKey>("usageRatePct");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [colorFilter, setColorFilter] = useState<Set<string>>(new Set());
+
+  function clickSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  }
 
   const filtered = useMemo(() => {
     if (colorFilter.size === 0) return rows;
@@ -33,8 +43,11 @@ export default function RankingTable({ rows }: { rows: RankingRow[] }) {
   }, [rows, colorFilter]);
 
   const sorted = useMemo(
-    () => [...filtered].sort((a, b) => b[sortKey] - a[sortKey]).slice(0, VISIBLE_COUNT),
-    [filtered, sortKey],
+    () =>
+      [...filtered]
+        .sort((a, b) => (sortDir === "asc" ? a[sortKey] - b[sortKey] : b[sortKey] - a[sortKey]))
+        .slice(0, VISIBLE_COUNT),
+    [filtered, sortKey, sortDir],
   );
 
   const maxPrice = Math.max(...sorted.map((r) => r.priceJpy));
@@ -74,7 +87,7 @@ export default function RankingTable({ rows }: { rows: RankingRow[] }) {
           {SORT_OPTIONS.map((opt) => (
             <button
               key={opt.key}
-              onClick={() => setSortKey(opt.key)}
+              onClick={() => clickSort(opt.key)}
               className={`rounded-md border px-3 py-1.5 text-sm ${
                 sortKey === opt.key
                   ? "border-neutral-500 bg-neutral-100 text-neutral-900"
@@ -82,6 +95,7 @@ export default function RankingTable({ rows }: { rows: RankingRow[] }) {
               }`}
             >
               {opt.label}
+              {sortKey === opt.key && (sortDir === "asc" ? " ▲" : " ▼")}
             </button>
           ))}
         </div>
