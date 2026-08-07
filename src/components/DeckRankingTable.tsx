@@ -39,15 +39,21 @@ export default function DeckRankingTable({ rows }: { rows: ArchetypeRow[] }) {
     }
   }
 
-  const sorted = useMemo(
-    () =>
-      [...rows].sort((a, b) => (sortDir === "asc" ? a[sortKey] - b[sortKey] : b[sortKey] - a[sortKey])),
-    [rows, sortKey, sortDir],
-  );
-  const visible = expanded ? sorted : sorted.slice(0, VISIBLE_COUNT);
-
   const displayPrice = (r: ArchetypeRow) =>
     arenaMode && r.arenaMedianPriceJpy !== undefined ? r.arenaMedianPriceJpy : r.medianPriceJpy;
+
+  const sorted = useMemo(
+    () =>
+      [...rows].sort((a, b) => {
+        const valueA = sortKey === "medianPriceJpy" ? displayPrice(a) : a[sortKey];
+        const valueB = sortKey === "medianPriceJpy" ? displayPrice(b) : b[sortKey];
+        return sortDir === "asc" ? valueA - valueB : valueB - valueA;
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- displayPriceはrows/arenaModeから
+    // 導出される純粋関数（毎レンダー再生成される新参照）なので、依存に入れず実体のrows/arenaModeで揃える
+    [rows, sortKey, sortDir, arenaMode],
+  );
+  const visible = expanded ? sorted : sorted.slice(0, VISIBLE_COUNT);
 
   // 上位10件（表示件数に関わらずこの10件固定）の中で中央値価格が最大・最小のものを色分けする
   const top10 = sorted.slice(0, PRICE_HIGHLIGHT_WINDOW);
