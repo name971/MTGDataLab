@@ -517,9 +517,10 @@ export default function CardHero({
               height={22}
               className="shrink-0 invert"
               // Scryfallにアイコンが無いセット（GK1等の一部）だとブラウザ標準の壊れた画像アイコンが
-              // 出てしまうため、読み込み失敗時は非表示にする
+              // 出てしまうため、読み込み失敗時は自前の汎用スパークルアイコンに差し替える
               onError={(e) => {
-                e.currentTarget.style.visibility = "hidden";
+                e.currentTarget.onerror = null;
+                e.currentTarget.src = "/icons/no-set-symbol.svg";
               }}
             />
           ) : (
@@ -649,7 +650,8 @@ export default function CardHero({
                             height={14}
                             className="shrink-0"
                             onError={(e) => {
-                              e.currentTarget.style.visibility = "hidden";
+                              e.currentTarget.onerror = null;
+                              e.currentTarget.src = "/icons/no-set-symbol.svg";
                             }}
                           />
                           <span className="min-w-0 truncate">{p.setName}</span>

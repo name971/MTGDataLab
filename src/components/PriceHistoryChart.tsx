@@ -167,10 +167,11 @@ function ChartSvg({ points }: { points: PricePoint[] }) {
               y={yFor(p.jpy) - size - 10}
               width={size}
               height={size}
-              // Scryfallにアイコンが無いセット（GK1等の一部）だとブラウザ標準の壊れた画像
-              // アイコンが出てしまうため、読み込み失敗時は非表示にする（CardHero.tsxと同じ対応）
+              // Scryfallにアイコンが無いセット（GK1等の一部）だと画像が壊れて見えるため、
+              // 読み込み失敗時は自前の汎用スパークルアイコンに差し替える。
               onError={(e) => {
-                e.currentTarget.style.visibility = "hidden";
+                e.currentTarget.onerror = null;
+                e.currentTarget.href.baseVal = "/icons/no-set-symbol.svg";
               }}
             />
           );
@@ -217,7 +218,8 @@ function ChartSvg({ points }: { points: PricePoint[] }) {
                         height={15}
                         className="invert"
                         onError={(e) => {
-                          e.currentTarget.style.visibility = "hidden";
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.href.baseVal = "/icons/no-set-symbol.svg";
                         }}
                       />
                       <text x={30} y={20} className="fill-neutral-300 text-[11px]">
