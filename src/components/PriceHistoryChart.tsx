@@ -154,6 +154,27 @@ function ChartSvg({ points }: { points: PricePoint[] }) {
             className={diff >= 0 ? "fill-teal-700" : "fill-red-700"}
           />
         ))}
+        {points.map((p, i) => {
+          // 最安のセットが前日から変わっていない間は同じアイコンが点ごとに連続してしまい
+          // 潰れて見えるため、セットが切り替わった点にだけ表示する（切り替わりが伝われば十分）。
+          if (!p.setCode || p.setCode === points[i - 1]?.setCode) return null;
+          const size = hoverIndex === i ? 24 : 20;
+          return (
+            <image
+              key={`icon-${p.date}`}
+              href={`https://svgs.scryfall.io/sets/${p.setCode}.svg`}
+              x={xFor(i) - size / 2}
+              y={yFor(p.jpy) - size - 10}
+              width={size}
+              height={size}
+              // Scryfallにアイコンが無いセット（GK1等の一部）だとブラウザ標準の壊れた画像
+              // アイコンが出てしまうため、読み込み失敗時は非表示にする（CardHero.tsxと同じ対応）
+              onError={(e) => {
+                e.currentTarget.style.visibility = "hidden";
+              }}
+            />
+          );
+        })}
         <text x={PADDING.left} y={HEIGHT - 6} className="fill-neutral-400 text-[10px]">
           {first.date}
         </text>
