@@ -70,7 +70,7 @@ export default async function TopPage() {
     <div className="flex flex-col gap-10">
       <section>
         <h2 className="mb-3 text-sm font-medium text-neutral-500">継続注目カード</h2>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
           {trendingCards.map((card) => (
             <TrendingCard key={card.oracleId} card={card} />
           ))}
