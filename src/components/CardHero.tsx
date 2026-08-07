@@ -12,6 +12,9 @@ import ManaText from "./ManaText";
 // 判定するより、角が四角い方が少数派で既知のセットに限られるため、こちらを列挙する方が楽。
 const SQUARE_CORNER_SET_CODES = new Set(["ced", "cei"]);
 const VISIBLE_COUNT = 20;
+// 基本土地等は755種を超えるプリントを持つことがあり、「もっと見る」で残り全部を
+// 一度に開くと大量の行が一気に出て違和感があるため、クリックごとに少しずつ増やす。
+const LOAD_MORE_STEP = 30;
 
 /** "2026-07-25" -> "2026/7/25" */
 function formatDateSlash(isoDate: string): string {
@@ -186,7 +189,7 @@ export default function CardHero({
   const [selectedHistory, setSelectedHistory] = useState<PricePoint[] | null>(null);
   const [selectedFoilHistory, setSelectedFoilHistory] = useState<PricePoint[] | null>(null);
   const [loading, setLoading] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(VISIBLE_COUNT);
   const [finish, setFinish] = useState<"normal" | "foil">("normal");
   const [printSortKey, setPrintSortKey] = useState<"releaseDate" | "price">("releaseDate");
   // 発売日順のデフォルトは新しい順（サーバー側のクエリと合わせる）、価格順のデフォルトは安い順。
@@ -235,7 +238,7 @@ export default function CardHero({
     const cmp = (a.releasedAt ?? "").localeCompare(b.releasedAt ?? ""); // 昇順基準（古い→新しい）
     return printSortDir === "asc" ? cmp : -cmp;
   });
-  const visiblePrints = expanded ? listPrints : listPrints.slice(0, VISIBLE_COUNT);
+  const visiblePrints = listPrints.slice(0, visibleCount);
 
   // 特定のプリントを選ぶ（defaultPrintと同じscryfallIdであっても、常にそのプリント自身の
   // 価格推移をAPIから取得する＝集約値と混同しない）。
@@ -683,13 +686,22 @@ export default function CardHero({
                 })}
               </tbody>
             </table>
-            {listPrints.length > VISIBLE_COUNT && (
+            {visibleCount < listPrints.length ? (
               <button
-                onClick={() => setExpanded((v) => !v)}
+                onClick={() => setVisibleCount((v) => v + LOAD_MORE_STEP)}
                 className="self-center rounded-md border border-neutral-300 px-4 py-1.5 text-sm text-neutral-600 hover:border-neutral-500"
               >
-                {expanded ? "閉じる" : `もっと見る（残り${listPrints.length - VISIBLE_COUNT}件）`}
+                {`もっと見る（残り${listPrints.length - visibleCount}件）`}
               </button>
+            ) : (
+              visibleCount > VISIBLE_COUNT && (
+                <button
+                  onClick={() => setVisibleCount(VISIBLE_COUNT)}
+                  className="self-center rounded-md border border-neutral-300 px-4 py-1.5 text-sm text-neutral-600 hover:border-neutral-500"
+                >
+                  閉じる
+                </button>
+              )
             )}
           </div>
         )}

@@ -31,11 +31,11 @@ export default function LegalityGrid({
   disabled?: boolean;
 }) {
   return (
-    <dl className="flex flex-wrap gap-x-8 gap-y-1.5 text-sm">
+    <dl className="flex flex-col gap-1.5 text-sm">
       {FORMATS.map((format) => {
         const status = disabled ? "print_not_legal" : (legalities[formatSlug(format)] ?? "not_legal");
         return (
-          <div key={format} className="flex items-center gap-2">
+          <div key={format} className="flex items-center justify-between gap-2">
             <dt className="text-neutral-600">{format}</dt>
             <dd
               className={`font-semibold ${disabled ? "text-red-800" : (STATUS_CLASS[status] ?? "text-neutral-400")}`}
