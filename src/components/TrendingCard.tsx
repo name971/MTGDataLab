@@ -29,10 +29,6 @@ const CATEGORY_BADGE_CLASS: Record<TrendingCardData["category"], string> = {
 };
 
 export default function TrendingCard({ card }: { card: TrendingCardData }) {
-  // Scryfallの画像URLは /<バリエーション>/front/<...>.jpg という共通構造なので、
-  // art_cropの1枚絵ではなくカード全体（normal）の画像に差し替える
-  const normalImageUrl = card.artCropUrl.replace("/art_crop/", "/normal/");
-
   return (
     <Link
       href={`/cards/${card.oracleId}`}
@@ -62,13 +58,15 @@ export default function TrendingCard({ card }: { card: TrendingCardData }) {
           </span>
         </p>
       </div>
-      <Image
-        src={normalImageUrl}
-        alt={card.nameEn}
-        width={223}
-        height={311}
-        className="w-full rounded-md object-contain"
-      />
+      <div className="relative w-full overflow-hidden rounded-md pt-[75%]">
+        <Image
+          src={card.artCropUrl}
+          alt={card.nameEn}
+          width={280}
+          height={210}
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      </div>
     </Link>
   );
 }
