@@ -96,13 +96,14 @@ export async function getCardRankingFromDb(
     if (page.length < PRICE_PAGE_SIZE) break;
   }
 
-  const [{ data: oracles }, { data: cardRows }, bestImageByOracle] = await Promise.all([
+  const [{ data: oracles }, { data: cardRows }, bestImageByOracle, { data: currentPriceRows }] = await Promise.all([
     supabase.from("card_oracles").select("oracle_id, name, printed_name_ja").in("oracle_id", topOracleIds),
     supabase
       .from("cards")
       .select("oracle_id, lang, image_uri_art_crop, mana_cost")
       .in("oracle_id", topOracleIds),
     getBestCardImages(topOracleIds),
+    supabase.from("card_current_prices").select("oracle_id, jpy_est").in("oracle_id", topOracleIds),
   ]);
 
   const nameByOracle = new Map((oracles ?? []).map((o) => [o.oracle_id, o]));
@@ -126,12 +127,12 @@ export async function getCardRankingFromDb(
   }
 
   const priceByOracle = new Map<string, number>();
+  for (const p of currentPriceRows ?? []) {
+    if (p.jpy_est !== null) priceByOracle.set(p.oracle_id, Number(p.jpy_est));
+  }
   let latestDate: string | null = null;
-  for (const p of priceRows ?? []) {
-    if (!priceByOracle.has(p.oracle_id) && p.jpy_est !== null) {
-      priceByOracle.set(p.oracle_id, Number(p.jpy_est));
-      if (latestDate === null || p.date > latestDate) latestDate = p.date;
-    }
+  for (const p of priceRows) {
+    if (latestDate === null || p.date > latestDate) latestDate = p.date;
   }
 
   // 3日前「ちょうど」の日付と厳密一致でしか比較しないと、その日だけ日次バッチが

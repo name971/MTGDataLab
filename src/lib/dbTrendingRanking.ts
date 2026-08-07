@@ -232,11 +232,7 @@ export async function getTrendingRankingFromDb(): Promise<TrendingRankingRow[]> 
   const [{ data: oracles }, { data: cardRows }, { data: priceRows }, bestImageByOracle] = await Promise.all([
     supabase.from("card_oracles").select("oracle_id, name, printed_name_ja").in("oracle_id", topOracleIds),
     supabase.from("cards").select("oracle_id, lang, image_uri_art_crop").in("oracle_id", topOracleIds),
-    supabase
-      .from("card_cheapest_price_snapshots")
-      .select("oracle_id, jpy_est, date")
-      .in("oracle_id", topOracleIds)
-      .order("date", { ascending: false }),
+    supabase.from("card_current_prices").select("oracle_id, jpy_est").in("oracle_id", topOracleIds),
     getBestCardImages(topOracleIds),
   ]);
 
