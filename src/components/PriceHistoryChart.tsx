@@ -182,8 +182,9 @@ function ChartSvg({ points }: { points: PricePoint[] }) {
 
         {hovered &&
           (() => {
-            const TOOLTIP_WIDTH = 168;
-            const MAX_SET_NAME_CHARS = 22;
+            const TOOLTIP_WIDTH = 176;
+            const TOOLTIP_HEIGHT = hovered.setCode ? 58 : 42;
+            const MAX_SET_NAME_CHARS = 20;
             const rawSetName = hovered.setName ?? hovered.setCode ?? "";
             const setName =
               rawSetName.length > MAX_SET_NAME_CHARS
@@ -201,31 +202,31 @@ function ChartSvg({ points }: { points: PricePoint[] }) {
                 />
                 <circle cx={xFor(hoverIndex!)} cy={yFor(hovered.jpy)} r={4} className="fill-white stroke-neutral-700" strokeWidth={1.5} />
                 <g
-                  transform={`translate(${xFor(hoverIndex!) + (tooltipAnchorsRight ? -(TOOLTIP_WIDTH + 8) : 8)}, ${Math.max(PADDING.top, yFor(hovered.jpy) - (hovered.setCode ? 46 : 32))})`}
+                  transform={`translate(${xFor(hoverIndex!) + (tooltipAnchorsRight ? -(TOOLTIP_WIDTH + 8) : 8)}, ${Math.max(PADDING.top, yFor(hovered.jpy) - TOOLTIP_HEIGHT / 2 - 10)})`}
                 >
-                  <rect width={TOOLTIP_WIDTH} height={hovered.setCode ? 46 : 34} rx={4} className="fill-neutral-800" opacity={0.92} />
+                  <rect width={TOOLTIP_WIDTH} height={TOOLTIP_HEIGHT} rx={4} className="fill-neutral-800" opacity={0.92} />
                   {hovered.setCode && (
                     <>
                       <image
                         href={`https://svgs.scryfall.io/sets/${hovered.setCode}.svg`}
-                        x={8}
-                        y={6}
-                        width={12}
-                        height={12}
+                        x={10}
+                        y={9}
+                        width={15}
+                        height={15}
                         className="invert"
                         onError={(e) => {
                           e.currentTarget.style.visibility = "hidden";
                         }}
                       />
-                      <text x={24} y={15} className="fill-neutral-300 text-[9px]">
+                      <text x={30} y={20} className="fill-neutral-300 text-[11px]">
                         {setName}
                       </text>
                     </>
                   )}
-                  <text x={8} y={hovered.setCode ? 32 : 13} className="fill-white text-[10px] font-medium">
+                  <text x={10} y={hovered.setCode ? 40 : 17} className="fill-white text-[13px] font-medium">
                     ¥{hovered.jpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
                   </text>
-                  <text x={8} y={hovered.setCode ? 42 : 26} className="fill-neutral-300 text-[9px]">
+                  <text x={10} y={hovered.setCode ? 53 : 33} className="fill-neutral-300 text-[11px]">
                     {hovered.date}
                   </text>
                 </g>

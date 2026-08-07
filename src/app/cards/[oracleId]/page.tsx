@@ -324,9 +324,7 @@ export default async function CardDetailPage({
         pricesByScryfallId={Object.fromEntries(otherPrintPrices.normal)}
         foilPricesByScryfallId={Object.fromEntries(otherPrintPrices.foil)}
         legalities={card.legalities}
-      />
-
-      <div className="grid grid-cols-1 gap-4">
+      >
         <div className="rounded-lg border border-neutral-200 p-4">
           <h2 className="mb-2 text-sm font-medium text-neutral-500">使用デッキ</h2>
           <div className="mb-3 flex items-center gap-1">
@@ -393,8 +391,7 @@ export default async function CardDetailPage({
               </p>
             ))}
         </div>
-
-      </div>
+      </CardHero>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { CardPrint } from "@/lib/dbCardPrints";
 import type { PricePoint } from "@/lib/dbPriceHistory";
 import PriceHistoryChart from "./PriceHistoryChart";
@@ -147,6 +147,7 @@ export default function CardHero({
   pricesByScryfallId,
   foilPricesByScryfallId,
   legalities,
+  children,
 }: {
   oracleId: string;
   defaultPrint: DefaultPrint;
@@ -156,6 +157,8 @@ export default function CardHero({
   pricesByScryfallId: Record<string, number>;
   foilPricesByScryfallId: Record<string, number>;
   legalities: Record<string, string>;
+  /** グラフの下・プリント一覧とは独立した左カラムに差し込む追加コンテンツ（使用デッキ等） */
+  children?: ReactNode;
 }) {
   // card_prints未反映など、otherPrintsに代表プリント自身の行がまだ無い場合の最終フォールバック用
   // （currentの解決・resetToAggregateの画像表示に使う。通常はotherPrintsに実プリントとして
@@ -489,6 +492,13 @@ export default function CardHero({
             finish={effectiveFinish}
           />
         )}
+
+        <div className="rounded-lg border border-neutral-200 p-4">
+          <h2 className="mb-3 text-sm font-medium text-neutral-500">フォーマットリーガル</h2>
+          <LegalityGrid legalities={legalities} disabled={current.notTournamentLegal} />
+        </div>
+
+        {children}
       </div>
 
       <div className="rounded-lg border border-neutral-200 p-4 sm:w-80 sm:shrink-0">
@@ -684,11 +694,6 @@ export default function CardHero({
           </div>
         )}
       </div>
-      </div>
-
-      <div className="rounded-lg border border-neutral-200 p-4">
-        <h2 className="mb-3 text-sm font-medium text-neutral-500">フォーマットリーガル</h2>
-        <LegalityGrid legalities={legalities} disabled={current.notTournamentLegal} />
       </div>
     </div>
   );
