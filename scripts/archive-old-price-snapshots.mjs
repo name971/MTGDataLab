@@ -129,11 +129,11 @@ function insertBatchToD1(rows) {
     const values = chunk
       .map(
         (r) =>
-          `(${sqlLiteral(r.oracle_id)}, ${sqlLiteral(r.date)}, ${sqlLiteral(r.jpy_est)}, ${sqlLiteral(r.jpy_est_foil)})`,
+          `(${sqlLiteral(r.oracle_id)}, ${sqlLiteral(r.date)}, ${sqlLiteral(r.jpy_est)}, ${sqlLiteral(r.jpy_est_foil)}, ${sqlLiteral(r.scryfall_id)}, ${sqlLiteral(r.scryfall_id_foil)})`,
       )
       .join(",\n  ");
     statements.push(
-      `INSERT INTO price_history_archive (oracle_id, date, jpy_est, jpy_est_foil) VALUES\n  ${values}\nON CONFLICT (oracle_id, date) DO UPDATE SET jpy_est=excluded.jpy_est, jpy_est_foil=excluded.jpy_est_foil;`,
+      `INSERT INTO price_history_archive (oracle_id, date, jpy_est, jpy_est_foil, scryfall_id, scryfall_id_foil) VALUES\n  ${values}\nON CONFLICT (oracle_id, date) DO UPDATE SET jpy_est=excluded.jpy_est, jpy_est_foil=excluded.jpy_est_foil, scryfall_id=excluded.scryfall_id, scryfall_id_foil=excluded.scryfall_id_foil;`,
     );
   }
   for (let i = 0; i < statements.length; i += STATEMENTS_PER_FILE) {

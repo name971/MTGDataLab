@@ -1,3 +1,5 @@
+import { meetsMinQueryLength } from "./searchQuery";
+
 /** TODO: db/search-design.sql の pg_trgm検索クエリに差し替える（card_oracles.name / printed_name_ja） */
 export interface SearchIndexEntry {
   oracleId: string;
@@ -20,12 +22,9 @@ export const SAMPLE_SEARCH_INDEX: SearchIndexEntry[] = [
   { oracleId: "force-of-will", nameJa: "意志の力", nameEn: "Force of Will", artCropUrl: "https://cards.scryfall.io/art_crop/front/8/9/89f612d6-7c59-4a7b-a87d-45f789e88ba5.jpg" },
 ];
 
-/** 2〜3文字未満はクエリを発火させない（db/search-design.sql の運用メモ） */
-const MIN_QUERY_LENGTH = 2;
-
 export function searchSampleCards(query: string): SearchIndexEntry[] {
   const q = query.trim().toLowerCase();
-  if (q.length < MIN_QUERY_LENGTH) return [];
+  if (!meetsMinQueryLength(q)) return [];
   return SAMPLE_SEARCH_INDEX.filter(
     (entry) =>
       entry.nameJa.toLowerCase().includes(q) || entry.nameEn.toLowerCase().includes(q),

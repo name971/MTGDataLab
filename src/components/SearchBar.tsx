@@ -4,9 +4,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { meetsMinQueryLength } from "@/lib/searchQuery";
 
-/** 2〜3文字未満はクエリを発火させない（db/search-design.sql の運用メモ参照） */
-const MIN_QUERY_LENGTH = 2;
 const DEBOUNCE_MS = 200;
 
 interface Suggestion {
@@ -25,7 +24,7 @@ export default function SearchBar() {
 
   useEffect(() => {
     const trimmed = query.trim();
-    if (trimmed.length < MIN_QUERY_LENGTH) {
+    if (!meetsMinQueryLength(trimmed)) {
       setSuggestions([]);
       return;
     }
@@ -61,7 +60,7 @@ export default function SearchBar() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (query.trim().length < MIN_QUERY_LENGTH) return;
+    if (!meetsMinQueryLength(query.trim())) return;
     setIsOpen(false);
     router.push(`/search?q=${encodeURIComponent(query.trim())}`);
   }

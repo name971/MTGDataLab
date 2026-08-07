@@ -3,6 +3,7 @@ import Link from "next/link";
 import { searchCardsInDb } from "@/lib/searchCards";
 import { searchSampleCards } from "@/lib/sampleSearchIndex";
 import { slugForCardName } from "@/lib/sampleCards";
+import { meetsMinQueryLength } from "@/lib/searchQuery";
 
 export const metadata = { title: "検索 - MTG DataLab" };
 
@@ -61,8 +62,8 @@ export default async function SearchPage({
         </div>
       ) : (
         <p className="text-sm text-neutral-500">
-          {query.trim().length < 2
-            ? "2文字以上入力してください。"
+          {!meetsMinQueryLength(query.trim())
+            ? "2文字以上（漢字・かなは1文字から）入力してください。"
             : "該当するカードが見つかりませんでした。"}
         </p>
       )}

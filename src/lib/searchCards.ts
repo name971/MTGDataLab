@@ -1,8 +1,6 @@
 import { supabase } from "./supabase";
 import { getBestCardImages } from "./dbCardPrints";
-
-/** 2〜3文字未満はクエリを発火させない（db/search-design.sql の運用メモ） */
-const MIN_QUERY_LENGTH = 2;
+import { meetsMinQueryLength } from "./searchQuery";
 
 export interface SearchCardResult {
   oracleId: string;
@@ -17,7 +15,7 @@ export interface SearchCardResult {
  */
 export async function searchCardsInDb(query: string): Promise<SearchCardResult[]> {
   const trimmed = query.trim();
-  if (trimmed.length < MIN_QUERY_LENGTH) return [];
+  if (!meetsMinQueryLength(trimmed)) return [];
 
   const { data: oracles, error } = await supabase.rpc("search_cards", { query: trimmed });
   if (error || !oracles || oracles.length === 0) return [];
