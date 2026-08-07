@@ -7,31 +7,15 @@ import type { RankingRow } from "@/lib/sampleRankingData";
 
 /**
  * 取引量は無料データソースが存在しないため launch では対象外（docs/spec.md 2章）。
- * 価格・採用率の2軸のみで運用する。
+ * このランキング自体が採用率上位のカードだけを対象にしているため、採用率での並び替えは
+ * 冗長（常にほぼ同じ並びになる）。価格変化率のみで並び替える。
  */
-type SortKey = "priceChangePct" | "usageRatePct";
-
-const SORT_OPTIONS: { key: SortKey; label: string }[] = [
-  { key: "usageRatePct", label: "採用率" },
-  { key: "priceChangePct", label: "価格変化率" },
-];
-
 const COLOR_FILTER_OPTIONS = ["W", "U", "B", "R", "G"] as const;
 const VISIBLE_COUNT = 20;
 
 export default function RankingTable({ rows }: { rows: RankingRow[] }) {
-  const [sortKey, setSortKey] = useState<SortKey>("usageRatePct");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [colorFilter, setColorFilter] = useState<Set<string>>(new Set());
-
-  function clickSort(key: SortKey) {
-    if (sortKey === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(key);
-      setSortDir("desc");
-    }
-  }
 
   const filtered = useMemo(() => {
     if (colorFilter.size === 0) return rows;
@@ -45,9 +29,11 @@ export default function RankingTable({ rows }: { rows: RankingRow[] }) {
   const sorted = useMemo(
     () =>
       [...filtered]
-        .sort((a, b) => (sortDir === "asc" ? a[sortKey] - b[sortKey] : b[sortKey] - a[sortKey]))
+        .sort((a, b) =>
+          sortDir === "asc" ? a.priceChangePct - b.priceChangePct : b.priceChangePct - a.priceChangePct,
+        )
         .slice(0, VISIBLE_COUNT),
-    [filtered, sortKey, sortDir],
+    [filtered, sortDir],
   );
 
   const maxPrice = Math.max(...sorted.map((r) => r.priceJpy));
@@ -83,22 +69,12 @@ export default function RankingTable({ rows }: { rows: RankingRow[] }) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="flex gap-2">
-          {SORT_OPTIONS.map((opt) => (
-            <button
-              key={opt.key}
-              onClick={() => clickSort(opt.key)}
-              className={`rounded-md border px-3 py-1.5 text-sm ${
-                sortKey === opt.key
-                  ? "border-neutral-500 bg-neutral-100 text-neutral-900"
-                  : "border-neutral-300 text-neutral-600 hover:border-neutral-500"
-              }`}
-            >
-              {opt.label}
-              {sortKey === opt.key && (sortDir === "asc" ? " ▲" : " ▼")}
-            </button>
-          ))}
-        </div>
+        <button
+          onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+          className="rounded-md border border-neutral-500 bg-neutral-100 px-3 py-1.5 text-sm text-neutral-900"
+        >
+          価格変化率{sortDir === "asc" ? " ▲" : " ▼"}
+        </button>
         <div className="ml-auto flex gap-1 border-l border-neutral-200 pl-2">
           {COLOR_FILTER_OPTIONS.map((c) => (
             <button
@@ -178,7 +154,7 @@ function CardRankRow({
         <p className="truncate text-xs text-neutral-500">{row.nameEn}</p>
         <div className="mt-1 flex items-start justify-between text-sm">
           <span className="flex flex-col">
-            <span className="whitespace-nowrap text-[10px] text-neutral-400">価格変化率</span>
+            <span className="whitespace-nowrap text-[10px] text-neutral-400">価格変化率(3日)</span>
             <span className={row.priceChangePct >= 0 ? "text-teal-800" : "text-red-800"}>
               {row.priceChangePct >= 0 ? "+" : ""}
               {row.priceChangePct.toFixed(1)}%

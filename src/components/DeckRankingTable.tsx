@@ -17,15 +17,26 @@ const PRICE_HIGHLIGHT_WINDOW = 10;
 
 export default function DeckRankingTable({ rows }: { rows: ArchetypeRow[] }) {
   const [sortKey, setSortKey] = useState<SortKey>("usageRatePct");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [expanded, setExpanded] = useState(false);
   // StandardのみarenaMedianPriceJpyが付く（dbArchetypeStats.ts参照）。それ以外のフォーマットでは
   // 全行undefinedなので、チェックボックス自体を出さない。
   const hasArenaData = rows.some((r) => r.arenaMedianPriceJpy !== undefined);
   const [arenaMode, setArenaMode] = useState(false);
 
+  function clickSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  }
+
   const sorted = useMemo(
-    () => [...rows].sort((a, b) => b[sortKey] - a[sortKey]),
-    [rows, sortKey],
+    () =>
+      [...rows].sort((a, b) => (sortDir === "asc" ? a[sortKey] - b[sortKey] : b[sortKey] - a[sortKey])),
+    [rows, sortKey, sortDir],
   );
   const visible = expanded ? sorted : sorted.slice(0, VISIBLE_COUNT);
 
@@ -50,7 +61,7 @@ export default function DeckRankingTable({ rows }: { rows: ArchetypeRow[] }) {
           {SORT_OPTIONS.map((opt) => (
             <button
               key={opt.key}
-              onClick={() => setSortKey(opt.key)}
+              onClick={() => clickSort(opt.key)}
               className={`rounded-md border px-3 py-1.5 text-sm ${
                 sortKey === opt.key
                   ? "border-neutral-500 bg-neutral-100 text-neutral-900"
@@ -58,6 +69,7 @@ export default function DeckRankingTable({ rows }: { rows: ArchetypeRow[] }) {
               }`}
             >
               {opt.label}
+              {sortKey === opt.key && (sortDir === "asc" ? " ▲" : " ▼")}
             </button>
           ))}
         </div>
