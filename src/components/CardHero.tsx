@@ -239,7 +239,9 @@ export default function CardHero({
   async function selectPrint(p: CardPrint) {
     setCurrentScryfallId(p.scryfallId);
     setIsAggregateView(false);
-    setFinish("normal"); // プリントを切り替えたら表示は通常価格から始める
+    // Foil価格で一覧を見ているとき（listSortFoil）は、選んだプリントにFoil価格がある限り
+    // Foil表示のまま遷移する。無ければ通常価格にフォールバックする。
+    setFinish(listSortFoil && allFoilPrices[p.scryfallId] !== undefined ? "foil" : "normal");
     setSelectedHistory(null);
     setSelectedFoilHistory(null);
     setLoading(true);
