@@ -580,7 +580,35 @@ export default function CardHero({
                 <FoilToggleIcon active={listSortFoil} variant="sparkle" />
               </button>
             </div>
-            <table className="w-full table-fixed border-collapse text-sm">
+            {/* モバイルは縦に長くなりすぎないよう、行を積み上げる表ではなくプルダウンで選ばせる
+                （横スクロールのカルーセルだと存在に気付かれにくい・誤スクロールしやすいため、
+                ネイティブのselectの方が安全）。並び順・Foil価格切り替えは表と共通のlistPrintsを使う。 */}
+            <select
+              value={currentScryfallId}
+              onChange={(e) => {
+                const p = listPrints.find((pr) => pr.scryfallId === e.target.value);
+                if (p) selectPrint(p);
+              }}
+              className="w-full rounded-md border border-neutral-300 px-2 py-2 text-sm sm:hidden"
+            >
+              {listPrints.map((p) => {
+                const jpy = allPrices[p.scryfallId];
+                const jpyFoil = allFoilPrices[p.scryfallId];
+                const priceLabel = listSortFoil
+                  ? jpyFoil !== undefined
+                    ? `Foil ¥${jpyFoil.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}`
+                    : "Foil -"
+                  : jpy !== undefined
+                    ? `¥${jpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}`
+                    : "-";
+                return (
+                  <option key={p.scryfallId} value={p.scryfallId}>
+                    {p.setName}（{priceLabel}）
+                  </option>
+                );
+              })}
+            </select>
+            <table className="hidden w-full table-fixed border-collapse text-sm sm:table">
               <colgroup>
                 <col className="w-auto" />
                 <col className="w-20" />
