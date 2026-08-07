@@ -24,11 +24,17 @@ export default function DeckRankingTable({ rows }: { rows: ArchetypeRow[] }) {
   const hasArenaData = rows.some((r) => r.arenaMedianPriceJpy !== undefined);
   const [arenaMode, setArenaMode] = useState(false);
 
+  // 採用率順は常に降順固定（不採用寄りのアーキタイプを見たいケースは無いため昇順切り替え不要）。
+  // 平均価格順だけ昇順/降順を切り替えられる。
   function clickSort(key: SortKey) {
-    if (sortKey === key) {
+    if (key === "usageRatePct") {
+      setSortKey("usageRatePct");
+      return;
+    }
+    if (sortKey === "medianPriceJpy") {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
-      setSortKey(key);
+      setSortKey("medianPriceJpy");
       setSortDir("desc");
     }
   }
@@ -69,7 +75,7 @@ export default function DeckRankingTable({ rows }: { rows: ArchetypeRow[] }) {
               }`}
             >
               {opt.label}
-              {sortKey === opt.key && (sortDir === "asc" ? " ▲" : " ▼")}
+              {opt.key === "medianPriceJpy" && sortKey === "medianPriceJpy" && (sortDir === "asc" ? " ▲" : " ▼")}
             </button>
           ))}
         </div>
