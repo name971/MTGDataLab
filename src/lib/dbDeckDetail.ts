@@ -194,11 +194,7 @@ export async function getDeckDetailFromDb(deckId: number): Promise<DbDeckDetail 
         .from("cards")
         .select("oracle_id, lang, image_uri_art_crop, image_uri_normal, type_line, mana_cost, rarity")
         .in("oracle_id", oracleIds),
-      supabase
-        .from("card_cheapest_price_snapshots")
-        .select("oracle_id, jpy_est, date")
-        .in("oracle_id", oracleIds)
-        .order("date", { ascending: false }),
+      supabase.from("card_current_prices").select("oracle_id, jpy_est").in("oracle_id", oracleIds),
       getBestCardImages(oracleIds),
     ]);
 
@@ -244,7 +240,6 @@ export async function getDeckDetailFromDb(deckId: number): Promise<DbDeckDetail 
         existing.artCropUrl = normalUrl.replace("/normal/", "/art_crop/");
       }
     }
-    // date降順なので最初に出てきた行がoracle_idごとの最新スナップショット
     for (const p of priceRows ?? []) {
       if (!priceByOracle.has(p.oracle_id)) priceByOracle.set(p.oracle_id, Number(p.jpy_est));
     }

@@ -45,9 +45,8 @@ describe("getDeckDetailFromDb", () => {
         });
         return { select: vi.fn().mockReturnValue({ eq }) };
       }
-      if (table === "card_cheapest_price_snapshots") {
-        const order = vi.fn().mockResolvedValue({ data: [], error: null });
-        const inFn = vi.fn().mockReturnValue({ order });
+      if (table === "card_current_prices") {
+        const inFn = vi.fn().mockResolvedValue({ data: [], error: null });
         return { select: vi.fn().mockReturnValue({ in: inFn }) };
       }
       throw new Error(`unexpected table ${table}`);

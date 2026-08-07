@@ -391,13 +391,9 @@ async function getMedianPriceByArchetype(
   for (let i = 0; i < allOracleIds.length; i += PAGE_SIZE) {
     const chunk = allOracleIds.slice(i, i + PAGE_SIZE);
     // date降順なので最初に出てきた行がoracle_idごとの最新スナップショット
-    const { data } = await supabase
-      .from("card_cheapest_price_snapshots")
-      .select("oracle_id, jpy_est, date")
-      .in("oracle_id", chunk)
-      .order("date", { ascending: false });
+    const { data } = await supabase.from("card_current_prices").select("oracle_id, jpy_est").in("oracle_id", chunk);
     for (const p of data ?? []) {
-      if (!priceByOracle.has(p.oracle_id) && p.jpy_est !== null) priceByOracle.set(p.oracle_id, Number(p.jpy_est));
+      if (p.jpy_est !== null) priceByOracle.set(p.oracle_id, Number(p.jpy_est));
     }
   }
 

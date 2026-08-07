@@ -195,17 +195,14 @@ export async function getOracleIdsByNames(names: string[]): Promise<Map<string, 
 export async function getJpyPricesByOracleIds(oracleIds: string[]): Promise<Map<string, number>> {
   if (oracleIds.length === 0) return new Map();
   const { data, error } = await supabase
-    .from("card_cheapest_price_snapshots")
-    .select("oracle_id, jpy_est, date")
-    .in("oracle_id", oracleIds)
-    .order("date", { ascending: false });
+    .from("card_current_prices")
+    .select("oracle_id, jpy_est")
+    .in("oracle_id", oracleIds);
   if (error || !data) return new Map();
 
   const result = new Map<string, number>();
   for (const row of data) {
-    if (!result.has(row.oracle_id) && row.jpy_est !== null) {
-      result.set(row.oracle_id, row.jpy_est);
-    }
+    if (row.jpy_est !== null) result.set(row.oracle_id, row.jpy_est);
   }
   return result;
 }
