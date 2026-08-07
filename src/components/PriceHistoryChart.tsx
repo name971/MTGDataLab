@@ -171,7 +171,7 @@ function ChartSvg({ points }: { points: PricePoint[] }) {
               // 読み込み失敗時は自前の汎用スパークルアイコンに差し替える。
               onError={(e) => {
                 e.currentTarget.onerror = null;
-                e.currentTarget.href.baseVal = "/icons/no-set-symbol.svg";
+                e.currentTarget.setAttribute("href", "/icons/no-set-symbol.svg");
               }}
             />
           );
@@ -219,7 +219,7 @@ function ChartSvg({ points }: { points: PricePoint[] }) {
                         className="invert"
                         onError={(e) => {
                           e.currentTarget.onerror = null;
-                          e.currentTarget.href.baseVal = "/icons/no-set-symbol.svg";
+                          e.currentTarget.setAttribute("href", "/icons/no-set-symbol.svg");
                         }}
                       />
                       <text x={30} y={20} className="fill-neutral-300 text-[11px]">
