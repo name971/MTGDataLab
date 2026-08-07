@@ -1,4 +1,5 @@
 import type { PricePoint } from "./dbPriceHistory";
+import { supabase } from "./supabase";
 
 /**
  * 価格履歴アーカイブ用D1（Cloudflare、jp-mtgstocks-archive、wrangler.jsonc参照）から
@@ -26,17 +27,38 @@ export async function getArchivedPriceHistory(
     const db = (env as unknown as Env).PRICE_ARCHIVE_DB;
     if (!db) return [];
 
-    const column = finish === "foil" ? "jpy_est_foil" : "jpy_est";
+    const priceColumn = finish === "foil" ? "jpy_est_foil" : "jpy_est";
+    const scryfallColumn = finish === "foil" ? "scryfall_id_foil" : "scryfall_id";
     const result = await db
       .prepare(
-        `SELECT date, ${column} AS price FROM price_history_archive WHERE oracle_id = ?1 AND ${column} IS NOT NULL ORDER BY date ASC`,
+        `SELECT date, ${priceColumn} AS price, ${scryfallColumn} AS scryfall_id FROM price_history_archive WHERE oracle_id = ?1 AND ${priceColumn} IS NOT NULL ORDER BY date ASC`,
       )
       .bind(oracleId)
-      .all<{ date: string; price: number }>();
+      .all<{ date: string; price: number; scryfall_id: string | null }>();
 
-    return (result.results ?? []).map((row: { date: string; price: number }) => ({
+    const rows = result.results ?? [];
+    // 各日の最安値がどのセットだったかは、旧アーカイブ分（scryfall_id列追加前）にはNULLしか
+    // 無いことがある。その場合はセットアイコン無しで表示側がフォールバックする。
+    const scryfallIds = [...new Set(rows.map((r) => r.scryfall_id).filter((id): id is string => id !== null))];
+    const setCodeByScryfallId = new Map<string, string>();
+    const setNameByScryfallId = new Map<string, string>();
+    if (scryfallIds.length > 0) {
+      const { data: printRows } = await supabase
+        .from("card_prints")
+        .select("scryfall_id, set_code, sets(set_name)")
+        .in("scryfall_id", scryfallIds)
+        .returns<{ scryfall_id: string; set_code: string; sets: { set_name: string } | null }[]>();
+      for (const p of printRows ?? []) {
+        setCodeByScryfallId.set(p.scryfall_id, p.set_code);
+        setNameByScryfallId.set(p.scryfall_id, p.sets?.set_name ?? p.set_code);
+      }
+    }
+
+    return rows.map((row) => ({
       date: row.date,
       jpy: Number(row.price),
+      setCode: row.scryfall_id ? setCodeByScryfallId.get(row.scryfall_id) : undefined,
+      setName: row.scryfall_id ? setNameByScryfallId.get(row.scryfall_id) : undefined,
     }));
   } catch {
     // getCloudflareContext()はWorkersランタイム外（一部のビルド・テスト環境）で例外を投げる。

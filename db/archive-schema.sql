@@ -12,6 +12,11 @@ CREATE TABLE IF NOT EXISTS price_history_archive (
   date      TEXT NOT NULL, -- 'YYYY-MM-DD'
   jpy_est   REAL,
   jpy_est_foil REAL,
+  -- その日の最安値がどのプリントだったか（価格推移グラフのホバーでセットシンボルを
+  -- 出すため、card_prints側と突き合わせるscryfall_id）。無くても価格の集計自体には
+  -- 影響しないため、無い期間（列追加より前のアーカイブ分）はNULLのまま許容する。
+  scryfall_id TEXT,
+  scryfall_id_foil TEXT,
   PRIMARY KEY (oracle_id, date)
 );
 
