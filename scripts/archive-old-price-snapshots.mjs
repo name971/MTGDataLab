@@ -164,12 +164,20 @@ async function main() {
   console.log("D1へ書き込み中...");
   insertBatchToD1(oldRows);
 
-  // D1側に書き込めた件数を検証してからでないとSupabase側を消さない
-  const countJson = await d1QueryJson(
-    `SELECT COUNT(*) AS c FROM price_history_archive WHERE date < '${cutoffStr}'`,
-  );
-  const archivedCount = countJson[0]?.results?.[0]?.c ?? 0;
-  console.log(`D1側の確認: date < ${cutoffStr} の行数 = ${archivedCount}`);
+  // D1側に書き込めた件数を検証してからでないとSupabase側を消さない。
+  // 書き込み(wrangler CLI)と検証(HTTP API)は別セッションのため、D1のレプリカ反映に
+  // 数秒のタイムラグがあり、直後の1回だけの検証だと古いレプリカを読んで実際より
+  // 少ない件数を返すことがある。反映を待ってリトライする。
+  let archivedCount = 0;
+  for (let attempt = 1; attempt <= 10; attempt++) {
+    const countJson = await d1QueryJson(
+      `SELECT COUNT(*) AS c FROM price_history_archive WHERE date < '${cutoffStr}'`,
+    );
+    archivedCount = countJson[0]?.results?.[0]?.c ?? 0;
+    console.log(`D1側の確認(試行${attempt}): date < ${cutoffStr} の行数 = ${archivedCount}`);
+    if (archivedCount >= oldRows.length) break;
+    await new Promise((r) => setTimeout(r, 3000));
+  }
   if (archivedCount < oldRows.length) {
     throw new Error(
       `D1への書き込み件数(${archivedCount})がSupabase取得件数(${oldRows.length})を下回っています。` +

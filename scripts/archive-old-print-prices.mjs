@@ -68,17 +68,24 @@ async function supabaseGetAll(path) {
 }
 
 async function supabasePatch(path, body) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    method: "PATCH",
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      "Content-Type": "application/json",
-      Prefer: "return=minimal",
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`PATCH ${path} failed: ${res.status} ${await res.text()}`);
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+        method: "PATCH",
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          "Content-Type": "application/json",
+          Prefer: "return=minimal",
+        },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(`PATCH ${path} failed: ${res.status} ${await res.text()}`);
+      return;
+    } catch (err) {
+      if (attempt === 3) throw err;
+    }
+  }
 }
 
 function sqlLiteral(value) {
@@ -92,39 +99,42 @@ function d1ExecuteFile(sql) {
   const filePath = join(dir, "batch.sql");
   writeFileSync(filePath, sql, "utf-8");
   try {
-    execFileSync(
-      "npx",
-      ["wrangler", "d1", "execute", D1_DATABASE_NAME, "--remote", `--file=${filePath}`],
-      { stdio: "inherit", shell: true },
-    );
+    // INSERT ... ON CONFLICT DO UPDATEなので同じファイルの再実行は安全（べき等）。
+    // Cloudflare側のアップロードが稀に一時的なネットワークエラーで失敗するため、
+    // 数回までは待ってリトライする。
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        execFileSync(
+          "npx",
+          ["wrangler", "d1", "execute", D1_DATABASE_NAME, "--remote", `--file=${filePath}`],
+          { stdio: "inherit", shell: true },
+        );
+        return;
+      } catch (err) {
+        if (attempt === 3) throw err;
+        console.error(`  ...D1書き込み失敗（試行${attempt}）、5秒後にリトライします`);
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000);
+      }
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 }
 
-// SELECT結果の行データが必要な検証クエリは、wrangler CLI経由だと2つの問題があった:
-// 1. --command=にSQLをインライン指定すると、Windowsのcmd.exe（shell:true経由）がSQL中の
-//    "<"をリダイレクト記号として解釈してしまい壊れる
-// 2. --file=に切り替えると回避はできるが、--jsonの出力がクエリ結果ではなく
-//    実行統計（Rows read/written等）になってしまい、SELECTの行データが取れない
-// そのためCloudflare D1のHTTP APIを直接叩く（サブプロセス・シェル解釈を経由しない）。
-async function d1QueryJson(sql) {
-  const res = await fetch(
-    `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${CLOUDFLARE_API_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ sql }),
-    },
+// 検証用のCOUNTクエリはHTTP API経由だと書き込み(wrangler CLI)とは別のD1レプリカを読む
+// ことがあり、直後に叩くと反映前の古い件数を返す（実際に書き込み後に何度リトライしても
+// 実件数を下回ったまま安定するケースを確認済み）。そのため書き込みと同じ経路である
+// wrangler CLIの--commandで検証する。ただし"<"はWindowsのcmd.exe（shell:true経由）に
+// リダイレクト記号として解釈されるため、SQL側で"<"を使わない書き方に置き換える。
+function d1QueryViaCli(sql) {
+  const out = execFileSync(
+    "npx",
+    ["wrangler", "d1", "execute", D1_DATABASE_NAME, "--remote", "--json", `--command="${sql}"`],
+    { shell: true, encoding: "utf-8", maxBuffer: 1024 * 1024 * 10 },
   );
-  const body = await res.json();
-  if (!res.ok || !body.success) {
-    throw new Error(`D1 query failed: ${res.status} ${JSON.stringify(body.errors ?? body)}`);
-  }
-  return body.result;
+  const jsonStart = out.indexOf("[");
+  const body = JSON.parse(out.slice(jsonStart));
+  return body[0]?.results ?? [];
 }
 
 // wranglerのサブプロセス起動オーバーヘッドを抑えるため、複数のINSERT文を1ファイルにまとめて
@@ -194,12 +204,17 @@ async function main() {
   console.log("D1へ書き込み中...");
   insertArchiveRows(archiveRows);
 
-  // D1側に書き込めた件数を検証してからでないとSupabase側のJSONBは削らない
-  const countJson = await d1QueryJson(
-    `SELECT COUNT(*) AS c FROM print_price_history_archive WHERE date < '${cutoffStr}'`,
-  );
-  const archivedCount = countJson[0]?.results?.[0]?.c ?? 0;
-  console.log(`D1側の確認: date < ${cutoffStr} の行数 = ${archivedCount}`);
+  // D1側に書き込めた件数を検証してからでないとSupabase側のJSONBは削らない。
+  let archivedCount = 0;
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    const rows = d1QueryViaCli(
+      `SELECT COUNT(*) AS c FROM print_price_history_archive WHERE NOT (date >= '${cutoffStr}')`,
+    );
+    archivedCount = rows[0]?.c ?? 0;
+    console.log(`D1側の確認(試行${attempt}): date < ${cutoffStr} の行数 = ${archivedCount}`);
+    if (archivedCount >= archiveRows.length) break;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3000);
+  }
   if (archivedCount < archiveRows.length) {
     throw new Error(
       `D1への書き込み件数(${archivedCount})が想定件数(${archiveRows.length})を下回っています。` +
@@ -208,13 +223,18 @@ async function main() {
   }
 
   console.log("Supabase側のJSONBから古い日付キーを削除中...");
-  for (let i = 0; i < trimmedRows.length; i++) {
-    const r = trimmedRows[i];
-    await supabasePatch(`card_print_prices?scryfall_id=eq.${r.scryfall_id}`, {
-      prices: r.prices,
-      prices_foil: r.prices_foil,
-    });
-    if ((i + 1) % 200 === 0) console.log(`  ...${i + 1}/${trimmedRows.length}プリント`);
+  const PATCH_CONCURRENCY = 8;
+  for (let i = 0; i < trimmedRows.length; i += PATCH_CONCURRENCY) {
+    const chunk = trimmedRows.slice(i, i + PATCH_CONCURRENCY);
+    await Promise.all(
+      chunk.map((r) =>
+        supabasePatch(`card_print_prices?scryfall_id=eq.${r.scryfall_id}`, {
+          prices: r.prices,
+          prices_foil: r.prices_foil,
+        }),
+      ),
+    );
+    console.log(`  ...${Math.min(i + PATCH_CONCURRENCY, trimmedRows.length)}/${trimmedRows.length}プリント`);
   }
 
   console.log(
