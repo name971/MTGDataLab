@@ -12,16 +12,17 @@ function symbolImageUrl(inner: string): string {
 }
 
 // Scryfallの一部プリント（特に新セット）のprinted_text（日本語版含む翻訳側テキスト）に、
-// "{1}{U}"と打つべき箇所が"{1U}"のように"}{"が抜けて連結された壊れたデータが稀に混入している
-// （oracle_text側は正しく分かれている）。本来のScryfallシンボルはハイブリッドでも必ず"/"を挟む
-// （例: "W/U"）ため、"/"なしで数字の直後に文字が続く形は実在しないシンボル＝この種の連結崩れと
-// 判定できる。該当した場合は数字部分と各文字を別シンボルに分割して復元する。
-const CONCATENATED_SYMBOLS = /^(\d+)([A-Za-z]+)$/;
+// "{1}{U}"や"{R}{R}"と打つべき箇所が"{1U}"や"{RR}"のように"}{"が抜けて連結された壊れた
+// データが稀に混入している（oracle_text側は正しく分かれている）。本来のScryfallシンボルは
+// ハイブリッドでも必ず"/"を挟む（例: "W/U"）、数字単体のコスト（例: "10"）、またはT/Q/S等の
+// 英字1文字のいずれかで、"/"なしで英字が2文字以上連続する形は実在しないシンボル＝この種の
+// 連結崩れと判定できる。該当した場合は数字部分（あれば）と各英字を別シンボルに分割して復元する。
+const CONCATENATED_SYMBOLS = /^(\d*)([A-Za-z]{2,})$/;
 
 function splitSymbol(inner: string): string[] {
   const match = inner.match(CONCATENATED_SYMBOLS);
   if (!match) return [inner];
-  return [match[1], ...match[2].split("")];
+  return [...(match[1] ? [match[1]] : []), ...match[2].split("")];
 }
 
 export default function ManaText({

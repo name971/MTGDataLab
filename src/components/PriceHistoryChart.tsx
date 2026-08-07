@@ -180,48 +180,58 @@ function ChartSvg({ points }: { points: PricePoint[] }) {
           {latest.date}
         </text>
 
-        {hovered && (
-          <g pointerEvents="none">
-            <line
-              x1={xFor(hoverIndex!)}
-              y1={PADDING.top}
-              x2={xFor(hoverIndex!)}
-              y2={HEIGHT - PADDING.bottom}
-              className="stroke-neutral-300"
-              strokeDasharray="3 3"
-            />
-            <circle cx={xFor(hoverIndex!)} cy={yFor(hovered.jpy)} r={4} className="fill-white stroke-neutral-700" strokeWidth={1.5} />
-            <g
-              transform={`translate(${xFor(hoverIndex!) + (tooltipAnchorsRight ? -136 : 8)}, ${Math.max(PADDING.top, yFor(hovered.jpy) - (hovered.setCode ? 46 : 32))})`}
-            >
-              <rect width={128} height={hovered.setCode ? 46 : 34} rx={4} className="fill-neutral-800" opacity={0.92} />
-              {hovered.setCode && (
-                <>
-                  <image
-                    href={`https://svgs.scryfall.io/sets/${hovered.setCode}.svg`}
-                    x={8}
-                    y={6}
-                    width={12}
-                    height={12}
-                    className="invert"
-                    onError={(e) => {
-                      e.currentTarget.style.visibility = "hidden";
-                    }}
-                  />
-                  <text x={24} y={15} className="fill-neutral-300 text-[9px]">
-                    {hovered.setName ?? hovered.setCode}
+        {hovered &&
+          (() => {
+            const TOOLTIP_WIDTH = 168;
+            const MAX_SET_NAME_CHARS = 22;
+            const rawSetName = hovered.setName ?? hovered.setCode ?? "";
+            const setName =
+              rawSetName.length > MAX_SET_NAME_CHARS
+                ? `${rawSetName.slice(0, MAX_SET_NAME_CHARS)}…`
+                : rawSetName;
+            return (
+              <g pointerEvents="none">
+                <line
+                  x1={xFor(hoverIndex!)}
+                  y1={PADDING.top}
+                  x2={xFor(hoverIndex!)}
+                  y2={HEIGHT - PADDING.bottom}
+                  className="stroke-neutral-300"
+                  strokeDasharray="3 3"
+                />
+                <circle cx={xFor(hoverIndex!)} cy={yFor(hovered.jpy)} r={4} className="fill-white stroke-neutral-700" strokeWidth={1.5} />
+                <g
+                  transform={`translate(${xFor(hoverIndex!) + (tooltipAnchorsRight ? -(TOOLTIP_WIDTH + 8) : 8)}, ${Math.max(PADDING.top, yFor(hovered.jpy) - (hovered.setCode ? 46 : 32))})`}
+                >
+                  <rect width={TOOLTIP_WIDTH} height={hovered.setCode ? 46 : 34} rx={4} className="fill-neutral-800" opacity={0.92} />
+                  {hovered.setCode && (
+                    <>
+                      <image
+                        href={`https://svgs.scryfall.io/sets/${hovered.setCode}.svg`}
+                        x={8}
+                        y={6}
+                        width={12}
+                        height={12}
+                        className="invert"
+                        onError={(e) => {
+                          e.currentTarget.style.visibility = "hidden";
+                        }}
+                      />
+                      <text x={24} y={15} className="fill-neutral-300 text-[9px]">
+                        {setName}
+                      </text>
+                    </>
+                  )}
+                  <text x={8} y={hovered.setCode ? 32 : 13} className="fill-white text-[10px] font-medium">
+                    ¥{hovered.jpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
                   </text>
-                </>
-              )}
-              <text x={8} y={hovered.setCode ? 32 : 13} className="fill-white text-[10px] font-medium">
-                ¥{hovered.jpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
-              </text>
-              <text x={8} y={hovered.setCode ? 42 : 26} className="fill-neutral-300 text-[9px]">
-                {hovered.date}
-              </text>
-            </g>
-          </g>
-        )}
+                  <text x={8} y={hovered.setCode ? 42 : 26} className="fill-neutral-300 text-[9px]">
+                    {hovered.date}
+                  </text>
+                </g>
+              </g>
+            );
+          })()}
       </svg>
     </div>
   );

@@ -294,7 +294,7 @@ export default function CardHero({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-6 sm:flex-row">
+      <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
       <div className="flex flex-1 flex-col gap-4">
         <div className="flex flex-col gap-6 sm:flex-row">
           {mainImageUrl && (

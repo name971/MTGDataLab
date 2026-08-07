@@ -355,7 +355,7 @@ export default async function CardDetailPage({
                     {f.format}
                   </Link>
                   <span className="flex shrink-0 items-baseline justify-end">
-                    <span className="text-right tabular-nums">{f.deckCount}件</span>
+                    <span className="w-10 text-right tabular-nums">{f.deckCount}件</span>
                     <span
                       className={`ml-1 w-16 shrink-0 text-right text-xs tabular-nums ${
                         f.changePct === null ? "" : f.changePct < 0 ? "text-red-800" : "text-teal-800"
