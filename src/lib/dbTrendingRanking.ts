@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { getBestCardImages } from "./dbCardPrints";
+import { getRecentPriceHistoryForOracles } from "./priceArchiveDb";
 
 const RANKING_SIZE = 10;
 
@@ -160,22 +161,26 @@ export async function getTrendingRankingFromDb(): Promise<TrendingRankingRow[]> 
   const lookbackDates = TREND_CHECK_LOOKBACK_DAYS.map((d) => addDays(pivotDate, -d));
   const allDates = [pivotDate, ...lookbackDates];
 
-  const [{ data: priceSeriesRows }, { data: usageSeriesRows }] = await Promise.all([
-    supabase
-      .from("card_cheapest_price_snapshots")
-      .select("oracle_id, jpy_est, date")
-      .in("oracle_id", candidateOracleIds)
-      .in("date", allDates),
-    supabase
-      .from("card_usage_stats")
-      .select("oracle_id, format, usage_rate, calculated_at")
-      .in("oracle_id", candidateOracleIds)
-      .in("calculated_at", allDates),
-  ]);
+  // card_cheapest_price_snapshots（Supabase）は日次の新規書き込みが無くなり常に空のため、
+  // 価格系列はD1（price_history_archive）から取る（必要な日付だけ後でMapから拾う）。
+  const earliestNeededDate = allDates.reduce((min, d) => (d < min ? d : min), allDates[0]);
+  const ORACLE_CHUNK = 50;
+  const priceSeriesRows: { oracle_id: string; jpy_est: number; date: string }[] = [];
+  for (let i = 0; i < candidateOracleIds.length; i += ORACLE_CHUNK) {
+    const chunk = candidateOracleIds.slice(i, i + ORACLE_CHUNK);
+    const rows = await getRecentPriceHistoryForOracles(chunk, earliestNeededDate);
+    priceSeriesRows.push(...rows.map((r) => ({ oracle_id: r.oracleId, jpy_est: r.jpy, date: r.date })));
+  }
+
+  const { data: usageSeriesRows } = await supabase
+    .from("card_usage_stats")
+    .select("oracle_id, format, usage_rate, calculated_at")
+    .in("oracle_id", candidateOracleIds)
+    .in("calculated_at", allDates);
 
   const priceSeriesByOracle = new Map<string, Map<string, number>>();
-  for (const r of priceSeriesRows ?? []) {
-    if (r.jpy_est == null) continue;
+  for (const r of priceSeriesRows) {
+    if (!allDates.includes(r.date)) continue;
     if (!priceSeriesByOracle.has(r.oracle_id)) priceSeriesByOracle.set(r.oracle_id, new Map());
     priceSeriesByOracle.get(r.oracle_id)!.set(r.date, Number(r.jpy_est));
   }

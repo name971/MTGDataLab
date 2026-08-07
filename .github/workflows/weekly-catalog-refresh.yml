@@ -4,10 +4,18 @@ name: Weekly catalog refresh
 # import-full-catalog.mjs / rebuild-card-prints.mjsはupsert方式（on_conflict）なので、
 # 既存データを壊さず新しく増えたカード・プリントだけが反映される。
 # 新セットは4〜8週間おきなので日次パイプラインとは別に週1回だけ実行する。
+#
+# パックEV（generate-pack-data.mjs）は新セットをScryfallから自動検出してDBに反映するだけでなく、
+# src/lib/samplePackData.ts（パックEVページのセットカタログ、ビルドに焼き込まれる静的データ）
+# を丸ごと再生成する。このファイルの変更をリポジトリへ自動コミット＆pushし、変更があった時だけ
+# Cloudflare Workersへ自動デプロイすることで、新セット発売時に手動作業無しで反映されるようにする。
 on:
   schedule:
     - cron: "0 4 * * 1" # 毎週月曜 13:00 JST
   workflow_dispatch:
+
+permissions:
+  contents: write # samplePackData.tsの自動コミット用
 
 jobs:
   refresh:
@@ -16,6 +24,8 @@ jobs:
     env:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - uses: actions/checkout@v4
 
@@ -37,3 +47,34 @@ jobs:
 
       - name: Backfill set icon URLs (sets.icon_svg_uri)
         run: node scripts/backfill-set-icons.mjs
+
+      # 新セットのPlay/Collector Booster対応セット一覧をScryfallから検出し、
+      # src/lib/samplePackData.ts（パックEVのセットカタログ）を再生成する
+      - name: Generate pack EV data (new set detection)
+        run: node scripts/generate-pack-data.mjs
+
+      - name: Import pack slot definitions
+        run: node scripts/import-pack-slots.mjs
+
+      - name: Import pack slot cards
+        run: node scripts/import-pack-slot-cards.mjs
+
+      - name: Commit regenerated pack catalog if changed
+        id: pack_catalog
+        run: |
+          if git diff --quiet -- src/lib/samplePackData.ts; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add src/lib/samplePackData.ts
+            git commit -m "chore: パックEVカタログを自動更新（新セット検出、generate-pack-data.mjs）"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # パックEVのセットカタログはビルド時に静的に焼き込まれるため、変更があった時だけ
+      # 実際にデプロイし直さないと新セットがサイトに反映されない
+      - name: Deploy to Cloudflare Workers
+        if: steps.pack_catalog.outputs.changed == 'true'
+        run: npm run deploy

@@ -3,6 +3,7 @@ import type { Format } from "./formats";
 import type { RankingRow } from "./sampleRankingData";
 import { colorsFromManaCost } from "./manaColors";
 import { getBestCardImages } from "./dbCardPrints";
+import { getRecentPriceHistoryForOracles } from "./priceArchiveDb";
 
 // 色フィルタで絞り込んでも表示件数が残るよう、表示用（20件）より広めに候補を取得する
 const TOP_N = 100;
@@ -79,21 +80,18 @@ export async function getCardRankingFromDb(
 
   if (topOracleIds.length === 0) return [];
 
-  // card_cheapest_price_snapshotsはtopOracleId(最大100件)×蓄積日数分の行があり、蓄積が進むと
-  // 1000行を超える（例: 100件×10日で1000行）。ページングしないと日付降順の後方＝
-  // 一部オラクルの直近データが切り捨てられ、priceChangePctが不正確になる。
-  const PRICE_PAGE_SIZE = 1000;
+  // card_cheapest_price_snapshots（Supabase）は日次の新規書き込みが無くなり常に空のため、
+  // 価格変化率の元データはD1（price_history_archive）から取る。3日前との比較に十分な
+  // マージンを持たせて直近10日分を取得する（D1のバインド変数上限に備えチャンクする）。
+  const sinceDate = new Date();
+  sinceDate.setUTCDate(sinceDate.getUTCDate() - 10);
+  const sinceDateStr = sinceDate.toISOString().slice(0, 10);
+  const ORACLE_CHUNK = 50;
   const priceRows: { oracle_id: string; jpy_est: number | null; date: string }[] = [];
-  for (let offset = 0; ; offset += PRICE_PAGE_SIZE) {
-    const { data: page, error } = await supabase
-      .from("card_cheapest_price_snapshots")
-      .select("oracle_id, jpy_est, date")
-      .in("oracle_id", topOracleIds)
-      .order("date", { ascending: false })
-      .range(offset, offset + PRICE_PAGE_SIZE - 1);
-    if (error || !page || page.length === 0) break;
-    priceRows.push(...page);
-    if (page.length < PRICE_PAGE_SIZE) break;
+  for (let i = 0; i < topOracleIds.length; i += ORACLE_CHUNK) {
+    const chunk = topOracleIds.slice(i, i + ORACLE_CHUNK);
+    const rows = await getRecentPriceHistoryForOracles(chunk, sinceDateStr);
+    priceRows.push(...rows.map((r) => ({ oracle_id: r.oracleId, jpy_est: r.jpy, date: r.date })));
   }
 
   const [{ data: oracles }, { data: cardRows }, bestImageByOracle, { data: currentPriceRows }] = await Promise.all([

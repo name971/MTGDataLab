@@ -68,6 +68,41 @@ export async function getArchivedPriceHistory(
 }
 
 /**
+ * price_history_archiveから、複数オラクル分・指定日以降の価格系列を一括取得する。
+ * card_cheapest_price_snapshots（Supabase）は日次の新規書き込みが無くなり常に空のため、
+ * カードランキングの価格変化率（src/lib/dbCardRanking.ts）はこちら（D1）を見る必要がある。
+ * D1のバインド変数上限に備え、oracleIdsは呼び出し側でチャンク済みである前提（1回あたり50件目安）。
+ */
+export async function getRecentPriceHistoryForOracles(
+  oracleIds: string[],
+  sinceDate: string,
+): Promise<{ oracleId: string; date: string; jpy: number }[]> {
+  if (oracleIds.length === 0) return [];
+  try {
+    const { getCloudflareContext } = await import("@opennextjs/cloudflare");
+    const { env } = await getCloudflareContext({ async: true });
+    const db = (env as unknown as Env).PRICE_ARCHIVE_DB;
+    if (!db) return [];
+
+    const placeholders = oracleIds.map((_, i) => `?${i + 2}`).join(",");
+    const result = await db
+      .prepare(
+        `SELECT oracle_id, date, jpy_est FROM price_history_archive WHERE date >= ?1 AND jpy_est IS NOT NULL AND oracle_id IN (${placeholders}) ORDER BY date ASC`,
+      )
+      .bind(sinceDate, ...oracleIds)
+      .all<{ oracle_id: string; date: string; jpy_est: number }>();
+
+    return (result.results ?? []).map((row) => ({
+      oracleId: row.oracle_id,
+      date: row.date,
+      jpy: Number(row.jpy_est),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/**
  * print_price_history_archive（scripts/archive-old-print-prices.mjs）から、特定プリント
  * （scryfall_id単位）の過去USD価格を取得する。個別プリントの価格推移グラフ用
  * （src/lib/dbCardPrintPrices.ts、getPrintPriceHistory）。JPY換算は呼び出し側で行う

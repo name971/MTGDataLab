@@ -164,7 +164,7 @@ function CardRankRow({
         <p className="truncate text-xs text-neutral-500">{row.nameEn}</p>
         <div className="mt-1 flex items-start justify-between text-sm">
           <span className="flex flex-col">
-            <span className="whitespace-nowrap text-[10px] text-neutral-400">価格上昇率</span>
+            <span className="whitespace-nowrap text-[10px] text-neutral-400">価格変化率</span>
             <span className={row.priceChangePct >= 0 ? "text-teal-800" : "text-red-800"}>
               {row.priceChangePct >= 0 ? "+" : ""}
               {row.priceChangePct.toFixed(1)}%
