@@ -496,12 +496,14 @@ export default function CardHero({
           />
         )}
 
-        <div className="rounded-lg border border-neutral-200 p-4">
-          <h2 className="mb-3 text-sm font-medium text-neutral-500">フォーマットリーガル</h2>
-          <LegalityGrid legalities={legalities} disabled={current.notTournamentLegal} />
-        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="rounded-lg border border-neutral-200 p-3">
+            <h2 className="mb-2 text-sm font-medium text-neutral-500">フォーマットリーガル</h2>
+            <LegalityGrid legalities={legalities} disabled={current.notTournamentLegal} />
+          </div>
 
-        {children}
+          {children}
+        </div>
       </div>
 
       <div className="rounded-lg border border-neutral-200 p-4 sm:w-80 sm:shrink-0">
