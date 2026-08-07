@@ -25,9 +25,16 @@ import { join } from "node:path";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const D1_DATABASE_NAME = process.env.D1_DATABASE_NAME ?? "jp-mtgstocks-archive";
+const D1_DATABASE_ID = process.env.D1_DATABASE_ID ?? "a3f8dcb4-80d1-4dba-81dd-9ecd900e7623";
+const CLOUDFLARE_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
+const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error("NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY を設定してください");
+  process.exit(1);
+}
+if (!CLOUDFLARE_ACCOUNT_ID || !CLOUDFLARE_API_TOKEN) {
+  console.error("CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN を設定してください（検証クエリ用）");
   process.exit(1);
 }
 
@@ -36,7 +43,7 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 // 見て毎回計算し直す設計なので、両方とも同じ60日（streak計算が必要とする範囲）に揃えて
 // 間引いても計算の土台は壊れない（この2つのアーカイブは週次ワークフローで独立に動くため、
 // 実行順序を気にする必要もない）。
-const ARCHIVE_CUTOFF_DAYS = 0; // 一時的に全件移行用
+const ARCHIVE_CUTOFF_DAYS = 60;
 const PAGE_SIZE = 1000;
 const SQL_BATCH_SIZE = 150; // 1行あたりusd/usd_foil2列×バインド変数、SQLite上限対策で保守的に
 
@@ -95,23 +102,29 @@ function d1ExecuteFile(sql) {
   }
 }
 
-// --command=にSQLをインライン指定すると、Windowsのcmd.exe（shell:true経由）がSQL中の
-// "<"をリダイレクト記号として解釈してしまい壊れる（実際に検証クエリで発生した）。
-// d1ExecuteFileと同様、一時ファイル経由の--fileにすることでシェルの特殊文字を回避する。
-function d1QueryJson(sql) {
-  const dir = mkdtempSync(join(tmpdir(), "d1-query-"));
-  const filePath = join(dir, "query.sql");
-  writeFileSync(filePath, sql, "utf-8");
-  try {
-    const out = execFileSync(
-      "npx",
-      ["wrangler", "d1", "execute", D1_DATABASE_NAME, "--remote", `--file=${filePath}`, "--json"],
-      { encoding: "utf-8", shell: true },
-    );
-    return JSON.parse(out);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
+// SELECT結果の行データが必要な検証クエリは、wrangler CLI経由だと2つの問題があった:
+// 1. --command=にSQLをインライン指定すると、Windowsのcmd.exe（shell:true経由）がSQL中の
+//    "<"をリダイレクト記号として解釈してしまい壊れる
+// 2. --file=に切り替えると回避はできるが、--jsonの出力がクエリ結果ではなく
+//    実行統計（Rows read/written等）になってしまい、SELECTの行データが取れない
+// そのためCloudflare D1のHTTP APIを直接叩く（サブプロセス・シェル解釈を経由しない）。
+async function d1QueryJson(sql) {
+  const res = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${CLOUDFLARE_API_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ sql }),
+    },
+  );
+  const body = await res.json();
+  if (!res.ok || !body.success) {
+    throw new Error(`D1 query failed: ${res.status} ${JSON.stringify(body.errors ?? body)}`);
   }
+  return body.result;
 }
 
 // wranglerのサブプロセス起動オーバーヘッドを抑えるため、複数のINSERT文を1ファイルにまとめて
@@ -182,7 +195,7 @@ async function main() {
   insertArchiveRows(archiveRows);
 
   // D1側に書き込めた件数を検証してからでないとSupabase側のJSONBは削らない
-  const countJson = d1QueryJson(
+  const countJson = await d1QueryJson(
     `SELECT COUNT(*) AS c FROM print_price_history_archive WHERE date < '${cutoffStr}'`,
   );
   const archivedCount = countJson[0]?.results?.[0]?.c ?? 0;
