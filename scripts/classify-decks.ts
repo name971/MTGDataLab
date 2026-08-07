@@ -142,9 +142,9 @@ async function main() {
   ).values()];
   await supabaseUpsert("archetypes", dedupedRows, "format,name");
 
-  const savedArchetypes: { id: number; name: string }[] = await supabaseGet(
+  const savedArchetypes = (await supabaseGet(
     `archetypes?format=eq.${FORMAT}&select=id,name`,
-  );
+  )) as { id: number; name: string }[];
   const archetypeIdByName = new Map(savedArchetypes.map((a) => [a.name, a.id]));
 
   // 対象フォーマットのデッキを取得して分類。oracle_id解決済みの行はcard_nameをNULLに

@@ -13,13 +13,13 @@ export async function fetchExchangeRates(): Promise<ExchangeRates> {
     "https://api.frankfurter.dev/v1/latest?base=USD&symbols=JPY,EUR",
     FX_FETCH_OPTIONS,
   );
-  const data = await res.json();
+  const data = (await res.json()) as { rates: { JPY: number } };
   const usdToJpy: number = data.rates.JPY;
   const eurToJpyRes = await fetch(
     "https://api.frankfurter.dev/v1/latest?base=EUR&symbols=JPY",
     FX_FETCH_OPTIONS,
   );
-  const eurData = await eurToJpyRes.json();
+  const eurData = (await eurToJpyRes.json()) as { rates: { JPY: number } };
   return { usdToJpy, eurToJpy: eurData.rates.JPY };
 }
 

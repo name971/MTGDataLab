@@ -267,6 +267,6 @@ export async function fetchPriceByScryfallId(
     next: { revalidate: 3600 },
   });
   if (!res.ok) return null;
-  const data = await res.json();
+  const data = (await res.json()) as { prices?: { usd?: string | null } };
   return { usd: data.prices?.usd ?? null };
 }

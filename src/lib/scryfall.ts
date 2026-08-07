@@ -169,7 +169,7 @@ export async function fetchJapanesePrint(
     ...SCRYFALL_FETCH_OPTIONS,
   });
   if (!res.ok) return null;
-  const data = await res.json();
+  const data = (await res.json()) as { data?: ScryfallCard[] };
   let prints: ScryfallCard[] = data.data ?? [];
   if (prints.length === 0) return null;
   if (opts?.excludeUniversesBeyond) {

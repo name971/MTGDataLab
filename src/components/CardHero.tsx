@@ -250,7 +250,9 @@ export default function CardHero({
         fetch(`/api/print-price?scryfallId=${p.scryfallId}`),
         fetch(`/api/print-price?scryfallId=${p.scryfallId}&finish=foil`),
       ]);
-      const [normalData, foilData] = await Promise.all([normalRes.json(), foilRes.json()]);
+      const [normalData, foilData] = (await Promise.all([normalRes.json(), foilRes.json()])) as {
+        history?: PricePoint[];
+      }[];
       setSelectedHistory(normalData.history ?? []);
       setSelectedFoilHistory(foilData.history ?? []);
     } catch {

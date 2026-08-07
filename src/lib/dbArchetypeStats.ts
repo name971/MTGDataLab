@@ -91,7 +91,7 @@ export async function getArchetypesFromDb(
 
   const medianPriceByArchetype = await getMedianPriceByArchetype(deckIdsByArchetype);
 
-  const rows: ArchetypeRow[] = archetypes
+  const rows = archetypes
     .map((a) => {
       const price = medianPriceByArchetype.get(a.id);
       if (!price) return null;
@@ -110,8 +110,8 @@ export async function getArchetypesFromDb(
         representativeArtUrls: artUrls.length > 1 ? artUrls : undefined,
       };
     })
-    .filter((r): r is ArchetypeRow => r !== null)
-    .sort((a, b) => b.usageRatePct - a.usageRatePct);
+    .filter((r) => r !== null) as ArchetypeRow[];
+  rows.sort((a, b) => b.usageRatePct - a.usageRatePct);
 
   return rows;
 }

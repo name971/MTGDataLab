@@ -33,8 +33,8 @@ export default function SearchBar() {
     const controller = new AbortController();
     const timer = setTimeout(() => {
       fetch(`/api/search-suggest?q=${encodeURIComponent(trimmed)}`, { signal: controller.signal })
-        .then((res) => res.json())
-        .then((data: { results: Suggestion[] }) => {
+        .then((res) => res.json() as Promise<{ results: Suggestion[] }>)
+        .then((data) => {
           setSuggestions(data.results);
           setIsOpen(true);
         })

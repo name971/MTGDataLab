@@ -160,7 +160,7 @@ export async function getCardRankingFromDb(
     }
   }
 
-  const rows: RankingRow[] = topOracleIds
+  const rows = topOracleIds
     .map((oracleId) => {
       const oracle = nameByOracle.get(oracleId);
       const priceJpy = priceByOracle.get(oracleId);
@@ -178,7 +178,7 @@ export async function getCardRankingFromDb(
         colors: colorsFromManaCost(manaCostByOracle.get(oracleId)),
       } satisfies RankingRow;
     })
-    .filter((r): r is RankingRow => r !== null);
+    .filter((r) => r !== null) as RankingRow[];
 
   return rows;
 }
