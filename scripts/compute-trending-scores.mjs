@@ -10,12 +10,47 @@
  * 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... node scripts/compute-trending-scores.mjs
  */
 
+import { execFileSync } from "node:child_process";
+
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const D1_DATABASE_NAME = process.env.D1_DATABASE_NAME ?? "jp-mtgstocks-archive";
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error("NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY を設定してください");
   process.exit(1);
+}
+if (!process.env.CLOUDFLARE_API_TOKEN || !process.env.CLOUDFLARE_ACCOUNT_ID) {
+  console.error("CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID を設定してください（価格履歴の取得元がD1のため）");
+  process.exit(1);
+}
+
+// 日次価格履歴はcard_cheapest_price_snapshots（Supabase）ではなくD1
+// （price_history_archive、scripts/compute-cheapest-price-snapshots.mjsが日次で書き込む）
+// 側にしかない（DB容量超過対応の再設計でSupabase側は「今の価格」1行キャッシュのみになった）。
+function d1QueryViaCli(sql) {
+  const out = execFileSync(
+    "npx",
+    ["wrangler", "d1", "execute", D1_DATABASE_NAME, "--remote", "--json", `--command="${sql}"`],
+    { shell: true, encoding: "utf-8", maxBuffer: 1024 * 1024 * 100 },
+  );
+  const jsonStart = out.indexOf("[");
+  const body = JSON.parse(out.slice(jsonStart));
+  return body[0]?.results ?? [];
+}
+
+async function findLatestD1DateAtOrBefore(targetDate) {
+  const rows = d1QueryViaCli(
+    `SELECT MAX(date) AS d FROM price_history_archive WHERE date <= '${targetDate}'`,
+  );
+  return rows[0]?.d ?? null;
+}
+
+async function getD1PricesForDate(date) {
+  if (!date) return [];
+  return d1QueryViaCli(
+    `SELECT oracle_id, jpy_est FROM price_history_archive WHERE date = '${date}' AND jpy_est IS NOT NULL`,
+  );
 }
 
 const LOOKBACK_DAYS = 3;
@@ -93,18 +128,8 @@ async function main() {
   // 価格は「代表プリント」ではなく、カード詳細ページと同じ「全プリント中の最安値」
   // （card_cheapest_price_snapshots）を基準にする。代表プリントは選び直しの頻度が低く、
   // より安いプリントが出ても反映されないため、値上がり検知の基準としてはズレることがあった。
-  const resolvedTodayPriceDate = await findLatestDateAtOrBefore(
-    "card_cheapest_price_snapshots",
-    "date",
-    "",
-    todayStr,
-  );
-  const resolvedPastPriceDate = await findLatestDateAtOrBefore(
-    "card_cheapest_price_snapshots",
-    "date",
-    "",
-    pastStr,
-  );
+  const resolvedTodayPriceDate = await findLatestD1DateAtOrBefore(todayStr);
+  const resolvedPastPriceDate = await findLatestD1DateAtOrBefore(pastStr);
   if (!resolvedTodayPriceDate || !resolvedPastPriceDate) {
     console.log(
       `価格スナップショットに${pastStr}以前のデータがありません（${LOOKBACK_DAYS}日分の蓄積待ち）。trending_scoresの計算をスキップします。`,
@@ -114,8 +139,8 @@ async function main() {
 
   // ── 価格の3日変化（フォーマット非依存、oracle_id単位） ──
   const [priceToday, pricePast] = await Promise.all([
-    supabaseGet(`card_cheapest_price_snapshots?select=oracle_id,jpy_est&date=eq.${resolvedTodayPriceDate}`),
-    supabaseGet(`card_cheapest_price_snapshots?select=oracle_id,jpy_est&date=eq.${resolvedPastPriceDate}`),
+    getD1PricesForDate(resolvedTodayPriceDate),
+    getD1PricesForDate(resolvedPastPriceDate),
   ]);
 
   const pricePastMap = new Map(pricePast.map((r) => [r.oracle_id, Number(r.jpy_est)]));
@@ -136,15 +161,8 @@ async function main() {
   const yesterdayDate = new Date(today);
   yesterdayDate.setDate(yesterdayDate.getDate() - 1);
   const yesterdayDateStr = isoDate(yesterdayDate);
-  const resolvedYesterdayPriceDate = await findLatestDateAtOrBefore(
-    "card_cheapest_price_snapshots",
-    "date",
-    "",
-    yesterdayDateStr,
-  );
-  const priceYesterday = resolvedYesterdayPriceDate
-    ? await supabaseGet(`card_cheapest_price_snapshots?select=oracle_id,jpy_est&date=eq.${resolvedYesterdayPriceDate}`)
-    : [];
+  const resolvedYesterdayPriceDate = await findLatestD1DateAtOrBefore(yesterdayDateStr);
+  const priceYesterday = await getD1PricesForDate(resolvedYesterdayPriceDate);
   const priceYesterdayMap = new Map(priceYesterday.map((r) => [r.oracle_id, Number(r.jpy_est)]));
 
   const resolvedTodayUsageDate = await findLatestDateAtOrBefore("card_usage_stats", "calculated_at", "", todayStr);

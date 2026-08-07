@@ -110,12 +110,9 @@ async function main() {
   }
   const decks = deckMetas.map((d) => ({ ...d, deck_cards: deckCardsByDeckId.get(d.id) ?? [] }));
 
-  // card_cheapest_price_snapshots（本日分、全プリント横断の最安値）を oracle_id -> jpy_est でマップ化
-  // （旧card_price_snapshots＝代表プリント単体の日次価格は、どこからも読まれない未使用テーブルに
-  // なっていたため削除済み。カード詳細ページと同じ基準に統一する意味でもこちらへの移行が適切）
-  const snapshots = await supabaseGet(
-    `card_cheapest_price_snapshots?select=oracle_id,jpy_est&date=eq.${today}`
-  );
+  // card_current_prices（1オラクル1行、全プリント横断の最安値の現在値キャッシュ）を
+  // oracle_id -> jpy_est でマップ化（card_cheapest_price_snapshotsはD1移行済みで常に空のため使えない）
+  const snapshots = await supabaseGet(`card_current_prices?select=oracle_id,jpy_est`);
   const priceByOracle = new Map(snapshots.map((s) => [s.oracle_id, Number(s.jpy_est)]));
   console.log(`本日の価格スナップショット: ${priceByOracle.size}件`);
 
