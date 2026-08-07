@@ -89,7 +89,12 @@ CREATE INDEX idx_cards_set_code ON cards (set_code);
 -- 重複保持すると容量を無駄に食うため、正規化して数百行のこちらだけに持たせる。
 CREATE TABLE sets (
   set_code TEXT PRIMARY KEY,
-  set_name TEXT NOT NULL
+  set_name TEXT NOT NULL,
+  -- Scryfallのセットシンボル画像URL。ScryfallのカードバルクデータにはSecret Lair Drop等の
+  -- 特殊セットのアイコンURLが含まれない（`https://svgs.scryfall.io/sets/<set_code>.svg`という
+  -- 命名規則が成り立たないセットがある、例: sld → star.svg）ため、Scryfallの/setsエンドポイント
+  -- （scripts/backfill-set-icons.mjs）から別途取得して埋める。無ければNULL（表示側でフォールバック）。
+  icon_svg_uri TEXT
 );
 
 CREATE TABLE card_prints (

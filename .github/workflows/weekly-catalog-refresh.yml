@@ -34,3 +34,6 @@ jobs:
 
       - name: Rebuild card_prints (all versions) and sets
         run: node scripts/rebuild-card-prints.mjs
+
+      - name: Backfill set icon URLs (sets.icon_svg_uri)
+        run: node scripts/backfill-set-icons.mjs

@@ -130,6 +130,7 @@ export default async function CardPrintDetailPage({
           enHistory={priceHistory}
           enFoilHistory={foilPriceHistory}
           finish="normal"
+          iconUrlBySetCode={{}}
         />
       )}
 

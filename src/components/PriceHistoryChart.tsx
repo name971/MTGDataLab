@@ -15,15 +15,23 @@ const WIDTH = 600;
 const HEIGHT = 280;
 const PADDING = { top: 12, right: 12, bottom: 24, left: 56 };
 
+/** sets.icon_svg_uri（正しいURL）が無ければ、大半のセットで成り立つ命名規則にフォールバックする */
+function setIconUrl(setCode: string, iconUrlBySetCode: Record<string, string>): string {
+  return iconUrlBySetCode[setCode] ?? `https://svgs.scryfall.io/sets/${setCode}.svg`;
+}
+
 export default function PriceHistoryChart({
   enHistory,
   enFoilHistory,
   finish,
+  iconUrlBySetCode,
 }: {
   enHistory: PricePoint[];
   enFoilHistory: PricePoint[];
   /** 通常/Foilの切り替えはCardHero側の1箇所（価格表示と共通）で行うため、ここでは制御下で受け取るだけ */
   finish: "normal" | "foil";
+  /** set_code -> Scryfallの正しいセットシンボル画像URL（CardHero.tsx参照） */
+  iconUrlBySetCode: Record<string, string>;
 }) {
   const [period, setPeriod] = useState<Period>("30");
 
@@ -74,13 +82,19 @@ export default function PriceHistoryChart({
       ) : points.length === 0 ? (
         <p className="py-6 text-center text-xs text-neutral-500">この期間のデータはありません。</p>
       ) : (
-        <ChartSvg points={points} />
+        <ChartSvg points={points} iconUrlBySetCode={iconUrlBySetCode} />
       )}
     </div>
   );
 }
 
-function ChartSvg({ points }: { points: PricePoint[] }) {
+function ChartSvg({
+  points,
+  iconUrlBySetCode,
+}: {
+  points: PricePoint[];
+  iconUrlBySetCode: Record<string, string>;
+}) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
   const prices = points.map((p) => p.jpy);
@@ -162,7 +176,7 @@ function ChartSvg({ points }: { points: PricePoint[] }) {
           return (
             <image
               key={`icon-${p.date}`}
-              href={`https://svgs.scryfall.io/sets/${p.setCode}.svg`}
+              href={setIconUrl(p.setCode, iconUrlBySetCode)}
               x={xFor(i) - size / 2}
               y={yFor(p.jpy) - size - 10}
               width={size}
@@ -211,7 +225,7 @@ function ChartSvg({ points }: { points: PricePoint[] }) {
                   {hovered.setCode && (
                     <>
                       <image
-                        href={`https://svgs.scryfall.io/sets/${hovered.setCode}.svg`}
+                        href={setIconUrl(hovered.setCode, iconUrlBySetCode)}
                         x={10}
                         y={9}
                         width={15}

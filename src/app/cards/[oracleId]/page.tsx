@@ -19,7 +19,7 @@ import { getArchetypesUsingCard } from "@/lib/sampleDeckDetail";
 import { getFormatUsageCountsForCard } from "@/lib/dbCardUsageByFormat";
 import type { PricePoint } from "@/lib/dbPriceHistory";
 import { getCheapestPriceHistory, getLatestCheapestPrice } from "@/lib/dbCheapestPrice";
-import { getOtherPrintsForCard, getBestCardImage } from "@/lib/dbCardPrints";
+import { getOtherPrintsForCard, getBestCardImage, getIconUrlBySetCodes } from "@/lib/dbCardPrints";
 import { getLatestPricesForPrints } from "@/lib/dbCardPrintPrices";
 import { translateTypeLine } from "@/lib/typeGlossary";
 import CardHero from "@/components/CardHero";
@@ -273,6 +273,12 @@ export default async function CardDetailPage({
   // （カードデータが参照している最安値のプリントも、他のプリントと同列の1行として一覧に出したい）。
   const otherPrints = card.oracleId ? await getOtherPrintsForCard(card.oracleId) : [];
   const otherPrintPrices = await getLatestPricesForPrints(otherPrints.map((p) => p.scryfallId));
+  const iconUrlBySetCode = await getIconUrlBySetCodes([
+    card.setCode,
+    ...otherPrints.map((p) => p.setCode),
+    ...enPriceHistory.map((p) => p.setCode).filter((c): c is string => !!c),
+    ...enFoilPriceHistory.map((p) => p.setCode).filter((c): c is string => !!c),
+  ]);
 
   // 「カードデータ」欄のレアリティは代表プリント1件のものではなく、これまでに出た全プリントの
   // レアリティを集計して表示する（再録でレアリティが変わることがあるため）。
@@ -324,6 +330,7 @@ export default async function CardDetailPage({
         pricesByScryfallId={Object.fromEntries(otherPrintPrices.normal)}
         foilPricesByScryfallId={Object.fromEntries(otherPrintPrices.foil)}
         legalities={card.legalities}
+        iconUrlBySetCode={iconUrlBySetCode}
       >
         <div className="rounded-lg border border-neutral-200 p-4">
           <h2 className="mb-2 text-sm font-medium text-neutral-500">使用デッキ</h2>

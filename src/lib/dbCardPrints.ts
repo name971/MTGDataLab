@@ -192,3 +192,21 @@ export async function getCardPrintByScryfallId(scryfallId: string): Promise<Card
 
   return toCardPrint(data);
 }
+
+/**
+ * セットシンボル画像URL（sets.icon_svg_uri、db/schema.sql参照）をset_code単位で一括取得する。
+ * `https://svgs.scryfall.io/sets/<set_code>.svg`という命名規則は一部の特殊セット
+ * （Secret Lair Drop=sld→star.svg等）では成り立たないため、Scryfallの/setsから同期した
+ * 正しいURLをこちらで持つ（scripts/backfill-set-icons.mjs）。無い場合はnullを返す
+ * （呼び出し側で従来の命名規則によるフォールバックURLを使う）。
+ */
+export async function getIconUrlBySetCodes(setCodes: string[]): Promise<Record<string, string>> {
+  const uniqueCodes = [...new Set(setCodes)];
+  if (uniqueCodes.length === 0) return {};
+  const { data } = await supabase.from("sets").select("set_code, icon_svg_uri").in("set_code", uniqueCodes);
+  const result: Record<string, string> = {};
+  for (const row of data ?? []) {
+    if (row.icon_svg_uri) result[row.set_code] = row.icon_svg_uri;
+  }
+  return result;
+}

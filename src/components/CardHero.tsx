@@ -16,6 +16,11 @@ const VISIBLE_COUNT = 20;
 // 一度に開くと大量の行が一気に出て違和感があるため、クリックごとに少しずつ増やす。
 const LOAD_MORE_STEP = 30;
 
+/** sets.icon_svg_uri（正しいURL）が無ければ、大半のセットで成り立つ命名規則にフォールバックする */
+function setIconUrl(setCode: string, iconUrlBySetCode: Record<string, string>): string {
+  return iconUrlBySetCode[setCode] ?? `https://svgs.scryfall.io/sets/${setCode}.svg`;
+}
+
 /** "2026-07-25" -> "2026/7/25" */
 function formatDateSlash(isoDate: string): string {
   const [y, m, d] = isoDate.split("-");
@@ -150,6 +155,7 @@ export default function CardHero({
   pricesByScryfallId,
   foilPricesByScryfallId,
   legalities,
+  iconUrlBySetCode,
   children,
 }: {
   oracleId: string;
@@ -160,6 +166,10 @@ export default function CardHero({
   pricesByScryfallId: Record<string, number>;
   foilPricesByScryfallId: Record<string, number>;
   legalities: Record<string, string>;
+  /** set_code -> Scryfallの正しいセットシンボル画像URL（db/schema.sql sets.icon_svg_uri参照）。
+   * 無いset_codeは呼び出し側で`https://svgs.scryfall.io/sets/<code>.svg`の命名規則に
+   * フォールバックする（大半のセットはこれで正しいが、Secret Lair Drop等一部は例外）。 */
+  iconUrlBySetCode: Record<string, string>;
   /** グラフの下・プリント一覧とは独立した左カラムに差し込む追加コンテンツ（使用デッキ等） */
   children?: ReactNode;
 }) {
@@ -493,6 +503,7 @@ export default function CardHero({
             enHistory={enHistory}
             enFoilHistory={enFoilHistoryForChart}
             finish={effectiveFinish}
+            iconUrlBySetCode={iconUrlBySetCode}
           />
         )}
 
@@ -511,7 +522,7 @@ export default function CardHero({
           {isAlternate ? (
             // eslint-disable-next-line @next/next/no-img-element -- ScryfallのSVGアイコンCDN、next/imageの最適化対象外の小さな外部SVG
             <img
-              src={`https://svgs.scryfall.io/sets/${current.setCode}.svg`}
+              src={setIconUrl(current.setCode, iconUrlBySetCode)}
               alt=""
               width={22}
               height={22}
@@ -644,7 +655,7 @@ export default function CardHero({
                         >
                           {/* eslint-disable-next-line @next/next/no-img-element -- ScryfallのSVGアイコンCDN、next/imageの最適化対象外の小さな外部SVG */}
                           <img
-                            src={`https://svgs.scryfall.io/sets/${p.setCode}.svg`}
+                            src={setIconUrl(p.setCode, iconUrlBySetCode)}
                             alt=""
                             width={14}
                             height={14}
