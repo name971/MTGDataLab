@@ -326,7 +326,7 @@ export default async function CardDetailPage({
         legalities={card.legalities}
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:max-w-md">
+      <div className="grid grid-cols-1 gap-4">
         <div className="rounded-lg border border-neutral-200 p-4">
           <h2 className="mb-2 text-sm font-medium text-neutral-500">使用デッキ</h2>
           <div className="mb-3 flex items-center gap-1">
@@ -345,7 +345,7 @@ export default async function CardDetailPage({
             ))}
           </div>
           {formatUsageCounts.length > 0 ? (
-            <ul className="flex flex-col gap-1.5 text-sm">
+            <ul className="grid grid-cols-1 gap-1.5 text-sm sm:grid-cols-2 lg:grid-cols-3">
               {formatUsageCounts.map((f) => (
                 <li key={f.format} className="flex items-center justify-between gap-2">
                   <Link
