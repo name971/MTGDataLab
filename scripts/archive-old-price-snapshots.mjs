@@ -33,7 +33,7 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 // 参照するのは直近60日程度（compute-card-streaks.mjsのSTREAK_LOOKBACK_DAYS参照）。
 // 以前は安全マージンを取って90日にしていたが、増加ペースに対して緩すぎたため、
 // streak計算が必要とするちょうど60日（マージン無し）まで縮めた。
-const ARCHIVE_CUTOFF_DAYS = 60;
+const ARCHIVE_CUTOFF_DAYS = 0; // 一時的に全件移行用
 const PAGE_SIZE = 1000;
 const SQL_BATCH_SIZE = 200; // 1回のINSERT文に含める行数（SQLiteのバインド変数上限対策）
 
@@ -86,13 +86,23 @@ function d1ExecuteFile(sql) {
   }
 }
 
+// --command=にSQLをインライン指定すると、Windowsのcmd.exe（shell:true経由）がSQL中の
+// "<"をリダイレクト記号として解釈してしまい壊れる（実際に検証クエリで発生した）。
+// d1ExecuteFileと同様、一時ファイル経由の--fileにすることでシェルの特殊文字を回避する。
 function d1QueryJson(sql) {
-  const out = execFileSync(
-    "npx",
-    ["wrangler", "d1", "execute", D1_DATABASE_NAME, "--remote", `--command=${sql}`, "--json"],
-    { encoding: "utf-8", shell: true },
-  );
-  return JSON.parse(out);
+  const dir = mkdtempSync(join(tmpdir(), "d1-query-"));
+  const filePath = join(dir, "query.sql");
+  writeFileSync(filePath, sql, "utf-8");
+  try {
+    const out = execFileSync(
+      "npx",
+      ["wrangler", "d1", "execute", D1_DATABASE_NAME, "--remote", `--file=${filePath}`, "--json"],
+      { encoding: "utf-8", shell: true },
+    );
+    return JSON.parse(out);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 // wranglerのサブプロセス起動オーバーヘッドを抑えるため、複数のINSERT文を1ファイルにまとめて

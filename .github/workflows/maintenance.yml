@@ -15,9 +15,12 @@ on:
           - import-full-catalog
           - cleanup-duplicate-cards
           - snapshot-print-prices
+          - compute-cheapest-price-snapshots
           - compute-deck-stats
           - compute-card-streaks
           - prune-old-usage-stats
+          - archive-old-price-snapshots
+          - archive-old-print-prices
 
 jobs:
   run:
@@ -26,6 +29,10 @@ jobs:
     env:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      # snapshot-print-prices / compute-cheapest-price-snapshots / archive-old-*がwrangler d1
+      # 経由でD1に直接書き込むようになったため必要（DB容量超過対応の再設計）。
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - uses: actions/checkout@v4
 
