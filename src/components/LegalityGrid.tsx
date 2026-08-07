@@ -35,8 +35,8 @@ export default function LegalityGrid({
       {FORMATS.map((format) => {
         const status = disabled ? "print_not_legal" : (legalities[formatSlug(format)] ?? "not_legal");
         return (
-          <div key={format} className="flex items-center justify-between gap-2">
-            <dt className="text-neutral-600">{format}</dt>
+          <div key={format} className="flex w-fit items-center gap-2">
+            <dt className="w-24 text-neutral-600">{format}</dt>
             <dd
               className={`font-semibold ${disabled ? "text-red-800" : (STATUS_CLASS[status] ?? "text-neutral-400")}`}
               title={disabled ? "このプリントは使用不可" : (STATUS_TITLE[status] ?? status)}

@@ -347,10 +347,10 @@ export default async function CardDetailPage({
           {formatUsageCounts.length > 0 ? (
             <ul className="grid grid-cols-1 gap-1.5 text-sm sm:grid-cols-2 lg:grid-cols-3">
               {formatUsageCounts.map((f) => (
-                <li key={f.format} className="flex items-center justify-between gap-2">
+                <li key={f.format} className="flex w-fit items-center gap-2">
                   <Link
                     href={`/cards/${oracleId}/decks?format=${encodeURIComponent(f.format)}&period=${usagePeriodDays}`}
-                    className="hover:underline"
+                    className="w-24 hover:underline"
                   >
                     {f.format}
                   </Link>
