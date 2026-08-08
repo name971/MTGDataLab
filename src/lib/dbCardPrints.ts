@@ -52,20 +52,29 @@ const CARD_PRINT_SELECT =
  */
 export async function getOtherPrintsForCard(oracleId: string): Promise<CardPrint[]> {
   // 基本土地等は700件超のプリントを持ち、PostgRESTのデフォルト上限（1000行）に近い/超える
-  // ことがある。降順ソートなので今のところ先頭（新しい方）は守られるが、将来的に
-  // 1000件を超えるカードが増えることも考え、念のためページングしておく。
+  // ことがある。1000件を超えるカードは稀なので、まず1ページ取得し、ちょうど1000件
+  // 返ってきた（＝続きがある可能性がある）場合だけ追加ページを並列取得する。
   const PAGE_SIZE = 1000;
-  const data: CardPrintRow[] = [];
-  for (let offset = 0; ; offset += PAGE_SIZE) {
-    const { data: page, error } = await supabase
+  const { data: firstPage, error } = await supabase
+    .from("card_prints")
+    .select(CARD_PRINT_SELECT)
+    .eq("oracle_id", oracleId)
+    .order("released_at", { ascending: false })
+    .range(0, PAGE_SIZE - 1)
+    .returns<CardPrintRow[]>();
+  if (error) return [];
+  if (!firstPage || firstPage.length < PAGE_SIZE) return (firstPage ?? []).map(toCardPrint);
+
+  const data = [...firstPage];
+  for (let offset = PAGE_SIZE; ; offset += PAGE_SIZE) {
+    const { data: page, error: pageError } = await supabase
       .from("card_prints")
       .select(CARD_PRINT_SELECT)
       .eq("oracle_id", oracleId)
       .order("released_at", { ascending: false })
       .range(offset, offset + PAGE_SIZE - 1)
       .returns<CardPrintRow[]>();
-    if (error) return [];
-    if (!page || page.length === 0) break;
+    if (pageError || !page || page.length === 0) break;
     data.push(...page);
     if (page.length < PAGE_SIZE) break;
   }

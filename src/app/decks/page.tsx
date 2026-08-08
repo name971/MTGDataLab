@@ -28,7 +28,12 @@ export default async function DeckRankingPage({
   const { format: formatParam, period } = await searchParams;
   const format = resolveFormat(formatParam);
   const periodDays = resolvePeriod(period);
-  const dbRows = await getArchetypesFromDb(format, periodDays);
+  // 互いに依存しないので並列実行する
+  const [dbRows, { caveatNote }, recentDecks] = await Promise.all([
+    getArchetypesFromDb(format, periodDays),
+    getFormatSettings(format),
+    getRecentDecksFromDb(format),
+  ]);
   // サンプルデータへのフォールバックは「このフォーマットはDBにまだ実データが無い」場合のみに限る。
   // 期間だけ絞り込んだ結果が0件（分類バッチがまだ直近分を処理していない等）の場合にサンプルへ
   // 差し替えると、無関係なハードコード値が実データのように表示されてしまう
@@ -38,8 +43,6 @@ export default async function DeckRankingPage({
     const hasAnyDbData = periodDays === 30 ? false : (await getArchetypesFromDb(format, 30)).length > 0;
     rows = hasAnyDbData ? [] : getSampleArchetypes(format);
   }
-  const { caveatNote } = await getFormatSettings(format);
-  const recentDecks = await getRecentDecksFromDb(format);
 
   const top10 = rows.slice(0, 10);
   const top10AvgPriceJpy =

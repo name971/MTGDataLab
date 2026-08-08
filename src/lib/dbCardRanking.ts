@@ -40,19 +40,30 @@ export async function getCardRankingFromDb(
   // calculated_atだけで1000件を超えるため、.range()でページングしないと採用率上位のカードが
   // 黙って切り捨てられ、たまたま残った無関係な低採用率カードが「上位」に見えてしまう。
   const PAGE_SIZE = 1000;
-  const usageRows: { oracle_id: string; usage_rate: number; calculated_at: string }[] = [];
-  for (let offset = 0; ; offset += PAGE_SIZE) {
-    const { data: page, error } = await supabase
-      .from("card_usage_stats")
-      .select("oracle_id, usage_rate, calculated_at")
-      .eq("format", format)
-      .eq("period_days", periodDays)
-      .order("calculated_at", { ascending: false })
-      .range(offset, offset + PAGE_SIZE - 1);
-    if (error || !page || page.length === 0) break;
-    usageRows.push(...page);
-    if (page.length < PAGE_SIZE) break;
+  async function fetchUsageRows() {
+    const rows: { oracle_id: string; usage_rate: number; calculated_at: string }[] = [];
+    for (let offset = 0; ; offset += PAGE_SIZE) {
+      const { data: page, error } = await supabase
+        .from("card_usage_stats")
+        .select("oracle_id, usage_rate, calculated_at")
+        .eq("format", format)
+        .eq("period_days", periodDays)
+        .order("calculated_at", { ascending: false })
+        .range(offset, offset + PAGE_SIZE - 1);
+      if (error || !page || page.length === 0) break;
+      rows.push(...page);
+      if (page.length < PAGE_SIZE) break;
+    }
+    return rows;
   }
+
+  // 基本土地のoracle_idだけを名前で引く（候補全件をin()で問い合わせるとURLが長くなりすぎるカードが
+  // 多いフォーマットで失敗するため、基本土地という少数の既知の名前から逆引きする）。
+  // usageRowsのページング取得とは互いに依存しないので並列実行する。
+  const [usageRows, { data: basicLandOracles }] = await Promise.all([
+    fetchUsageRows(),
+    supabase.from("card_oracles").select("oracle_id").in("name", [...BASIC_LAND_NAMES]),
+  ]);
 
   if (usageRows.length === 0) return [];
 
@@ -64,12 +75,6 @@ export async function getCardRankingFromDb(
     }
   }
 
-  // 基本土地のoracle_idだけを名前で引く（候補全件をin()で問い合わせるとURLが長くなりすぎるカードが
-  // 多いフォーマットで失敗するため、基本土地という少数の既知の名前から逆引きする）
-  const { data: basicLandOracles } = await supabase
-    .from("card_oracles")
-    .select("oracle_id")
-    .in("name", [...BASIC_LAND_NAMES]);
   const basicLandOracleIds = new Set((basicLandOracles ?? []).map((o) => o.oracle_id));
 
   const topOracleIds = [...latestUsageByOracle.entries()]
@@ -87,12 +92,16 @@ export async function getCardRankingFromDb(
   sinceDate.setUTCDate(sinceDate.getUTCDate() - 10);
   const sinceDateStr = sinceDate.toISOString().slice(0, 10);
   const ORACLE_CHUNK = 50;
-  const priceRows: { oracle_id: string; jpy_est: number | null; date: string }[] = [];
+  const oracleChunks: string[][] = [];
   for (let i = 0; i < topOracleIds.length; i += ORACLE_CHUNK) {
-    const chunk = topOracleIds.slice(i, i + ORACLE_CHUNK);
-    const rows = await getRecentPriceHistoryForOracles(chunk, sinceDateStr);
-    priceRows.push(...rows.map((r) => ({ oracle_id: r.oracleId, jpy_est: r.jpy, date: r.date })));
+    oracleChunks.push(topOracleIds.slice(i, i + ORACLE_CHUNK));
   }
+  const priceRowChunks = await Promise.all(
+    oracleChunks.map((chunk) => getRecentPriceHistoryForOracles(chunk, sinceDateStr)),
+  );
+  const priceRows = priceRowChunks
+    .flat()
+    .map((r) => ({ oracle_id: r.oracleId, jpy_est: r.jpy, date: r.date }));
 
   const [{ data: oracles }, { data: cardRows }, bestImageByOracle, { data: currentPriceRows }] = await Promise.all([
     supabase.from("card_oracles").select("oracle_id, name, printed_name_ja").in("oracle_id", topOracleIds),
