@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import type { CardPrint } from "@/lib/dbCardPrints";
 import type { PricePoint } from "@/lib/dbPriceHistory";
 import PriceHistoryChart from "./PriceHistoryChart";
@@ -208,6 +208,7 @@ export default function CardHero({
   // Foil価格で一覧を見るモード。ON中は価格順ソート・各行の価格表示（太字/小さい文字）がFoil基準になる。
   // メインのカード表示（画像・現在価格、finish）とは独立しており、切り替えても連動しない。
   const [listSortFoil, setListSortFoil] = useState(false);
+  const galleryDialogRef = useRef<HTMLDialogElement>(null);
 
   function clickSort(key: "releaseDate" | "price") {
     if (printSortKey === key) {
@@ -569,6 +570,12 @@ export default function CardHero({
 
         {otherPrints.length > 0 && (
           <div className="flex flex-col gap-3">
+            <button
+              onClick={() => galleryDialogRef.current?.showModal()}
+              className="self-start rounded-md border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:border-neutral-500"
+            >
+              画像一覧から探す（{otherPrints.length}種）
+            </button>
             <div className="flex items-center gap-1 text-xs">
               <span className="text-neutral-400">並び順:</span>
               {(
@@ -725,6 +732,85 @@ export default function CardHero({
         )}
       </div>
       </div>
+      {/* Scryfallの「View all prints」のような、画像だけを見て版を選べるグリッド表示。
+          listPrints（現在の並び順・Foil基準を共有）をそのまま使う。表形式は文字情報中心で
+          「見た目で選びたい」ニーズに応えづらいため別UIとして用意した。 */}
+      <dialog
+        ref={galleryDialogRef}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) galleryDialogRef.current?.close();
+        }}
+        className="m-auto max-h-[85vh] w-[95vw] max-w-4xl rounded-lg border border-neutral-200 p-0 backdrop:bg-black/50"
+      >
+        <div className="flex max-h-[85vh] flex-col">
+          <div className="flex shrink-0 items-center justify-between border-b border-neutral-200 px-4 py-3">
+            <h3 className="text-sm font-medium text-neutral-700">
+              {defaultPrint.nameJa}のプリント一覧（{listPrints.length}種）
+            </h3>
+            <button
+              onClick={() => galleryDialogRef.current?.close()}
+              aria-label="閉じる"
+              className="rounded-full px-2 py-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-3 overflow-y-auto p-4 sm:grid-cols-3 md:grid-cols-4">
+            {listPrints.map((p) => {
+              const jpy = allPrices[p.scryfallId];
+              const jpyFoil = allFoilPrices[p.scryfallId];
+              const priceLabel =
+                jpy !== undefined
+                  ? `¥${jpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}`
+                  : jpyFoil !== undefined
+                    ? `Foil ¥${jpyFoil.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}`
+                    : "価格不明";
+              return (
+                <button
+                  key={p.scryfallId}
+                  onClick={() => {
+                    selectPrint(p);
+                    galleryDialogRef.current?.close();
+                  }}
+                  className={`flex flex-col gap-1 rounded-md border p-2 text-left hover:border-neutral-500 ${
+                    p.scryfallId === currentScryfallId ? "border-neutral-500 bg-neutral-50" : "border-neutral-200"
+                  }`}
+                >
+                  {p.imageUrl ? (
+                    <Image
+                      src={p.imageUrl}
+                      alt={p.setName}
+                      width={200}
+                      height={280}
+                      className={`w-full ${SQUARE_CORNER_SET_CODES.has(p.setCode) ? "rounded-sm" : "rounded-xl"}`}
+                    />
+                  ) : (
+                    <div className="flex aspect-[5/7] w-full items-center justify-center rounded-xl bg-neutral-100 text-xs text-neutral-400">
+                      画像なし
+                    </div>
+                  )}
+                  <div className="flex items-center gap-1 text-xs text-neutral-600">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- ScryfallのSVGアイコンCDN、next/imageの最適化対象外の小さな外部SVG */}
+                    <img
+                      src={setIconUrl(p.setCode, iconUrlBySetCode)}
+                      alt=""
+                      width={12}
+                      height={12}
+                      className="shrink-0"
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = "/icons/no-set-symbol.svg";
+                      }}
+                    />
+                    <span className="min-w-0 truncate">{p.setName}</span>
+                  </div>
+                  <p className="text-xs tabular-nums text-neutral-500">{priceLabel}</p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </dialog>
     </div>
   );
 }
