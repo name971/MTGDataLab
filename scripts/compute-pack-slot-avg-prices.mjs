@@ -1,9 +1,15 @@
 /**
  * pack_slot_cards（MTGJSONブースターシートのカード構成・ウェイト、scripts/import-pack-slot-cards.mjsが
- * 一度だけ投入、db/schema.sql）× card_print_prices（全プリントの日次価格履歴）を突き合わせ、
- * 元のsamplePackData.ts（scripts/generate-pack-data.mjs）と同じ「カード単位の出現ウェイト付き
+ * 一度だけ投入、db/schema.sql）× card_print_current_prices（1プリント1行の「今の価格」キャッシュ）を
+ * 突き合わせ、元のsamplePackData.ts（scripts/generate-pack-data.mjs）と同じ「カード単位の出現ウェイト付き
  * 平均」でスロット単価を毎日計算し直し、pack_slot_avg_prices（db/schema.sql）に保存する。
  * カード構成は静的（新セット追加時のみ再投入）、価格だけがこのスクリプトで日次追従する。
+ *
+ * 以前はcard_print_prices（JSONB全履歴、90日より古い日付キーはD1へ間引かれる）を見ていたが、
+ * 日次の価格スナップショットは既にcard_print_current_prices（DB容量超過対応で新設したキャッシュ）
+ * 側で更新されるようになっており、card_print_prices側は更新が追いつかず大半のプリントで
+ * 空になっていた（match_rateが17〜23%まで低下していた原因）。card_print_current_pricesを見るよう
+ * 修正し、match_rateを90%超まで回復させた。
  *
  * 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... node scripts/compute-pack-slot-avg-prices.mjs
  */
@@ -86,20 +92,9 @@ async function main() {
   for (let i = 0; i < scryfallIds.length; i += ID_CHUNK) {
     const chunk = scryfallIds.slice(i, i + ID_CHUNK);
     const rows = await supabaseGet(
-      `card_print_prices?scryfall_id=in.(${chunk.join(",")})&select=scryfall_id,prices,prices_foil`,
+      `card_print_current_prices?scryfall_id=in.(${chunk.join(",")})&select=scryfall_id,usd,usd_foil`,
     );
     for (const r of rows) priceByScryfallId.set(r.scryfall_id, r);
-  }
-
-  // key: `${set_code}|${product_type}|${slot_name}` -> { weightedSum, totalWeight, matchedWeight }
-  // 日次パイプラインの実行順序次第で「今日」の価格がまだ入っていないことがある
-  // （このプリントのsnapshotがまだ来ていない等）ため、厳密に today のキーだけを見るのではなく、
-  // プリントごとに一番新しい日付のものを使う。
-  function latestPrice(priceMap) {
-    if (!priceMap) return null;
-    const dates = Object.keys(priceMap).sort();
-    const latestDate = dates.at(-1);
-    return latestDate ? priceMap[latestDate] : null;
   }
 
   const stats = new Map();
@@ -110,7 +105,7 @@ async function main() {
     s.totalWeight += weight;
 
     const priceRow = priceByScryfallId.get(row.scryfall_id);
-    const usd = row.foil ? latestPrice(priceRow?.prices_foil) : latestPrice(priceRow?.prices);
+    const usd = row.foil ? priceRow?.usd_foil : priceRow?.usd;
     if (typeof usd === "number") {
       s.weightedSum += usd * weight;
       s.matchedWeight += weight;
