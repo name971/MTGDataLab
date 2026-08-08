@@ -258,26 +258,27 @@ export default async function CardDetailPage({
   const usdToJpyRate = card.usdPrice && jpyPrice !== null ? jpyPrice / card.usdPrice : 0;
   const usdToJpyRateFoil = card.usdPriceFoil && jpyPriceFoil !== null ? jpyPriceFoil / card.usdPriceFoil : 0;
   const relatedArchetypes = getArchetypesUsingCard(card.nameEn);
-  const formatUsageCounts = card.oracleId
-    ? await getFormatUsageCountsForCard(card.oracleId, usagePeriodDays)
-    : [];
-  const [enPriceHistory, enFoilPriceHistory] = card.oracleId
-    ? await Promise.all([
-        getCheapestPriceHistory(card.oracleId),
-        getCheapestPriceHistory(card.oracleId, "foil"),
-      ])
-    : [[], []];
+  // 互いに依存しないクエリ（採用デッキ集計・価格推移・全プリント一覧）を並列実行する
+  // （直列だとDB往復回数分そのまま待ち時間が積み上がり、カード詳細ページの表示が
+  // 大幅に遅くなっていた）。
+  const [formatUsageCounts, [enPriceHistory, enFoilPriceHistory], otherPrints] = await Promise.all([
+    card.oracleId ? getFormatUsageCountsForCard(card.oracleId, usagePeriodDays) : Promise.resolve([]),
+    card.oracleId
+      ? Promise.all([getCheapestPriceHistory(card.oracleId), getCheapestPriceHistory(card.oracleId, "foil")])
+      : Promise.resolve([[], []]),
+    card.oracleId ? getOtherPrintsForCard(card.oracleId) : Promise.resolve([]),
+  ]);
   const priceExtremes = getPriceExtremes(enPriceHistory);
   const priceExtremesFoil = getPriceExtremes(enFoilPriceHistory);
-  // 「代表プリント」を先頭固定表示で除外する仕組みは廃止したため、除外条件無しで全プリントを取得する
-  // （カードデータが参照している最安値のプリントも、他のプリントと同列の1行として一覧に出したい）。
-  const otherPrints = card.oracleId ? await getOtherPrintsForCard(card.oracleId) : [];
-  const otherPrintPrices = await getLatestPricesForPrints(otherPrints.map((p) => p.scryfallId));
-  const iconUrlBySetCode = await getIconUrlBySetCodes([
-    card.setCode,
-    ...otherPrints.map((p) => p.setCode),
-    ...enPriceHistory.map((p) => p.setCode).filter((c): c is string => !!c),
-    ...enFoilPriceHistory.map((p) => p.setCode).filter((c): c is string => !!c),
+  // otherPrintsが確定してから必要になる2つも互いに依存しないので並列実行する
+  const [otherPrintPrices, iconUrlBySetCode] = await Promise.all([
+    getLatestPricesForPrints(otherPrints.map((p) => p.scryfallId)),
+    getIconUrlBySetCodes([
+      card.setCode,
+      ...otherPrints.map((p) => p.setCode),
+      ...enPriceHistory.map((p) => p.setCode).filter((c): c is string => !!c),
+      ...enFoilPriceHistory.map((p) => p.setCode).filter((c): c is string => !!c),
+    ]),
   ]);
 
   // 「カードデータ」欄のレアリティは代表プリント1件のものではなく、これまでに出た全プリントの

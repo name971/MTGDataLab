@@ -98,6 +98,10 @@ export async function getTrendingRankingFromDb(): Promise<TrendingRankingRow[]> 
     .maybeSingle();
   if (!latestRow) return [];
 
+  // scoreRowsのページング取得と独立なクエリなので、先に投げておいて後でawaitする
+  // （直列だとページング分の待ち時間の後にさらに1往復追加でかかっていた）。
+  const basicLandOraclesPromise = supabase.from("card_oracles").select("oracle_id").in("name", [...BASIC_LAND_NAMES]);
+
   // 1日分でもフォーマット×カテゴリ×オラクルの組み合わせが増えると1000行を超えうるため、
   // PostgRESTのデフォルト上限に備えてページングする（他のdb*.tsで実際に踏んだのと同じ問題）。
   const SCORE_PAGE_SIZE = 1000;
@@ -140,10 +144,7 @@ export async function getTrendingRankingFromDb(): Promise<TrendingRankingRow[]> 
     }
   }
 
-  const { data: basicLandOracles } = await supabase
-    .from("card_oracles")
-    .select("oracle_id")
-    .in("name", [...BASIC_LAND_NAMES]);
+  const { data: basicLandOracles } = await basicLandOraclesPromise;
   const basicLandOracleIds = new Set((basicLandOracles ?? []).map((o) => o.oracle_id));
 
   const oracleIds = new Set(
@@ -165,18 +166,23 @@ export async function getTrendingRankingFromDb(): Promise<TrendingRankingRow[]> 
   // 価格系列はD1（price_history_archive）から取る（必要な日付だけ後でMapから拾う）。
   const earliestNeededDate = allDates.reduce((min, d) => (d < min ? d : min), allDates[0]);
   const ORACLE_CHUNK = 50;
-  const priceSeriesRows: { oracle_id: string; jpy_est: number; date: string }[] = [];
+  const chunks: string[][] = [];
   for (let i = 0; i < candidateOracleIds.length; i += ORACLE_CHUNK) {
-    const chunk = candidateOracleIds.slice(i, i + ORACLE_CHUNK);
-    const rows = await getRecentPriceHistoryForOracles(chunk, earliestNeededDate);
-    priceSeriesRows.push(...rows.map((r) => ({ oracle_id: r.oracleId, jpy_est: r.jpy, date: r.date })));
+    chunks.push(candidateOracleIds.slice(i, i + ORACLE_CHUNK));
   }
-
-  const { data: usageSeriesRows } = await supabase
-    .from("card_usage_stats")
-    .select("oracle_id, format, usage_rate, calculated_at")
-    .in("oracle_id", candidateOracleIds)
-    .in("calculated_at", allDates);
+  // D1へのチャンク問い合わせとcard_usage_statsは互いに依存しないため並列実行する
+  // （直列だとチャンク数分そのまま待ち時間が積み上がっていた）。
+  const [priceSeriesChunks, { data: usageSeriesRows }] = await Promise.all([
+    Promise.all(chunks.map((chunk) => getRecentPriceHistoryForOracles(chunk, earliestNeededDate))),
+    supabase
+      .from("card_usage_stats")
+      .select("oracle_id, format, usage_rate, calculated_at")
+      .in("oracle_id", candidateOracleIds)
+      .in("calculated_at", allDates),
+  ]);
+  const priceSeriesRows = priceSeriesChunks
+    .flat()
+    .map((r) => ({ oracle_id: r.oracleId, jpy_est: r.jpy, date: r.date }));
 
   const priceSeriesByOracle = new Map<string, Map<string, number>>();
   for (const r of priceSeriesRows) {

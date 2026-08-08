@@ -80,7 +80,8 @@ export async function getTrendingCardsFromDb(): Promise<TrendingCardData[]> {
   // （全件ページングは行数が多い日にサブリクエスト過多で失敗し、フォールバック表示になる
   // 事故が実際に発生した）。基本土地除外で数件減る可能性に備え、少し多めに取っておく。
   const CANDIDATE_LIMIT = CARDS_PER_CATEGORY + 20;
-  const [{ data: priceRowsRaw }, { data: usageRowsRaw }] = await Promise.all([
+  // 3つとも互いに依存しないため並列実行する
+  const [{ data: priceRowsRaw }, { data: usageRowsRaw }, { data: basicLandOracles }] = await Promise.all([
     supabase
       .from("card_streaks")
       .select("oracle_id, category, format, streak_days, change_value, calculated_date")
@@ -97,14 +98,10 @@ export async function getTrendingCardsFromDb(): Promise<TrendingCardData[]> {
       .order("streak_days", { ascending: false })
       .order("change_value", { ascending: false })
       .limit(CANDIDATE_LIMIT),
+    supabase.from("card_oracles").select("oracle_id").in("name", [...BASIC_LAND_NAMES]),
   ]);
   const streakRows = [...(priceRowsRaw ?? []), ...(usageRowsRaw ?? [])] as StreakRow[];
   if (streakRows.length === 0) return [];
-
-  const { data: basicLandOracles } = await supabase
-    .from("card_oracles")
-    .select("oracle_id")
-    .in("name", [...BASIC_LAND_NAMES]);
   const basicLandOracleIds = new Set((basicLandOracles ?? []).map((o) => o.oracle_id));
   const candidateRows = streakRows.filter((r) => !basicLandOracleIds.has(r.oracle_id));
 
