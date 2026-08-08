@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { FORMATS } from "./formats";
 
 export interface FormatUsageCount {
   format: string;
@@ -124,5 +125,10 @@ export async function getFormatUsageCountsForCard(
       return { format, deckCount, changePct };
     })
     .filter((f) => f.deckCount > 0)
-    .sort((a, b) => b.deckCount - a.deckCount);
+    // フォーマットリーガル欄（固定のFORMATS順）と横に並べた時に行が揃うよう、
+    // 件数順ではなくFORMATSの並び順に合わせる
+    .sort(
+      (a, b) =>
+        (FORMATS as readonly string[]).indexOf(a.format) - (FORMATS as readonly string[]).indexOf(b.format),
+    );
 }
