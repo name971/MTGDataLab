@@ -3,6 +3,11 @@ import { searchCardsInDb } from "@/lib/searchCards";
 import { searchSampleCards } from "@/lib/sampleSearchIndex";
 import { slugForCardName } from "@/lib/sampleCards";
 
+// クエリ（q）ごとに応答が変わるAPIなので、ISR/incremental cache（open-next.config.ts、
+// Supabase egress対策で導入）に単一の静的レスポンスとしてキャッシュされるのを防ぐ。
+// これが無いと、最初にキャッシュされた検索語の結果が他の全ての検索語にも返ってしまう。
+export const dynamic = "force-dynamic";
+
 /**
  * SearchBar（入力中のリアルタイムサジェスト）用API。
  * src/app/search/page.tsx（Enter送信後の検索結果ページ）と同じデータソース・

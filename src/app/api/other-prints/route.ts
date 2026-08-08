@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { getOtherPrintsForCard, getIconUrlBySetCodes, OTHER_PRINTS_PAGE_SIZE } from "@/lib/dbCardPrints";
 import { getLatestPricesForPrints } from "@/lib/dbCardPrintPrices";
 
+// クエリパラメータ（oracleId/offset/sortBy等）ごとに応答が変わるAPIなので、ISR/incremental cache
+// （open-next.config.ts、Supabase egress対策で導入）に単一の静的レスポンスとしてキャッシュされる
+// のを防ぐ。これが無いと、最初にキャッシュされたクエリの結果が他の全クエリにも返ってしまう。
+export const dynamic = "force-dynamic";
+
 /**
  * カード詳細ページ「その他のプリント」「画像一覧から探す」の続きページ取得用API。
  * 基本土地等の極端に版が多いカードでも、初回ページ読み込み時に全件（egress突出の原因だった）

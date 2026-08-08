@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPrintPriceHistory } from "@/lib/dbCardPrintPrices";
 
+// クエリパラメータ（scryfallId/finish）ごとに応答が変わるAPIなので、ISR/incremental cache
+// （open-next.config.ts、Supabase egress対策で導入）に単一の静的レスポンスとしてキャッシュされる
+// のを防ぐ。これが無いと、最初にキャッシュされたプリントの価格推移が他の全プリントにも返ってしまう。
+export const dynamic = "force-dynamic";
+
 /**
  * カード詳細ページの「その他のプリント」をクリックしたときに、ページ遷移せず
  * メイン画像・価格・価格推移グラフだけをそのプリントのものに差し替えるためのAPI。
