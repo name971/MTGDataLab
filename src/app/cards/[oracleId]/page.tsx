@@ -264,13 +264,14 @@ export default async function CardDetailPage({
   // 互いに依存しないクエリ（採用デッキ集計・価格推移・全プリント一覧）を並列実行する
   // （直列だとDB往復回数分そのまま待ち時間が積み上がり、カード詳細ページの表示が
   // 大幅に遅くなっていた）。
-  const [formatUsageCounts, [enPriceHistory, enFoilPriceHistory], otherPrints] = await Promise.all([
+  const [formatUsageCounts, [enPriceHistory, enFoilPriceHistory], otherPrintsPage] = await Promise.all([
     card.oracleId ? getFormatUsageCountsForCard(card.oracleId, usagePeriodDays) : Promise.resolve([]),
     card.oracleId
       ? Promise.all([getCheapestPriceHistory(card.oracleId), getCheapestPriceHistory(card.oracleId, "foil")])
       : Promise.resolve([[], []]),
-    card.oracleId ? getOtherPrintsForCard(card.oracleId) : Promise.resolve([]),
+    card.oracleId ? getOtherPrintsForCard(card.oracleId) : Promise.resolve({ prints: [], totalCount: 0 }),
   ]);
+  const { prints: otherPrints, totalCount: otherPrintsTotalCount } = otherPrintsPage;
   const priceExtremes = getPriceExtremes(enPriceHistory);
   const priceExtremesFoil = getPriceExtremes(enFoilPriceHistory);
   // otherPrintsが確定してから必要になる2つも互いに依存しないので並列実行する
@@ -330,7 +331,9 @@ export default async function CardDetailPage({
         }}
         defaultEnHistory={enPriceHistory}
         defaultEnFoilHistory={enFoilPriceHistory}
+        oracleIdForPaging={card.oracleId}
         otherPrints={otherPrints}
+        otherPrintsTotalCount={otherPrintsTotalCount}
         pricesByScryfallId={Object.fromEntries(otherPrintPrices.normal)}
         foilPricesByScryfallId={Object.fromEntries(otherPrintPrices.foil)}
         legalities={card.legalities}

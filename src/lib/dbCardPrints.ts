@@ -46,27 +46,45 @@ const CARD_PRINT_SELECT =
   "scryfall_id, set_code, sets(set_name), collector_number, released_at, image_uri_normal, image_uri_normal_ja, not_tournament_legal, rarity";
 
 // 基本土地等は700件超のプリントを持ち、egress（プリント一覧＋各プリントの価格取得）を
-// 突出して消費する。「その他のプリント」は新しい版ほど参照価値が高いため、直近PRINT_LIMIT件
-// （released_at降順）に絞る。ponytail: 古いプリントは一覧に出なくなる。全件が必要になったら
-// 「もっと見る」をサーバー取得に変える等の対応を検討。
-const PRINT_LIMIT = 300;
+// 突出して消費する。ページ最初の読み込みでは新しい版から直近OTHER_PRINTS_PAGE_SIZE件だけを
+// 取得し、残りは「もっと見る」操作時にAPI経由（/api/other-prints）で追加取得する。
+// 上限は設けない（全件見られる）が、1リクエストあたりの取得量は常に一定に抑えられる。
+export const OTHER_PRINTS_PAGE_SIZE = 100;
+
+export interface CardPrintsPage {
+  prints: CardPrint[];
+  /** card_prints全体の件数（表示中の件数ではなく、そのオラクルの全プリント数）。
+   * 「全X種のプリント」表示用。count自体は行データを返さないので取得コストが小さい。 */
+  totalCount: number;
+}
 
 /**
  * card_prints（scripts/rebuild-card-prints.mjsがScryfallバルクデータから事前生成、db/schema.sql参照）
  * からカード詳細ページ「その他のプリント」欄用の一覧を取得する。ライブAPI呼び出しはしない。
  * set_nameは正規化されたsetsテーブルから結合して取得する（容量削減、db/schema.sql参照）。
+ * released_at降順でoffset〜offset+limit-1件だけを返す（ページング、egress対策）。
  */
-export async function getOtherPrintsForCard(oracleId: string): Promise<CardPrint[]> {
-  const { data, error } = await supabase
-    .from("card_prints")
-    .select(CARD_PRINT_SELECT)
-    .eq("oracle_id", oracleId)
-    .order("released_at", { ascending: false })
-    .limit(PRINT_LIMIT)
-    .returns<CardPrintRow[]>();
-  if (error) return [];
+export async function getOtherPrintsForCard(
+  oracleId: string,
+  offset = 0,
+  limit: number = OTHER_PRINTS_PAGE_SIZE,
+): Promise<CardPrintsPage> {
+  const [{ data, error }, { count }] = await Promise.all([
+    supabase
+      .from("card_prints")
+      .select(CARD_PRINT_SELECT)
+      .eq("oracle_id", oracleId)
+      .order("released_at", { ascending: false })
+      .range(offset, offset + limit - 1)
+      .returns<CardPrintRow[]>(),
+    supabase
+      .from("card_prints")
+      .select("scryfall_id", { count: "exact", head: true })
+      .eq("oracle_id", oracleId),
+  ]);
+  if (error) return { prints: [], totalCount: count ?? 0 };
 
-  return (data ?? []).map(toCardPrint);
+  return { prints: (data ?? []).map(toCardPrint), totalCount: count ?? 0 };
 }
 
 /**

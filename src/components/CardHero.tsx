@@ -148,21 +148,27 @@ interface DefaultPrint {
 
 export default function CardHero({
   oracleId,
+  oracleIdForPaging,
   defaultPrint,
   defaultEnHistory,
   defaultEnFoilHistory,
-  otherPrints,
-  pricesByScryfallId,
-  foilPricesByScryfallId,
+  otherPrints: initialOtherPrints,
+  otherPrintsTotalCount,
+  pricesByScryfallId: initialPricesByScryfallId,
+  foilPricesByScryfallId: initialFoilPricesByScryfallId,
   legalities,
-  iconUrlBySetCode,
+  iconUrlBySetCode: initialIconUrlBySetCode,
   children,
 }: {
   oracleId: string;
+  /** ページング取得API（/api/other-prints）に渡すoracle_id。card.oracleIdがnullの場合はnull */
+  oracleIdForPaging: string | null;
   defaultPrint: DefaultPrint;
   defaultEnHistory: PricePoint[];
   defaultEnFoilHistory: PricePoint[];
   otherPrints: CardPrint[];
+  /** そのオラクルのcard_prints総件数（otherPrintsは最初のページ分のみ、egress対策） */
+  otherPrintsTotalCount: number;
   pricesByScryfallId: Record<string, number>;
   foilPricesByScryfallId: Record<string, number>;
   legalities: Record<string, string>;
@@ -173,6 +179,37 @@ export default function CardHero({
   /** グラフの下・プリント一覧とは独立した左カラムに差し込む追加コンテンツ（使用デッキ等） */
   children?: ReactNode;
 }) {
+  // otherPrints等はサーバーから最初のページ分だけ渡される（src/lib/dbCardPrints.ts参照）。
+  // 「もっと見る」でページの続きが必要になった時だけ/api/other-prints経由で追加取得し、
+  // ここに追記していく。
+  const [otherPrints, setOtherPrints] = useState(initialOtherPrints);
+  const [pricesByScryfallId, setPricesByScryfallId] = useState(initialPricesByScryfallId);
+  const [foilPricesByScryfallId, setFoilPricesByScryfallId] = useState(initialFoilPricesByScryfallId);
+  const [iconUrlBySetCode, setIconUrlBySetCode] = useState(initialIconUrlBySetCode);
+  const [loadingMorePrints, setLoadingMorePrints] = useState(false);
+  const hasMorePrintsOnServer = otherPrints.length < otherPrintsTotalCount;
+
+  async function loadMorePrints() {
+    if (loadingMorePrints || !oracleIdForPaging || !hasMorePrintsOnServer) return;
+    setLoadingMorePrints(true);
+    try {
+      const res = await fetch(`/api/other-prints?oracleId=${oracleIdForPaging}&offset=${otherPrints.length}`);
+      const data = (await res.json()) as {
+        prints: CardPrint[];
+        pricesByScryfallId: Record<string, number>;
+        foilPricesByScryfallId: Record<string, number>;
+        iconUrlBySetCode: Record<string, string>;
+      };
+      setOtherPrints((prev) => [...prev, ...data.prints]);
+      setPricesByScryfallId((prev) => ({ ...prev, ...data.pricesByScryfallId }));
+      setFoilPricesByScryfallId((prev) => ({ ...prev, ...data.foilPricesByScryfallId }));
+      setIconUrlBySetCode((prev) => ({ ...prev, ...data.iconUrlBySetCode }));
+    } catch {
+      // 失敗時は何もしない。ユーザーがボタンをもう一度押せば再試行できる。
+    } finally {
+      setLoadingMorePrints(false);
+    }
+  }
   // card_prints未反映など、otherPrintsに代表プリント自身の行がまだ無い場合の最終フォールバック用
   // （currentの解決・resetToAggregateの画像表示に使う。通常はotherPrintsに実プリントとして
   // 含まれているため、下のallPrintsには二重登録しない）。
@@ -556,7 +593,7 @@ export default function CardHero({
               // 「カードデータ」は特定の1プリントではなく全プリント集約の表示なので、
               // 代表プリント1件のセット名・コレクター番号ではなく、プリント総数とレアリティ集約を出す
               <>
-                <p className="truncate text-sm leading-snug font-semibold">全{allPrints.length}種のプリント</p>
+                <p className="truncate text-sm leading-snug font-semibold">全{otherPrintsTotalCount}種のプリント</p>
                 <p className="text-xs leading-snug text-neutral-300">{defaultPrint.rarityLabel}</p>
               </>
             )}
@@ -574,7 +611,7 @@ export default function CardHero({
               onClick={() => galleryDialogRef.current?.showModal()}
               className="self-start rounded-md border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:border-neutral-500"
             >
-              画像一覧から探す（{otherPrints.length}種）
+              画像一覧から探す（全{otherPrintsTotalCount}種）
             </button>
             <div className="flex items-center gap-1 text-xs">
               <span className="text-neutral-400">並び順:</span>
@@ -716,7 +753,20 @@ export default function CardHero({
                 onClick={() => setVisibleCount((v) => v + LOAD_MORE_STEP)}
                 className="self-center rounded-md border border-neutral-300 px-4 py-1.5 text-sm text-neutral-600 hover:border-neutral-500"
               >
-                {`もっと見る（残り${listPrints.length - visibleCount}件）`}
+                {`もっと見る（残り${listPrints.length - visibleCount}件${hasMorePrintsOnServer ? "以上" : ""}）`}
+              </button>
+            ) : hasMorePrintsOnServer ? (
+              // 現在読み込み済みの分は全部表示し終えた状態。ここから先はサーバーに追加取得が必要
+              // （/api/other-prints、egress対策で最初のページ分しか渡していないため）。
+              <button
+                onClick={async () => {
+                  await loadMorePrints();
+                  setVisibleCount((v) => v + LOAD_MORE_STEP);
+                }}
+                disabled={loadingMorePrints}
+                className="self-center rounded-md border border-neutral-300 px-4 py-1.5 text-sm text-neutral-600 hover:border-neutral-500 disabled:opacity-50"
+              >
+                {loadingMorePrints ? "読み込み中…" : "もっと見る"}
               </button>
             ) : (
               visibleCount > VISIBLE_COUNT && (
@@ -745,7 +795,7 @@ export default function CardHero({
         <div className="flex max-h-[85vh] flex-col">
           <div className="flex shrink-0 items-center justify-between border-b border-neutral-200 px-4 py-3">
             <h3 className="text-sm font-medium text-neutral-700">
-              {defaultPrint.nameJa}のプリント一覧（{listPrints.length}種）
+              {defaultPrint.nameJa}のプリント一覧（{listPrints.length}/{otherPrintsTotalCount}種）
             </h3>
             <button
               onClick={() => galleryDialogRef.current?.close()}
@@ -809,6 +859,17 @@ export default function CardHero({
               );
             })}
           </div>
+          {hasMorePrintsOnServer && (
+            <div className="shrink-0 border-t border-neutral-200 p-3">
+              <button
+                onClick={loadMorePrints}
+                disabled={loadingMorePrints}
+                className="w-full rounded-md border border-neutral-300 py-1.5 text-sm text-neutral-600 hover:border-neutral-500 disabled:opacity-50"
+              >
+                {loadingMorePrints ? "読み込み中…" : `もっと読み込む（残り${otherPrintsTotalCount - listPrints.length}種）`}
+              </button>
+            </div>
+          )}
         </div>
       </dialog>
     </div>

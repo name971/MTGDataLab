@@ -1,0 +1,30 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getOtherPrintsForCard, getIconUrlBySetCodes } from "@/lib/dbCardPrints";
+import { getLatestPricesForPrints } from "@/lib/dbCardPrintPrices";
+
+/**
+ * カード詳細ページ「その他のプリント」「画像一覧から探す」の続きページ取得用API。
+ * 基本土地等の極端に版が多いカードでも、初回ページ読み込み時に全件（egress突出の原因だった）
+ * を取得せず、この「もっと見る」操作の分だけ都度取得する（src/lib/dbCardPrints.ts参照）。
+ */
+export async function GET(request: NextRequest) {
+  const oracleId = request.nextUrl.searchParams.get("oracleId");
+  const offset = Number(request.nextUrl.searchParams.get("offset") ?? "0");
+  if (!oracleId || !Number.isFinite(offset) || offset < 0) {
+    return NextResponse.json({ error: "oracleId and offset are required" }, { status: 400 });
+  }
+
+  const { prints, totalCount } = await getOtherPrintsForCard(oracleId, offset);
+  const [prices, iconUrlBySetCode] = await Promise.all([
+    getLatestPricesForPrints(prints.map((p) => p.scryfallId)),
+    getIconUrlBySetCodes(prints.map((p) => p.setCode)),
+  ]);
+
+  return NextResponse.json({
+    prints,
+    totalCount,
+    pricesByScryfallId: Object.fromEntries(prices.normal),
+    foilPricesByScryfallId: Object.fromEntries(prices.foil),
+    iconUrlBySetCode,
+  });
+}
