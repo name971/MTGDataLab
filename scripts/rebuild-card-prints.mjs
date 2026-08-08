@@ -3,10 +3,10 @@
  * 作り直す。cardsテーブルと違い代表プリント1枚に絞らず、oracle_idごとの非デジタルプリントを
  * 全件対象にする。価格は追跡しない（画像・セット名・発売年のみ）。
  *
- * 基本行（scryfall_id・セット名・発売日等）は英語版のみだが、(セット, コレクター番号)の組に
- * 英語版が存在せず日本語版しか無い場合（Mystical Archive等、日本語版限定で別コレクター番号の
- * プリントが存在するケース）はその日本語版を採用する。英語版・日本語版どちらも存在する組は
- * 今まで通り英語版だけを基本行に使う（単なる言語違いの重複を増やさないため）。
+ * 基本行（scryfall_id・セット名・発売日等）は(セット, コレクター番号)の組ごとに英語版を最優先、
+ * 次点で日本語版、それ以外の言語は早い者勝ちで採用する（詳細はmain()内のLANG_PRIORITY参照）。
+ * 英語・日本語限定にしていた時期はScryfall本家のプリント数よりかなり少なく表示される問題が
+ * あったため、言語を絞らず全言語を対象にした（デジタル専用プリントのみ除外）。
  * 画像だけは別枠でimage_uri_normal_jaに日本語版の画像URLも保持し、表示側（その他のプリント欄・
  * プリント切り替え時のメイン画像）は日本語版があればそちらを使う（バルクデータには元々
  * 日本語版の画像URLも含まれており、追加のAPI呼び出しは不要。画像URL文字列1本の追加なので
@@ -92,14 +92,22 @@ async function main() {
   const knownOracleIds = new Set(oracles.map((o) => o.oracle_id));
   console.log(`対象oracle_id: ${knownOracleIds.size}件`);
 
-  // (oracle_id, set, collector_number)ごとに英語版を優先し、無ければ日本語版を採用する
+  // (oracle_id, set, collector_number)ごとに英語版を最優先、次点で日本語版、それ以外の言語は
+  // 早い者勝ちで採用する。同じset+collector_numberを複数言語が共有する場合（多くの通常セットの
+  // 翻訳版）は英語版に一本化されるが、Portalの簡体字中国語版やForeign Black Border・スペイン語
+  // 限定プロモ等、言語ごとに別のcollector_numberが割り振られているセットはそれぞれ独立した
+  // プリントとして残る（元は英語・日本語限定にしていたため、Scryfall本家のプリント数より
+  // かなり少なく見える問題があった）。
+  const LANG_PRIORITY = { en: 2, ja: 1 };
+  const langScore = (lang) => LANG_PRIORITY[lang] ?? 0;
+
   const byPrintKey = new Map();
   const jaImageByPrintKey = new Map();
   const setsByCode = new Map();
   let scanned = 0;
   await forEachJsonArrayObject(DATA_FILE, (raw) => {
     scanned++;
-    if ((raw.lang !== "en" && raw.lang !== "ja") || raw.digital) return;
+    if (raw.digital) return; // Arena/MTGO専用プリントは対象外（購入・価格追跡の対象にならないため）
     if (!raw.oracle_id || !knownOracleIds.has(raw.oracle_id)) return;
 
     const key = `${raw.oracle_id}|${raw.set}|${raw.collector_number}`;
@@ -111,7 +119,7 @@ async function main() {
     }
 
     const current = byPrintKey.get(key);
-    if (current && (current.lang === "en" || raw.lang === "ja")) return; // 英語版があれば日本語版は無視
+    if (current && langScore(current.lang) >= langScore(raw.lang)) return; // 既存の方が優先度高い/同点なら上書きしない
     byPrintKey.set(key, raw);
     setsByCode.set(raw.set, raw.set_name);
   });

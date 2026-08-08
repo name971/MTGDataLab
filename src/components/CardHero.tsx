@@ -640,8 +640,14 @@ export default function CardHero({
           <div className="flex flex-col gap-3">
             <button
               onClick={() => galleryDialogRef.current?.showModal()}
-              className="self-start rounded-md border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:border-neutral-500"
+              className="flex items-center gap-1.5 self-start rounded-md border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:border-neutral-500"
             >
+              {/* カード枠の中に虫眼鏡＝画像を見ながら探すことを表すアイコン */}
+              <svg viewBox="0 0 24 32" width={14} height={19} fill="none" className="shrink-0">
+                <rect x="1" y="1" width="22" height="30" rx="3" stroke="currentColor" strokeWidth="1.5" />
+                <circle cx="12" cy="13" r="5.5" stroke="currentColor" strokeWidth="1.5" />
+                <line x1="12" y1="18.5" x2="12" y2="25" stroke="currentColor" strokeWidth="1.5" />
+              </svg>
               画像一覧から探す（全{otherPrintsTotalCount}種）
             </button>
             <div className="flex items-center gap-1 text-xs">
@@ -860,7 +866,7 @@ export default function CardHero({
               </button>
             ))}
             <button
-              onClick={() => setListSortFoil((v) => !v)}
+              onClick={toggleListSortFoil}
               title={listSortFoil ? "通常価格で見る" : "Foil価格で見る"}
               aria-label={listSortFoil ? "通常価格で見る" : "Foil価格で見る"}
               aria-pressed={listSortFoil}
@@ -883,12 +889,13 @@ export default function CardHero({
             {listPrints.map((p) => {
               const jpy = allPrices[p.scryfallId];
               const jpyFoil = allFoilPrices[p.scryfallId];
-              const priceLabel =
-                jpy !== undefined
+              const priceLabel = listSortFoil
+                ? jpyFoil !== undefined
+                  ? `Foil ¥${jpyFoil.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}`
+                  : "価格不明"
+                : jpy !== undefined
                   ? `¥${jpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}`
-                  : jpyFoil !== undefined
-                    ? `Foil ¥${jpyFoil.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}`
-                    : "価格不明";
+                  : "価格不明";
               return (
                 <button
                   key={p.scryfallId}
