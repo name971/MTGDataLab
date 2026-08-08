@@ -219,6 +219,36 @@ async function main() {
   const formats = [...new Set(usageToday.map((r) => r.format))];
   const rows = [];
 
+  // price category: フォーマット（＝card_usage_statsに採用記録があるか）に関係なく、
+  // 価格データがある全カードを対象にする（採用率データが無いカードでも値上がりだけで
+  // 注目カードランキングの候補になれるようにするため）。card_streaksのprice category
+  // と同じくフォーマット非依存でformat='ALL'として1回だけ保存する。
+  const priceMovers = [...priceChangeByOracle.entries()]
+    .map(([oracleId, pct]) => ({ oracleId, pct }))
+    .sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct))
+    .slice(0, TOP_N_PER_CATEGORY);
+
+  priceMovers.forEach((r) => {
+    const todayPrice = priceTodayMap.get(r.oracleId);
+    const yestPrice = priceYesterdayMap.get(r.oracleId);
+    const prevStreak = yesterdayStreakByKey.get(`ALL|price|${r.oracleId}`) ?? 0;
+    // 前日の生データが両方揃っている時だけ厳密判定。前日比で実際に上がっていれば継続、
+    // 下がっている（or横ばい）なら継続リセット。前日データが無ければ判定不能なので1日目扱い。
+    const streak =
+      todayPrice != null && yestPrice != null ? (todayPrice > yestPrice ? prevStreak + 1 : 0) : 1;
+    rows.push({
+      oracle_id: r.oracleId,
+      format: "ALL",
+      calculated_date: todayStr,
+      price_change_3d_pct: r.pct,
+      usage_change_3d_pt: null,
+      volume_change_3d_pct: null,
+      category: "price",
+      score: r.pct,
+      streak_days: streak,
+    });
+  });
+
   for (const format of formats) {
     // card_usage_statsは7/30/90日分など複数期間分の行を持つため、同じoracle_idが
     // 複数回出てくることがある。重複したままだと同一upsertバッチ内でON CONFLICTが
@@ -226,34 +256,6 @@ async function main() {
     const formatOracleIds = [
       ...new Set(usageToday.filter((r) => r.format === format).map((r) => r.oracle_id)),
     ];
-
-    // price category: このフォーマットで使われているカードのうち価格変化が分かるものを変化幅順に
-    const priceMovers = formatOracleIds
-      .map((oracleId) => ({ oracleId, pct: priceChangeByOracle.get(oracleId) }))
-      .filter((r) => r.pct != null)
-      .sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct))
-      .slice(0, TOP_N_PER_CATEGORY);
-
-    priceMovers.forEach((r) => {
-      const todayPrice = priceTodayMap.get(r.oracleId);
-      const yestPrice = priceYesterdayMap.get(r.oracleId);
-      const prevStreak = yesterdayStreakByKey.get(`${format}|price|${r.oracleId}`) ?? 0;
-      // 前日の生データが両方揃っている時だけ厳密判定。前日比で実際に上がっていれば継続、
-      // 下がっている（or横ばい）なら継続リセット。前日データが無ければ判定不能なので1日目扱い。
-      const streak =
-        todayPrice != null && yestPrice != null ? (todayPrice > yestPrice ? prevStreak + 1 : 0) : 1;
-      rows.push({
-        oracle_id: r.oracleId,
-        format,
-        calculated_date: todayStr,
-        price_change_3d_pct: r.pct,
-        usage_change_3d_pt: null,
-        volume_change_3d_pct: null,
-        category: "price",
-        score: r.pct,
-        streak_days: streak,
-      });
-    });
 
     // usage category: 採用率の変化幅順
     const usageMovers = formatOracleIds
