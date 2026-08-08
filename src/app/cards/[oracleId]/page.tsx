@@ -333,21 +333,27 @@ export default async function CardDetailPage({
         iconUrlBySetCode={iconUrlBySetCode}
       >
         <div className="rounded-lg border border-neutral-200 p-4">
-          <h2 className="mb-2 whitespace-nowrap text-sm font-medium text-neutral-500">使用デッキ</h2>
-          <div className="mb-3 flex items-center gap-1">
-            {USAGE_PERIOD_OPTIONS.map((p) => (
-              <Link
-                key={p}
-                href={`/cards/${oracleId}${p !== 7 ? `?period=${p}` : ""}`}
-                className={`rounded-md border px-2 py-0.5 text-xs ${
-                  p === usagePeriodDays
-                    ? "border-neutral-500 bg-neutral-100 text-neutral-900"
-                    : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
-                }`}
-              >
-                {p}日
-              </Link>
-            ))}
+          {/* 見出しと期間ボタンを同じ行にまとめる。フォーマットリーガル欄と行数を揃えるために
+              別行のボタン行の高さを推測で埋めるスペーサーを使っていたが、実測がずれて崩れる
+              事故が繰り返し起きたため、そもそも揃える対象の行を無くす構造にした
+              （両ボックスとも「見出し→即リスト」の同じ形になる）。 */}
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="whitespace-nowrap text-sm font-medium text-neutral-500">使用デッキ</h2>
+            <div className="flex shrink-0 items-center gap-1">
+              {USAGE_PERIOD_OPTIONS.map((p) => (
+                <Link
+                  key={p}
+                  href={`/cards/${oracleId}${p !== 7 ? `?period=${p}` : ""}`}
+                  className={`rounded-md border px-2 py-0.5 text-xs ${
+                    p === usagePeriodDays
+                      ? "border-neutral-500 bg-neutral-100 text-neutral-900"
+                      : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
+                  }`}
+                >
+                  {p}日
+                </Link>
+              ))}
+            </div>
           </div>
           {formatUsageCounts.length > 0 ? (
             <ul className="flex flex-col gap-1.5 text-sm">

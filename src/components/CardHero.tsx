@@ -509,11 +509,10 @@ export default function CardHero({
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="rounded-lg border border-neutral-200 p-4">
-            <h2 className="mb-2 whitespace-nowrap text-sm font-medium text-neutral-500">フォーマットリーガル</h2>
-            {/* 隣の「使用デッキ」欄にある期間切り替えボタン行（実測38px）と高さを揃えて、
-                下のリストの開始位置を横に揃えるためのスペーサー。実測値を直接指定する
-                （クラスを真似るだけだと構造の違いで実際の高さがずれることがあったため）。 */}
-            <div className="mb-3 h-[38px]" aria-hidden="true" />
+            {/* 「使用デッキ」側は見出しの右にあるボタン（border+padding分だけ実測2px高い）と
+                行の高さを揃えるため、ボタンを追加せずpy-[1px]で同じ高さ分だけ足す
+                （幅を使う要素を足すと折り返して崩れることが分かったため、高さのみ調整）。 */}
+            <h2 className="mb-3 whitespace-nowrap py-[1px] text-sm font-medium text-neutral-500">フォーマットリーガル</h2>
             <LegalityGrid legalities={legalities} disabled={current.notTournamentLegal} />
           </div>
 
