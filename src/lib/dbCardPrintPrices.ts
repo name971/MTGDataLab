@@ -75,16 +75,23 @@ export async function getLatestPricesForPrints(scryfallIds: string[]): Promise<L
   // card_print_current_prices（1プリント1行の「今の価格」キャッシュ、DB容量超過対応で新設）を
   // 見る。以前はcard_print_prices（JSONB全履歴）から最新日付キーを都度探していたが、
   // このキャッシュテーブル自体が既に「各プリントの最新価格」を保持しているため不要になった。
-  const data: { scryfall_id: string; usd: number | null; usd_foil: number | null; date: string }[] = [];
+  const chunks: string[][] = [];
   for (let i = 0; i < scryfallIds.length; i += SCRYFALL_ID_CHUNK) {
-    const chunk = scryfallIds.slice(i, i + SCRYFALL_ID_CHUNK);
-    const { data: page, error } = await supabase
-      .from("card_print_current_prices")
-      .select("scryfall_id, usd, usd_foil, date")
-      .in("scryfall_id", chunk);
-    if (error) continue; // 1チャンク失敗しても他のプリントの価格は表示できるよう続行する
-    if (page) data.push(...page);
+    chunks.push(scryfallIds.slice(i, i + SCRYFALL_ID_CHUNK));
   }
+  // チャンクごとに独立したクエリなので並列実行する（基本土地のように700件超のカードだと
+  // 直列では往復回数分そのまま遅くなっていた）。1チャンク失敗しても他のプリントの価格は
+  // 表示できるよう、個別のエラーは無視して続行する。
+  const pages = await Promise.all(
+    chunks.map(async (chunk) => {
+      const { data: page, error } = await supabase
+        .from("card_print_current_prices")
+        .select("scryfall_id, usd, usd_foil, date")
+        .in("scryfall_id", chunk);
+      return error ? [] : (page ?? []);
+    }),
+  );
+  const data = pages.flat();
   if (data.length === 0) return { normal: new Map(), foil: new Map() };
 
   // 全プリント・通常/Foil双方で使われている日付だけ集めて、レートの問い合わせを1回で済ませる
