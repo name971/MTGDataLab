@@ -333,7 +333,7 @@ export default async function CardDetailPage({
         iconUrlBySetCode={iconUrlBySetCode}
       >
         <div className="rounded-lg border border-neutral-200 p-4">
-          <h2 className="mb-2 text-sm font-medium text-neutral-500">使用デッキ</h2>
+          <h2 className="mb-2 whitespace-nowrap text-sm font-medium text-neutral-500">使用デッキ</h2>
           <div className="mb-3 flex items-center gap-1">
             {USAGE_PERIOD_OPTIONS.map((p) => (
               <Link
