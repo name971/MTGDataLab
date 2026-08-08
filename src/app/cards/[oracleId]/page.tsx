@@ -23,6 +23,9 @@ import { getOtherPrintsForCard, getBestCardImage, getIconUrlBySetCodes } from "@
 import { getLatestPricesForPrints } from "@/lib/dbCardPrintPrices";
 import { translateTypeLine } from "@/lib/typeGlossary";
 import CardHero from "@/components/CardHero";
+
+// カード詳細は同じページに多くの訪問が集中するため、5分間キャッシュを使い回してegressを抑える
+export const revalidate = 300;
 import {
   getCardDetailFromDb,
   getCardDetailByOracleId,

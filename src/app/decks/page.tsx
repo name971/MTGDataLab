@@ -6,6 +6,9 @@ import { getRecentDecksFromDb } from "@/lib/dbDeckDetail";
 import { getArchetypesFromDb } from "@/lib/dbArchetypeStats";
 import DeckRankingTable from "@/components/DeckRankingTable";
 
+// 5分間キャッシュを使い回してegressを抑える
+export const revalidate = 300;
+
 function resolveFormat(slug: string | undefined): Format {
   return FORMATS.find((f) => formatSlug(f) === slug) ?? "Standard";
 }
