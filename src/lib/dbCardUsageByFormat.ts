@@ -89,32 +89,33 @@ export async function getFormatUsageCountsForCard(
   const formats = [...new Set(entries.map((e) => e.format))];
   if (formats.length === 0) return [];
 
-  // 採用率(%)の分母（そのフォーマットの全デッキ数）を、このカードを含むかどうかに関わらず
-  // 取得する。Commanderだけで直近7日に1000件を超えることが実際にあるため、こちらもページングする。
-  const totalDecks: { format: string; event_date: string }[] = [];
-  for (let offset = 0; ; offset += PAGE_SIZE) {
-    const { data: page, error } = await supabase
-      .from("decks")
-      .select("tournaments!inner(format, event_date)")
-      .in("tournaments.format", formats)
-      .gte("tournaments.event_date", prevWindow.start)
-      .lte("tournaments.event_date", currentWindow.end)
-      .range(offset, offset + PAGE_SIZE - 1)
-      .returns<{ tournaments: { format: string; event_date: string } }[]>();
-    if (error) break;
-    if (!page || page.length === 0) break;
-    for (const row of page) totalDecks.push(row.tournaments);
-    if (page.length < PAGE_SIZE) break;
-  }
-
-  const totalCountInWindow = (format: string, w: { start: string; end: string }) =>
-    totalDecks.filter((d) => d.format === format && d.event_date >= w.start && d.event_date <= w.end).length;
+  // 採用率(%)の分母（そのフォーマットの全デッキ数）は、このカードを含むかどうかに関わらない
+  // 単なる件数なので、行データを転送してJSで数えるのではなくPostgresのcount機能で直接件数だけ
+  // 取る（Commanderだけで直近7日に1000件を超えることがあり、以前は全行ページング取得していて
+  // 遅かった）。フォーマット×現在/前期間の組み合わせを並列で問い合わせる。
+  const totalCountEntries = await Promise.all(
+    formats.flatMap((format) =>
+      ([
+        ["current", currentWindow],
+        ["prev", prevWindow],
+      ] as const).map(async ([key, w]) => {
+        const { count } = await supabase
+          .from("decks")
+          .select("id, tournaments!inner(format, event_date)", { count: "exact", head: true })
+          .eq("tournaments.format", format)
+          .gte("tournaments.event_date", w.start)
+          .lte("tournaments.event_date", w.end);
+        return { format, key, count: count ?? 0 };
+      }),
+    ),
+  );
+  const totalCountByKey = new Map(totalCountEntries.map((e) => [`${e.format}|${e.key}`, e.count]));
 
   return formats
     .map((format) => {
       const deckCount = countInWindow(format, currentWindow);
-      const totalCurrent = totalCountInWindow(format, currentWindow);
-      const totalPrev = totalCountInWindow(format, prevWindow);
+      const totalCurrent = totalCountByKey.get(`${format}|current`) ?? 0;
+      const totalPrev = totalCountByKey.get(`${format}|prev`) ?? 0;
       const prevCount = countInWindow(format, prevWindow);
       const rateCurrent = totalCurrent > 0 ? (deckCount / totalCurrent) * 100 : null;
       const ratePrev = totalPrev > 0 ? (prevCount / totalPrev) * 100 : null;
