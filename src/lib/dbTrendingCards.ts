@@ -74,19 +74,31 @@ export async function getTrendingCardsFromDb(): Promise<TrendingCardData[]> {
     .maybeSingle();
   if (!latestRow) return [];
 
-  const PAGE_SIZE = 1000;
-  const streakRows: StreakRow[] = [];
-  for (let offset = 0; ; offset += PAGE_SIZE) {
-    const { data: page, error } = await supabase
+  // card_streaksはある日、その日実際に連続上昇しているカード全件（数万件規模になりうる）を
+  // 保存している。ここで必要なのは各カテゴリの上位数件だけなので、全件取得してJS側で絞り込む
+  // のではなく、DB側でstreak_days・change_value降順にソート・上位だけをLIMITして取得する
+  // （全件ページングは行数が多い日にサブリクエスト過多で失敗し、フォールバック表示になる
+  // 事故が実際に発生した）。基本土地除外で数件減る可能性に備え、少し多めに取っておく。
+  const CANDIDATE_LIMIT = CARDS_PER_CATEGORY + 20;
+  const [{ data: priceRowsRaw }, { data: usageRowsRaw }] = await Promise.all([
+    supabase
       .from("card_streaks")
       .select("oracle_id, category, format, streak_days, change_value, calculated_date")
       .eq("calculated_date", latestRow.calculated_date)
-      .range(offset, offset + PAGE_SIZE - 1);
-    if (error) return [];
-    if (!page || page.length === 0) break;
-    streakRows.push(...(page as StreakRow[]));
-    if (page.length < PAGE_SIZE) break;
-  }
+      .eq("category", "price")
+      .order("streak_days", { ascending: false })
+      .order("change_value", { ascending: false })
+      .limit(CANDIDATE_LIMIT),
+    supabase
+      .from("card_streaks")
+      .select("oracle_id, category, format, streak_days, change_value, calculated_date")
+      .eq("calculated_date", latestRow.calculated_date)
+      .eq("category", "usage")
+      .order("streak_days", { ascending: false })
+      .order("change_value", { ascending: false })
+      .limit(CANDIDATE_LIMIT),
+  ]);
+  const streakRows = [...(priceRowsRaw ?? []), ...(usageRowsRaw ?? [])] as StreakRow[];
   if (streakRows.length === 0) return [];
 
   const { data: basicLandOracles } = await supabase
