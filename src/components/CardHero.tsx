@@ -906,13 +906,27 @@ export default function CardHero({
                   }`}
                 >
                   {p.imageUrl ? (
-                    <Image
-                      src={p.imageUrl}
-                      alt={p.setName}
-                      width={200}
-                      height={280}
-                      className={`w-full ${SQUARE_CORNER_SET_CODES.has(p.setCode) ? "rounded-sm" : "rounded-xl"}`}
-                    />
+                    <div className="relative">
+                      <Image
+                        src={p.imageUrl}
+                        alt={p.setName}
+                        width={200}
+                        height={280}
+                        className={`w-full ${SQUARE_CORNER_SET_CODES.has(p.setCode) ? "rounded-sm" : "rounded-xl"}`}
+                      />
+                      {listSortFoil && jpyFoil !== undefined && (
+                        // Foil一覧で見ている間、Foil版価格があるプリントの画像にはメイン画像と同じ
+                        // 虹色のホログラム風テクスチャを重ねる（メイン画像側の同演出と揃える）
+                        <div
+                          className="pointer-events-none absolute inset-0 opacity-50 mix-blend-overlay"
+                          style={{
+                            background:
+                              "repeating-linear-gradient(115deg, #ff0080 0%, #ff8c00 14%, #ffed00 28%, #00ff8c 42%, #00c8ff 56%, #8c00ff 70%, #ff0080 84%)",
+                            backgroundSize: "200% 200%",
+                          }}
+                        />
+                      )}
+                    </div>
                   ) : (
                     <div className="flex aspect-[5/7] w-full items-center justify-center rounded-xl bg-neutral-100 text-xs text-neutral-400">
                       画像なし
