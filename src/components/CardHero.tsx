@@ -189,26 +189,62 @@ export default function CardHero({
   const [loadingMorePrints, setLoadingMorePrints] = useState(false);
   const hasMorePrintsOnServer = otherPrints.length < otherPrintsTotalCount;
 
-  async function loadMorePrints() {
-    if (loadingMorePrints || !oracleIdForPaging || !hasMorePrintsOnServer) return;
+  type SortResponse = {
+    prints: CardPrint[];
+    pricesByScryfallId: Record<string, number>;
+    foilPricesByScryfallId: Record<string, number>;
+    iconUrlBySetCode: Record<string, string>;
+  };
+
+  async function fetchOtherPrints(
+    offset: number,
+    sortKey: "releaseDate" | "price",
+    sortDir: "asc" | "desc",
+    foil: boolean,
+  ): Promise<SortResponse | null> {
+    if (!oracleIdForPaging) return null;
     setLoadingMorePrints(true);
     try {
-      const res = await fetch(`/api/other-prints?oracleId=${oracleIdForPaging}&offset=${otherPrints.length}`);
-      const data = (await res.json()) as {
-        prints: CardPrint[];
-        pricesByScryfallId: Record<string, number>;
-        foilPricesByScryfallId: Record<string, number>;
-        iconUrlBySetCode: Record<string, string>;
-      };
-      setOtherPrints((prev) => [...prev, ...data.prints]);
-      setPricesByScryfallId((prev) => ({ ...prev, ...data.pricesByScryfallId }));
-      setFoilPricesByScryfallId((prev) => ({ ...prev, ...data.foilPricesByScryfallId }));
-      setIconUrlBySetCode((prev) => ({ ...prev, ...data.iconUrlBySetCode }));
+      const params = new URLSearchParams({
+        oracleId: oracleIdForPaging,
+        offset: String(offset),
+        sortBy: sortKey,
+        sortDir,
+        finish: foil ? "foil" : "normal",
+      });
+      const res = await fetch(`/api/other-prints?${params}`);
+      return (await res.json()) as SortResponse;
     } catch {
-      // 失敗時は何もしない。ユーザーがボタンをもう一度押せば再試行できる。
+      return null;
     } finally {
       setLoadingMorePrints(false);
     }
+  }
+
+  // 「もっと見る」でページの続きを取得する。並び順はDB側で保証されているため
+  // （getOtherPrintsForCard参照）、現在のソート状態のまま続きを追記すれば良い。
+  async function loadMorePrints() {
+    if (loadingMorePrints || !hasMorePrintsOnServer) return;
+    const data = await fetchOtherPrints(otherPrints.length, printSortKey, printSortDir, listSortFoil);
+    if (!data) return;
+    setOtherPrints((prev) => [...prev, ...data.prints]);
+    setPricesByScryfallId((prev) => ({ ...prev, ...data.pricesByScryfallId }));
+    setFoilPricesByScryfallId((prev) => ({ ...prev, ...data.foilPricesByScryfallId }));
+    setIconUrlBySetCode((prev) => ({ ...prev, ...data.iconUrlBySetCode }));
+  }
+
+  // 並び順・Foil基準を切り替えた時は、読み込み済みの分だけを並べ替えるのではなく
+  // 先頭ページからDB側でソート済みの結果を取り直す。読み込み済み範囲の外に、より安い/高い
+  // プリントが埋もれている場合でも正しい順序で表示できる。
+  async function refetchWithSort(sortKey: "releaseDate" | "price", sortDir: "asc" | "desc", foil: boolean) {
+    if (!oracleIdForPaging) return;
+    const data = await fetchOtherPrints(0, sortKey, sortDir, foil);
+    if (!data) return;
+    setOtherPrints(data.prints);
+    setPricesByScryfallId(data.pricesByScryfallId);
+    setFoilPricesByScryfallId(data.foilPricesByScryfallId);
+    setIconUrlBySetCode(data.iconUrlBySetCode);
+    setVisibleCount(VISIBLE_COUNT);
   }
   // card_prints未反映など、otherPrintsに代表プリント自身の行がまだ無い場合の最終フォールバック用
   // （currentの解決・resetToAggregateの画像表示に使う。通常はotherPrintsに実プリントとして
@@ -248,12 +284,17 @@ export default function CardHero({
   const galleryDialogRef = useRef<HTMLDialogElement>(null);
 
   function clickSort(key: "releaseDate" | "price") {
-    if (printSortKey === key) {
-      setPrintSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setPrintSortKey(key);
-      setPrintSortDir(key === "price" ? "asc" : "desc");
-    }
+    const newDir: "asc" | "desc" =
+      printSortKey === key ? (printSortDir === "asc" ? "desc" : "asc") : key === "price" ? "asc" : "desc";
+    setPrintSortKey(key);
+    setPrintSortDir(newDir);
+    void refetchWithSort(key, newDir, listSortFoil);
+  }
+
+  function toggleListSortFoil() {
+    const newFoil = !listSortFoil;
+    setListSortFoil(newFoil);
+    void refetchWithSort(printSortKey, printSortDir, newFoil);
   }
 
   const isAlternate = !isAggregateView;
@@ -271,21 +312,11 @@ export default function CardHero({
   const allPrices: Record<string, number> = pricesByScryfallId;
   const allFoilPrices: Record<string, number> = foilPricesByScryfallId;
 
-  // 一覧の並び順。発売日順・価格順どちらも選べ、同じボタンをもう一度押すと逆順になる。
-  // listSortFoil中は価格順の基準がFoil価格になる。
-  const priceSortSource = listSortFoil ? allFoilPrices : allPrices;
-  const listPrints = [...otherPrints].sort((a, b) => {
-    if (printSortKey === "price") {
-      const priceA = priceSortSource[a.scryfallId];
-      const priceB = priceSortSource[b.scryfallId];
-      if (priceA === undefined && priceB === undefined) return 0;
-      if (priceA === undefined) return 1; // 価格不明は順序に関わらず常に末尾
-      if (priceB === undefined) return -1;
-      return printSortDir === "asc" ? priceA - priceB : priceB - priceA;
-    }
-    const cmp = (a.releasedAt ?? "").localeCompare(b.releasedAt ?? ""); // 昇順基準（古い→新しい）
-    return printSortDir === "asc" ? cmp : -cmp;
-  });
+  // 一覧の並び順（発売日順・価格順、昇順/降順、Foil基準かどうか）はDB側（getOtherPrintsForCard）
+  // で解決済みの状態でotherPrintsに入っている（refetchWithSort参照）。読み込み済み分だけを
+  // クライアント側で並べ替えると、未読み込みの中に埋もれたプリントの順序が狂うため、
+  // ここでは並べ替えず届いた順をそのまま使う。
+  const listPrints = otherPrints;
   const visiblePrints = listPrints.slice(0, visibleCount);
 
   // 特定のプリントを選ぶ（defaultPrintと同じscryfallIdであっても、常にそのプリント自身の
@@ -635,7 +666,7 @@ export default function CardHero({
                 </button>
               ))}
               <button
-                onClick={() => setListSortFoil((v) => !v)}
+                onClick={toggleListSortFoil}
                 title={listSortFoil ? "通常価格で見る" : "Foil価格で見る"}
                 aria-label={listSortFoil ? "通常価格で見る" : "Foil価格で見る"}
                 aria-pressed={listSortFoil}

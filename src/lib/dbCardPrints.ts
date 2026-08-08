@@ -62,21 +62,38 @@ export interface CardPrintsPage {
  * card_prints（scripts/rebuild-card-prints.mjsがScryfallバルクデータから事前生成、db/schema.sql参照）
  * からカード詳細ページ「その他のプリント」欄用の一覧を取得する。ライブAPI呼び出しはしない。
  * set_nameは正規化されたsetsテーブルから結合して取得する（容量削減、db/schema.sql参照）。
- * released_at降順でoffset〜offset+limit-1件だけを返す（ページング、egress対策）。
+ * offset〜offset+limit-1件だけを返す（ページング、egress対策）。sortBy="price"の場合は、
+ * card_print_current_prices（1プリント1行、scryfall_idがPKでcard_printsと1:1）をDB側で
+ * 結合して並び替える。「もっと見る」でページを跨いでも常に正しい順序になるよう、
+ * クライアント側で読み込み済み分だけをソートするのではなくDB側でソート済みのページを返す方式にした。
  */
 export async function getOtherPrintsForCard(
   oracleId: string,
   offset = 0,
   limit: number = OTHER_PRINTS_PAGE_SIZE,
+  sortBy: "releaseDate" | "price" = "releaseDate",
+  sortDir: "asc" | "desc" = "desc",
+  finish: "normal" | "foil" = "normal",
 ): Promise<CardPrintsPage> {
+  const priceColumn = finish === "foil" ? "usd_foil" : "usd";
+  let query = supabase
+    .from("card_prints")
+    .select(`${CARD_PRINT_SELECT}, card_print_current_prices(${priceColumn})`)
+    .eq("oracle_id", oracleId);
+  // supabase-jsの.order(column, { foreignTable })は「埋め込み配列内の行」を並べる構文
+  // （1対多向け）で、今回のような「埋め込みリソースの列でトップレベル行を並べる」（1対1）
+  // ケースには効かない（並び順が反映されず黙って無視される）。PostgRESTのorder=table(col).dir
+  // 構文をそのままcolumn名として渡す必要がある。
+  query =
+    sortBy === "price"
+      ? query.order(`card_print_current_prices(${priceColumn})` as "id", {
+          ascending: sortDir === "asc",
+          nullsFirst: false, // 価格不明は常に末尾（昇順・降順どちらでも）
+        })
+      : query.order("released_at", { ascending: sortDir === "asc" });
+
   const [{ data, error }, { count }] = await Promise.all([
-    supabase
-      .from("card_prints")
-      .select(CARD_PRINT_SELECT)
-      .eq("oracle_id", oracleId)
-      .order("released_at", { ascending: false })
-      .range(offset, offset + limit - 1)
-      .returns<CardPrintRow[]>(),
+    query.range(offset, offset + limit - 1).returns<CardPrintRow[]>(),
     supabase
       .from("card_prints")
       .select("scryfall_id", { count: "exact", head: true })
