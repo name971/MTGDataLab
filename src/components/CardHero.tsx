@@ -591,27 +591,37 @@ export default function CardHero({
 
       <div className="rounded-lg border border-neutral-200 p-4 sm:w-80 sm:shrink-0">
         <div className="mb-3 flex items-center gap-2 rounded-lg bg-neutral-800 px-3 py-2.5 text-white">
-          {isAlternate ? (
-            // eslint-disable-next-line @next/next/no-img-element -- ScryfallのSVGアイコンCDN、next/imageの最適化対象外の小さな外部SVG
-            <img
-              src={setIconUrl(current.setCode, iconUrlBySetCode)}
-              alt=""
-              width={22}
-              height={22}
-              className="shrink-0 invert"
-              // Scryfallにアイコンが無いセット（GK1等の一部）だとブラウザ標準の壊れた画像アイコンが
-              // 出てしまうため、読み込み失敗時は自前の汎用スパークルアイコンに差し替える
-              onError={(e) => {
-                e.currentTarget.onerror = null;
-                e.currentTarget.src = "/icons/no-set-symbol.svg";
-              }}
-            />
-          ) : (
-            // 「カードデータ」は特定の1セットに属さない集約表示なので、Scryfallのセットアイコンでは
-            // なく自前のアイコン（複数プリントを重ねたイラスト）を使う
-            // eslint-disable-next-line @next/next/no-img-element -- 自前の静的SVG、next/imageの最適化不要
-            <img src="/icons/all-prints.svg" alt="" width={22} height={22} className="shrink-0" />
-          )}
+          {/* 「画像一覧から探す」への入口をここに統合（元は下に別ボタンとして独立していた）。
+              特定プリント選択中はそのプリントのセットアイコンを、集約表示（カードデータ）中は
+              汎用の虫眼鏡アイコンを見せつつ、どちらもクリックでギャラリーを開ける。 */}
+          <button
+            onClick={() => galleryDialogRef.current?.showModal()}
+            title={`画像一覧から探す（全${otherPrintsTotalCount}種）`}
+            className="shrink-0 rounded hover:opacity-70"
+          >
+            {isAlternate ? (
+              // eslint-disable-next-line @next/next/no-img-element -- ScryfallのSVGアイコンCDN、next/imageの最適化対象外の小さな外部SVG
+              <img
+                src={setIconUrl(current.setCode, iconUrlBySetCode)}
+                alt=""
+                width={22}
+                height={22}
+                className="shrink-0 invert"
+                // Scryfallにアイコンが無いセット（GK1等の一部）だとブラウザ標準の壊れた画像アイコンが
+                // 出てしまうため、読み込み失敗時は自前の汎用スパークルアイコンに差し替える
+                onError={(e) => {
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src = "/icons/no-set-symbol.svg";
+                }}
+              />
+            ) : (
+              <svg viewBox="0 0 24 32" width={22} height={22} fill="none" className="shrink-0">
+                <rect x="1" y="1" width="22" height="30" rx="3" stroke="currentColor" strokeWidth="1.5" />
+                <circle cx="12" cy="13" r="5.5" stroke="currentColor" strokeWidth="1.5" />
+                <line x1="12" y1="18.5" x2="12" y2="25" stroke="currentColor" strokeWidth="1.5" />
+              </svg>
+            )}
+          </button>
           <div className="min-w-0">
             {isAlternate ? (
               <>
@@ -638,18 +648,6 @@ export default function CardHero({
 
         {otherPrints.length > 0 && (
           <div className="flex flex-col gap-3">
-            <button
-              onClick={() => galleryDialogRef.current?.showModal()}
-              className="flex items-center gap-1.5 self-start rounded-md border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:border-neutral-500"
-            >
-              {/* カード枠の中に虫眼鏡＝画像を見ながら探すことを表すアイコン */}
-              <svg viewBox="0 0 24 32" width={14} height={19} fill="none" className="shrink-0">
-                <rect x="1" y="1" width="22" height="30" rx="3" stroke="currentColor" strokeWidth="1.5" />
-                <circle cx="12" cy="13" r="5.5" stroke="currentColor" strokeWidth="1.5" />
-                <line x1="12" y1="18.5" x2="12" y2="25" stroke="currentColor" strokeWidth="1.5" />
-              </svg>
-              画像一覧から探す（全{otherPrintsTotalCount}種）
-            </button>
             <div className="flex items-center gap-1 text-xs">
               <span className="text-neutral-400">並び順:</span>
               {(
