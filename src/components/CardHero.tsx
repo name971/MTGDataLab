@@ -805,6 +805,49 @@ export default function CardHero({
               ✕
             </button>
           </div>
+          {/* 通常一覧（表）と同じprintSortKey/printSortDir/listSortFoilを共有するので、
+              ここで切り替えると表側の並び順にも反映される */}
+          <div className="flex shrink-0 items-center gap-1 border-b border-neutral-200 px-4 py-2 text-xs">
+            <span className="text-neutral-400">並び順:</span>
+            {(
+              [
+                { key: "releaseDate", label: "発売日順" },
+                { key: "price", label: "価格順" },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.key}
+                onClick={() => clickSort(opt.key)}
+                className={`rounded-md border px-2 py-0.5 ${
+                  printSortKey === opt.key
+                    ? "border-neutral-500 bg-neutral-100 text-neutral-900"
+                    : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
+                }`}
+              >
+                {opt.label}
+                {printSortKey === opt.key && (printSortDir === "asc" ? " ▲" : " ▼")}
+              </button>
+            ))}
+            <button
+              onClick={() => setListSortFoil((v) => !v)}
+              title={listSortFoil ? "通常価格で見る" : "Foil価格で見る"}
+              aria-label={listSortFoil ? "通常価格で見る" : "Foil価格で見る"}
+              aria-pressed={listSortFoil}
+              className={`ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
+                listSortFoil ? "border-neutral-500" : "border-neutral-300 hover:border-neutral-500"
+              }`}
+              style={
+                listSortFoil
+                  ? {
+                      background:
+                        "linear-gradient(115deg, #ff008033, #ff8c0033, #ffed0033, #00ff8c33, #00c8ff33, #8c00ff33)",
+                    }
+                  : undefined
+              }
+            >
+              <FoilToggleIcon active={listSortFoil} variant="sparkle" />
+            </button>
+          </div>
           <div className="grid grid-cols-2 gap-3 overflow-y-auto p-4 sm:grid-cols-3 md:grid-cols-4">
             {listPrints.map((p) => {
               const jpy = allPrices[p.scryfallId];
