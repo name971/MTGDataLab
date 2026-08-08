@@ -8,8 +8,8 @@ import {
 } from "@/lib/dbDeckDetail";
 import DeckDetailView from "@/components/DeckDetailView";
 
-// 5分間キャッシュを使い回してegressを抑える
-export const revalidate = 300;
+// 集計バッチは1日1回しか回らないため、長めにキャッシュしてegressを抑える
+export const revalidate = 21600;
 
 /** "2026-07-26" -> "2026/7/26" */
 function formatDateShort(isoDate: string): string {

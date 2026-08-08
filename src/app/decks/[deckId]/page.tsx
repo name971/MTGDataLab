@@ -3,8 +3,8 @@ import { getSampleDeckDetail } from "@/lib/sampleDeckDetail";
 import { getDeckDetailFromDb } from "@/lib/dbDeckDetail";
 import DeckDetailView, { type DeckCardDisplay } from "@/components/DeckDetailView";
 
-// 過去のトーナメント戦績デッキは内容が変わらないため、1時間キャッシュを使い回してegressを抑える
-export const revalidate = 3600;
+// 過去のトーナメント戦績デッキは内容が変わらないため、長めにキャッシュしてegressを抑える
+export const revalidate = 86400;
 
 /** "2026-07-26" -> "2026/7/26" */
 function formatDateShort(isoDate: string): string {

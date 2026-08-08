@@ -5,8 +5,8 @@ import { getFormatSettings } from "@/lib/formatSettings";
 import { getCardRankingFromDb } from "@/lib/dbCardRanking";
 import RankingTable from "@/components/RankingTable";
 
-// 5分間キャッシュを使い回してegressを抑える
-export const revalidate = 300;
+// 集計バッチは1日1回しか回らないため、長めにキャッシュしてegressを抑える
+export const revalidate = 21600;
 
 function resolveFormat(slug: string): Format | null {
   return FORMATS.find((f) => formatSlug(f) === slug) ?? null;

@@ -24,8 +24,8 @@ import { getLatestPricesForPrints } from "@/lib/dbCardPrintPrices";
 import { translateTypeLine } from "@/lib/typeGlossary";
 import CardHero from "@/components/CardHero";
 
-// カード詳細は同じページに多くの訪問が集中するため、5分間キャッシュを使い回してegressを抑える
-export const revalidate = 300;
+// 価格・採用率データは1日1回のバッチでしか更新されないため、長めにキャッシュしてegressを抑える
+export const revalidate = 3600;
 import {
   getCardDetailFromDb,
   getCardDetailByOracleId,

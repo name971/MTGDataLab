@@ -45,41 +45,28 @@ function toCardPrint(p: CardPrintRow): CardPrint {
 const CARD_PRINT_SELECT =
   "scryfall_id, set_code, sets(set_name), collector_number, released_at, image_uri_normal, image_uri_normal_ja, not_tournament_legal, rarity";
 
+// 基本土地等は700件超のプリントを持ち、egress（プリント一覧＋各プリントの価格取得）を
+// 突出して消費する。「その他のプリント」は新しい版ほど参照価値が高いため、直近PRINT_LIMIT件
+// （released_at降順）に絞る。ponytail: 古いプリントは一覧に出なくなる。全件が必要になったら
+// 「もっと見る」をサーバー取得に変える等の対応を検討。
+const PRINT_LIMIT = 300;
+
 /**
  * card_prints（scripts/rebuild-card-prints.mjsがScryfallバルクデータから事前生成、db/schema.sql参照）
  * からカード詳細ページ「その他のプリント」欄用の一覧を取得する。ライブAPI呼び出しはしない。
  * set_nameは正規化されたsetsテーブルから結合して取得する（容量削減、db/schema.sql参照）。
  */
 export async function getOtherPrintsForCard(oracleId: string): Promise<CardPrint[]> {
-  // 基本土地等は700件超のプリントを持ち、PostgRESTのデフォルト上限（1000行）に近い/超える
-  // ことがある。1000件を超えるカードは稀なので、まず1ページ取得し、ちょうど1000件
-  // 返ってきた（＝続きがある可能性がある）場合だけ追加ページを並列取得する。
-  const PAGE_SIZE = 1000;
-  const { data: firstPage, error } = await supabase
+  const { data, error } = await supabase
     .from("card_prints")
     .select(CARD_PRINT_SELECT)
     .eq("oracle_id", oracleId)
     .order("released_at", { ascending: false })
-    .range(0, PAGE_SIZE - 1)
+    .limit(PRINT_LIMIT)
     .returns<CardPrintRow[]>();
   if (error) return [];
-  if (!firstPage || firstPage.length < PAGE_SIZE) return (firstPage ?? []).map(toCardPrint);
 
-  const data = [...firstPage];
-  for (let offset = PAGE_SIZE; ; offset += PAGE_SIZE) {
-    const { data: page, error: pageError } = await supabase
-      .from("card_prints")
-      .select(CARD_PRINT_SELECT)
-      .eq("oracle_id", oracleId)
-      .order("released_at", { ascending: false })
-      .range(offset, offset + PAGE_SIZE - 1)
-      .returns<CardPrintRow[]>();
-    if (pageError || !page || page.length === 0) break;
-    data.push(...page);
-    if (page.length < PAGE_SIZE) break;
-  }
-
-  return data.map(toCardPrint);
+  return (data ?? []).map(toCardPrint);
 }
 
 /**

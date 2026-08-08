@@ -6,9 +6,8 @@ import { getTrendingCardsFromDb } from "@/lib/dbTrendingCards";
 import { getTrendingRankingFromDb } from "@/lib/dbTrendingRanking";
 import TrendingRankingList from "@/components/TrendingRankingList";
 
-// 全訪問者共通のトップページを毎回Supabaseに問い合わせるとegressを消費しすぎるため、
-// 5分間はキャッシュを使い回す（ISR）
-export const revalidate = 300;
+// 集計バッチは1日1回しか回らないため、鮮度より egress 削減を優先して長めにキャッシュする（ISR）
+export const revalidate = 3600;
 
 /** trending_scoresがまだ空（3日分蓄積前等）の間だけ使うフォールバック */
 const SAMPLE_TRENDING_CARDS: TrendingCardData[] = [
