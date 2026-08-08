@@ -78,18 +78,25 @@ export async function getArchetypesFromDb(
     }
   }
 
+  // 代表カード選定・Arena換算・実勢価格中央値は、いずれも同じdeckIdsByArchetypeのメインボード
+  // （deck_cards）を土台に計算する。以前はそれぞれが個別にdeck_cards/cardsを取得しており、
+  // 同じ行を2〜3回問い合わせて直列に待っていた（デッキ数が多いフォーマットほど遅くなる主因
+  // だった）。1回だけ共有取得し、互いに依存しない計算は並列化する。
+  const sharedDeckCards = await fetchArchetypeDeckCards(deckIdsByArchetype);
+
   // Commanderはアーキタイプ名そのものが統率者名（"A / B"はパートナー）なので、
   // メインボードを走査するのではなく統率者自身の絵（パートナーなら2枚とも）を代表カードにする。
-  const { art: artUrlsByArchetype, colors: colorsByArchetype } =
-    format === "Commander"
-      ? await getCommanderArtByArchetype(archetypes)
-      : await getRepresentativeArtByArchetype(deckIdsByArchetype);
-
-  // MTG Arenaで実際に組む対象はローテーション中のStandardが中心なため、換算はStandardのみ計算する
-  const arenaMedianByArchetype =
-    format === "Standard" ? await getArenaMedianByArchetype(deckIdsByArchetype) : new Map<number, number>();
-
-  const medianPriceByArchetype = await getMedianPriceByArchetype(deckIdsByArchetype);
+  const [{ art: artUrlsByArchetype, colors: colorsByArchetype }, arenaMedianByArchetype, medianPriceByArchetype] =
+    await Promise.all([
+      format === "Commander"
+        ? getCommanderArtByArchetype(archetypes)
+        : Promise.resolve(getRepresentativeArtByArchetype(deckIdsByArchetype, sharedDeckCards)),
+      // MTG Arenaで実際に組む対象はローテーション中のStandardが中心なため、換算はStandardのみ計算する
+      format === "Standard"
+        ? getArenaMedianByArchetype(deckIdsByArchetype, sharedDeckCards)
+        : Promise.resolve(new Map<number, number>()),
+      getMedianPriceByArchetype(deckIdsByArchetype, sharedDeckCards),
+    ]);
 
   const rows = archetypes
     .map((a) => {
@@ -175,36 +182,55 @@ async function getCommanderArtByArchetype(
   return { art, colors };
 }
 
+type ArchetypeDeckCard = { deck_id: number; oracle_id: string | null; quantity: number };
+
 /**
- * アーキタイプごとの代表カード（そのアーキタイプのサンプルデッキで最も多く採用されている
- * 非土地カード）のアートクロップ画像を1枚選ぶ。MTGGoldfish風のカードアートグリッド表示用。
+ * getRepresentativeArtByArchetype・getArenaMedianByArchetype・getMedianPriceByArchetypeが
+ * 共通で使うdeckIdsByArchetypeのメインボード（deck_cards）を1回だけ取得する。
  */
-async function getRepresentativeArtByArchetype(
-  deckIdsByArchetype: Map<number, number[]>,
-): Promise<{ art: Map<number, string[]>; colors: Map<number, string[]> }> {
+async function fetchArchetypeDeckCards(deckIdsByArchetype: Map<number, number[]>): Promise<ArchetypeDeckCard[]> {
   const allDeckIds = [...deckIdsByArchetype.values()].flat();
-  if (allDeckIds.length === 0) return { art: new Map(), colors: new Map() };
+  if (allDeckIds.length === 0) return [];
 
   const PAGE_SIZE = 200;
   // Supabase/PostgRESTは1リクエスト最大1000行までしか返さない。200デッキ×60枚前後の
   // メインボードは軽く1000行を超えるため、chunk内でも.range()でページングしないと
   // 一部のデッキ（＝一部のアーキタイプ）のカードが黙って欠落し、代表カードが選べなくなる。
   const ROW_PAGE_SIZE = 1000;
-  const deckCards: { deck_id: number; oracle_id: string | null; quantity: number }[] = [];
-  for (let i = 0; i < allDeckIds.length; i += PAGE_SIZE) {
-    const chunk = allDeckIds.slice(i, i + PAGE_SIZE);
-    for (let offset = 0; ; offset += ROW_PAGE_SIZE) {
-      const { data } = await supabase
-        .from("deck_cards")
-        .select("deck_id, oracle_id, quantity")
-        .in("deck_id", chunk)
-        .eq("board", "main")
-        .range(offset, offset + ROW_PAGE_SIZE - 1);
-      if (!data || data.length === 0) break;
-      deckCards.push(...data);
-      if (data.length < ROW_PAGE_SIZE) break;
-    }
-  }
+  const chunks: number[][] = [];
+  for (let i = 0; i < allDeckIds.length; i += PAGE_SIZE) chunks.push(allDeckIds.slice(i, i + PAGE_SIZE));
+
+  // チャンク・ページはいずれも互いに独立なので並列取得する
+  const chunkResults = await Promise.all(
+    chunks.map(async (chunk) => {
+      const pages: ArchetypeDeckCard[] = [];
+      for (let offset = 0; ; offset += ROW_PAGE_SIZE) {
+        const { data } = await supabase
+          .from("deck_cards")
+          .select("deck_id, oracle_id, quantity")
+          .in("deck_id", chunk)
+          .eq("board", "main")
+          .range(offset, offset + ROW_PAGE_SIZE - 1);
+        if (!data || data.length === 0) break;
+        pages.push(...data);
+        if (data.length < ROW_PAGE_SIZE) break;
+      }
+      return pages;
+    }),
+  );
+  return chunkResults.flat();
+}
+
+/**
+ * アーキタイプごとの代表カード（そのアーキタイプのサンプルデッキで最も多く採用されている
+ * 非土地カード）のアートクロップ画像を1枚選ぶ。MTGGoldfish風のカードアートグリッド表示用。
+ */
+async function getRepresentativeArtByArchetype(
+  deckIdsByArchetype: Map<number, number[]>,
+  deckCards: ArchetypeDeckCard[],
+): Promise<{ art: Map<number, string[]>; colors: Map<number, string[]> }> {
+  if (deckCards.length === 0) return { art: new Map(), colors: new Map() };
+  const PAGE_SIZE = 200;
 
   const deckIdToArchetypeId = new Map<number, number>();
   for (const [archetypeId, deckIds] of deckIdsByArchetype) {
@@ -293,28 +319,10 @@ async function getRepresentativeArtByArchetype(
  */
 async function getArenaMedianByArchetype(
   deckIdsByArchetype: Map<number, number[]>,
+  deckCards: ArchetypeDeckCard[],
 ): Promise<Map<number, number>> {
-  const allDeckIds = [...deckIdsByArchetype.values()].flat();
-  if (allDeckIds.length === 0) return new Map();
-
-  const PAGE_SIZE = 200;
-  const ROW_PAGE_SIZE = 1000;
-  const deckCards: { deck_id: number; oracle_id: string | null; quantity: number }[] = [];
-  for (let i = 0; i < allDeckIds.length; i += PAGE_SIZE) {
-    const chunk = allDeckIds.slice(i, i + PAGE_SIZE);
-    for (let offset = 0; ; offset += ROW_PAGE_SIZE) {
-      const { data } = await supabase
-        .from("deck_cards")
-        .select("deck_id, oracle_id, quantity")
-        .in("deck_id", chunk)
-        .eq("board", "main")
-        .range(offset, offset + ROW_PAGE_SIZE - 1);
-      if (!data || data.length === 0) break;
-      deckCards.push(...data);
-      if (data.length < ROW_PAGE_SIZE) break;
-    }
-  }
   if (deckCards.length === 0) return new Map();
+  const PAGE_SIZE = 200;
 
   const allOracleIds = [...new Set(deckCards.map((dc) => dc.oracle_id).filter((id): id is string => !!id))];
   const rarityByOracle = new Map<string, string>();
@@ -363,28 +371,10 @@ async function getArenaMedianByArchetype(
  */
 async function getMedianPriceByArchetype(
   deckIdsByArchetype: Map<number, number[]>,
+  deckCards: ArchetypeDeckCard[],
 ): Promise<Map<number, { medianPriceJpy: number; sampleSize: number }>> {
-  const allDeckIds = [...deckIdsByArchetype.values()].flat();
-  if (allDeckIds.length === 0) return new Map();
-
-  const PAGE_SIZE = 200;
-  const ROW_PAGE_SIZE = 1000;
-  const deckCards: { deck_id: number; oracle_id: string | null; quantity: number }[] = [];
-  for (let i = 0; i < allDeckIds.length; i += PAGE_SIZE) {
-    const chunk = allDeckIds.slice(i, i + PAGE_SIZE);
-    for (let offset = 0; ; offset += ROW_PAGE_SIZE) {
-      const { data } = await supabase
-        .from("deck_cards")
-        .select("deck_id, oracle_id, quantity")
-        .in("deck_id", chunk)
-        .eq("board", "main")
-        .range(offset, offset + ROW_PAGE_SIZE - 1);
-      if (!data || data.length === 0) break;
-      deckCards.push(...data);
-      if (data.length < ROW_PAGE_SIZE) break;
-    }
-  }
   if (deckCards.length === 0) return new Map();
+  const PAGE_SIZE = 200;
 
   const allOracleIds = [...new Set(deckCards.map((dc) => dc.oracle_id).filter((id): id is string => !!id))];
   const priceByOracle = new Map<string, number>();
