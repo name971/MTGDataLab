@@ -286,49 +286,66 @@ export async function advancedSearchCards(
     return query;
   }
 
-  let cardRows: CardRow[];
+  // 色・マナ総量はDBに列を持たないため、行単位でJS側フィルタする。以前はSQLで拾った
+  // 最初のCANDIDATE_CAP件（色・マナ総量を見る前の生の行）だけをJS側で絞り込んでいたため、
+  // 他の条件（名前・タイプ等）が緩い検索だと、実際に該当するカードがSQLの先頭CANDIDATE_CAP件
+  // より後ろに埋もれて拾われない事故があった（マナ総量フィルタが「全カード対象」になっていない
+  // ように見えた原因）。ページングしながら都度この判定を通し、判定後の件数でCANDIDATE_CAPに
+  // 達するまで（＝実際にヒットする候補がCANDIDATE_CAP件集まるまで）SQL側を読み進める。
+  function matchesRowFilters(c: CardRow): boolean {
+    if (filters.colorlessOnly) {
+      if (colorsFromManaCost(c.mana_cost).length !== 0) return false;
+    } else if (filters.colors && filters.colors.length > 0) {
+      const cardColors = colorsFromManaCost(c.mana_cost);
+      if (!filters.colors.every((col) => cardColors.includes(col))) return false;
+    }
+    if (filters.mvBuckets && filters.mvBuckets.length > 0) {
+      if (!filters.mvBuckets.includes(mvBucket(manaValueFromCost(c.mana_cost)))) return false;
+    }
+    return true;
+  }
+
+  // SQL側の絞り込みがどれだけ緩くても走査量に上限を設けないと際限なく重くなるため、
+  // 生の行の走査数自体にも安全弁を設ける（CANDIDATE_CAPよりかなり広めに取る）。
+  const MAX_SCAN_ROWS = CANDIDATE_CAP * 20;
+  const seenOracleIds = new Set<string>();
+  const candidates: CardRow[] = [];
+
   if (restrictOracleIds) {
     // restrictOracleIdsは千件規模のこともあり.in()に一括で渡せないため、チャンク分割して問い合わせる
-    const rows: CardRow[] = [];
-    for (let i = 0; i < restrictOracleIds.length && rows.length < CANDIDATE_CAP; i += ID_CHUNK) {
+    for (let i = 0; i < restrictOracleIds.length && candidates.length < CANDIDATE_CAP; i += ID_CHUNK) {
       const chunk = restrictOracleIds.slice(i, i + ID_CHUNK);
       const q = applyCommonFilters(supabase.from("cards").select(CARD_SELECT).eq("lang", "en").in("oracle_id", chunk));
-      const { data } = (await q.limit(CANDIDATE_CAP - rows.length)) as { data: CardRow[] | null };
-      if (data) rows.push(...data);
+      const { data } = (await q) as { data: CardRow[] | null };
+      for (const c of data ?? []) {
+        if (seenOracleIds.has(c.oracle_id)) continue; // cardsは再録等で同じoracle_idの行が複数残ることがある
+        if (!matchesRowFilters(c)) continue;
+        seenOracleIds.add(c.oracle_id);
+        candidates.push(c);
+        if (candidates.length >= CANDIDATE_CAP) break;
+      }
     }
-    cardRows = rows;
   } else {
-    const q = applyCommonFilters(supabase.from("cards").select(CARD_SELECT).eq("lang", "en"));
-    const { data, error } = (await q.limit(CANDIDATE_CAP)) as { data: CardRow[] | null; error: unknown };
-    if (error || !data) return { results: [], totalCount: 0 };
-    cardRows = data;
-  }
-  if (cardRows.length === 0) return { results: [], totalCount: 0 };
-
-  // cardsは本来oracle_idごとに代表プリント（lang='en'）1行のはずだが、実データには同じoracle_idの
-  // 行が複数残っていることがある（例: 再録のたびに旧セットの行が消えず並存）。検索結果に同じカードが
-  // 何度も出るのを防ぐため、oracle_id単位で1件に絞る。
-  const seenOracleIds = new Set<string>();
-  cardRows = cardRows.filter((c) => {
-    if (seenOracleIds.has(c.oracle_id)) return false;
-    seenOracleIds.add(c.oracle_id);
-    return true;
-  });
-
-  // 色・マナ総量はDBに列を持たないため、ここでJS側フィルタする
-  let candidates = cardRows;
-  if (filters.colorlessOnly) {
-    candidates = candidates.filter((c) => colorsFromManaCost(c.mana_cost).length === 0);
-  } else if (filters.colors && filters.colors.length > 0) {
-    const selected = filters.colors;
-    candidates = candidates.filter((c) => {
-      const cardColors = colorsFromManaCost(c.mana_cost);
-      return selected.every((col) => cardColors.includes(col));
-    });
-  }
-  if (filters.mvBuckets && filters.mvBuckets.length > 0) {
-    const selected = new Set(filters.mvBuckets);
-    candidates = candidates.filter((c) => selected.has(mvBucket(manaValueFromCost(c.mana_cost))));
+    const RANGE_PAGE_SIZE = 1000;
+    let scanned = 0;
+    for (let offset = 0; candidates.length < CANDIDATE_CAP && scanned < MAX_SCAN_ROWS; offset += RANGE_PAGE_SIZE) {
+      const q = applyCommonFilters(supabase.from("cards").select(CARD_SELECT).eq("lang", "en"));
+      const { data, error } = (await q.range(offset, offset + RANGE_PAGE_SIZE - 1)) as {
+        data: CardRow[] | null;
+        error: unknown;
+      };
+      if (error) return { results: [], totalCount: 0 };
+      if (!data || data.length === 0) break;
+      scanned += data.length;
+      for (const c of data) {
+        if (seenOracleIds.has(c.oracle_id)) continue;
+        if (!matchesRowFilters(c)) continue;
+        seenOracleIds.add(c.oracle_id);
+        candidates.push(c);
+        if (candidates.length >= CANDIDATE_CAP) break;
+      }
+      if (data.length < RANGE_PAGE_SIZE) break;
+    }
   }
   if (candidates.length === 0) return { results: [], totalCount: 0 };
 

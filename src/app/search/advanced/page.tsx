@@ -210,7 +210,7 @@ export default async function AdvancedSearchPage({
           <legend className="mb-1 text-xs font-semibold text-neutral-400">数値条件</legend>
 
           <div className="flex flex-col gap-1.5 text-sm">
-            <span className="text-neutral-600">マナ総量（複数選択可、デッキ詳細のマナカーブと同じ区分）</span>
+            <span className="text-neutral-600">マナ総量（複数選択可）</span>
             <div className="flex flex-wrap gap-1.5">
               {MV_BUCKETS.map((mv) => (
                 <label key={mv} className="cursor-pointer">
