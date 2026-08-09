@@ -294,6 +294,11 @@ export async function advancedSearchCards(
     if (filters.sortKey === "releasedAt") {
       query = query.order("released_at", { ascending: filters.sortDir === "asc", nullsFirst: false });
     }
+    // .range()でページングする以上、ORDER BYが同点だらけだとPostgRESTが行の並びを保証せず、
+    // ページ（特に並列取得時の複数リクエスト）ごとに同点内の順序が入れ替わり、同じ行が
+    // 複数ページに重複して現れたり、逆に一件も現れないまま漏れたりする事故があった。
+    // oracle_idを常に最終タイブレーカーにして、並び自体を完全に決定的にする。
+    query = query.order("oracle_id", { ascending: true });
     return query;
   }
 
@@ -322,40 +327,77 @@ export async function advancedSearchCards(
   const seenOracleIds = new Set<string>();
   const candidates: CardRow[] = [];
 
+  // ページ（チャンク）は互いに独立なので、何往復も直列で待つと該当が少ない条件
+  // （マナ総量の希少な値等）で待ち時間が積み上がる。BATCH_CONCURRENCYページ分をまとめて
+  // 並列取得し、まだCANDIDATE_CAPに届かなければ次のバッチへ進む方式にする。
+  // バッチ内の各ページはPromise.allの配列順（＝offset順）で処理するため、判定・打ち切りの
+  // 結果は直列実行時と同じになる（並列化しても正しさは変わらない）。
+  const BATCH_CONCURRENCY = 5;
+
   if (restrictOracleIds) {
     // restrictOracleIdsは千件規模のこともあり.in()に一括で渡せないため、チャンク分割して問い合わせる
-    for (let i = 0; i < restrictOracleIds.length && candidates.length < CANDIDATE_CAP; i += ID_CHUNK) {
-      const chunk = restrictOracleIds.slice(i, i + ID_CHUNK);
-      const q = applyCommonFilters(supabase.from("cards").select(CARD_SELECT).eq("lang", "en").in("oracle_id", chunk));
-      const { data } = (await q) as { data: CardRow[] | null };
-      for (const c of data ?? []) {
-        if (seenOracleIds.has(c.oracle_id)) continue; // cardsは再録等で同じoracle_idの行が複数残ることがある
-        if (!matchesRowFilters(c)) continue;
-        seenOracleIds.add(c.oracle_id);
-        candidates.push(c);
+    const chunks: string[][] = [];
+    for (let i = 0; i < restrictOracleIds.length; i += ID_CHUNK) chunks.push(restrictOracleIds.slice(i, i + ID_CHUNK));
+
+    for (let i = 0; i < chunks.length && candidates.length < CANDIDATE_CAP; i += BATCH_CONCURRENCY) {
+      const batch = chunks.slice(i, i + BATCH_CONCURRENCY);
+      const pages = await Promise.all(
+        batch.map(async (chunk) => {
+          const q = applyCommonFilters(supabase.from("cards").select(CARD_SELECT).eq("lang", "en").in("oracle_id", chunk));
+          const { data } = (await q) as { data: CardRow[] | null };
+          return data ?? [];
+        }),
+      );
+      for (const page of pages) {
+        for (const c of page) {
+          if (seenOracleIds.has(c.oracle_id)) continue; // cardsは再録等で同じoracle_idの行が複数残ることがある
+          if (!matchesRowFilters(c)) continue;
+          seenOracleIds.add(c.oracle_id);
+          candidates.push(c);
+          if (candidates.length >= CANDIDATE_CAP) break;
+        }
         if (candidates.length >= CANDIDATE_CAP) break;
       }
     }
   } else {
     const RANGE_PAGE_SIZE = 1000;
     let scanned = 0;
-    for (let offset = 0; candidates.length < CANDIDATE_CAP && scanned < MAX_SCAN_ROWS; offset += RANGE_PAGE_SIZE) {
-      const q = applyCommonFilters(supabase.from("cards").select(CARD_SELECT).eq("lang", "en"));
-      const { data, error } = (await q.range(offset, offset + RANGE_PAGE_SIZE - 1)) as {
-        data: CardRow[] | null;
-        error: unknown;
-      };
-      if (error) return { results: [], totalCount: 0, capped: false };
-      if (!data || data.length === 0) break;
-      scanned += data.length;
-      for (const c of data) {
-        if (seenOracleIds.has(c.oracle_id)) continue;
-        if (!matchesRowFilters(c)) continue;
-        seenOracleIds.add(c.oracle_id);
-        candidates.push(c);
-        if (candidates.length >= CANDIDATE_CAP) break;
+    let exhausted = false;
+    for (
+      let batchStart = 0;
+      candidates.length < CANDIDATE_CAP && scanned < MAX_SCAN_ROWS && !exhausted;
+      batchStart += BATCH_CONCURRENCY * RANGE_PAGE_SIZE
+    ) {
+      const offsets = Array.from({ length: BATCH_CONCURRENCY }, (_, i) => batchStart + i * RANGE_PAGE_SIZE);
+      const pages = await Promise.all(
+        offsets.map(async (offset) => {
+          const q = applyCommonFilters(supabase.from("cards").select(CARD_SELECT).eq("lang", "en"));
+          const { data, error } = (await q.range(offset, offset + RANGE_PAGE_SIZE - 1)) as {
+            data: CardRow[] | null;
+            error: unknown;
+          };
+          return error ? [] : (data ?? []);
+        }),
+      );
+      for (const page of pages) {
+        if (page.length === 0) {
+          exhausted = true;
+          break;
+        }
+        scanned += page.length;
+        for (const c of page) {
+          if (seenOracleIds.has(c.oracle_id)) continue;
+          if (!matchesRowFilters(c)) continue;
+          seenOracleIds.add(c.oracle_id);
+          candidates.push(c);
+          if (candidates.length >= CANDIDATE_CAP) break;
+        }
+        if (page.length < RANGE_PAGE_SIZE) {
+          exhausted = true;
+          break;
+        }
+        if (candidates.length >= CANDIDATE_CAP || scanned >= MAX_SCAN_ROWS) break;
       }
-      if (data.length < RANGE_PAGE_SIZE) break;
     }
   }
   // CANDIDATE_CAPに達して打ち切った場合は「実際にはもっとある」ことを呼び出し側に伝える
