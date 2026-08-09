@@ -166,6 +166,9 @@ export interface AdvancedSearchPage {
   /** SQL・JS側の全フィルタを適用した後の該当件数（表示件数ではなく実際の総件数）。
    * CANDIDATE_CAP（500）が実質的な上限になる。もっと見るボタンの残り件数表示に使う。 */
   totalCount: number;
+  /** trueの場合、CANDIDATE_CAPに達したため走査を打ち切っており、totalCountは
+   * 実際の該当件数の下限（＝本当はもっとある）。呼び出し側で「N件以上」と表示する想定。 */
+  capped: boolean;
 }
 
 /**
@@ -182,7 +185,7 @@ export async function advancedSearchCards(
   offset = 0,
   limit: number = PAGE_SIZE,
 ): Promise<AdvancedSearchPage> {
-  if (!hasAnyFilter(filters)) return { results: [], totalCount: 0 };
+  if (!hasAnyFilter(filters)) return { results: [], totalCount: 0, capped: false };
 
   const name = filters.name?.trim();
   const text = filters.text?.trim();
@@ -218,7 +221,7 @@ export async function advancedSearchCards(
     textOracleIds = [
       ...new Set([...(enTextRows ?? []).map((r) => r.oracle_id), ...(jaTextRows ?? []).map((r) => r.oracle_id)]),
     ];
-    if (textOracleIds.length === 0) return { results: [], totalCount: 0 }; // ルールテキストに一致するカードが無ければこの時点で確定
+    if (textOracleIds.length === 0) return { results: [], totalCount: 0, capped: false }; // ルールテキストに一致するカードが無ければこの時点で確定
   }
 
   // 採用率フィルタはフォーマット指定が無いと判定しようがないため、formats未指定時は無視する。
@@ -236,7 +239,7 @@ export async function advancedSearchCards(
       .order("calculated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (!latestRow) return { results: [], totalCount: 0 }; // このフォーマット・期間の採用率データが無ければ確定で0件
+    if (!latestRow) return { results: [], totalCount: 0, capped: false }; // このフォーマット・期間の採用率データが無ければ確定で0件
     let query = supabase
       .from("card_usage_stats")
       .select("oracle_id, usage_rate")
@@ -248,7 +251,7 @@ export async function advancedSearchCards(
     if (filters.usageRateMax !== undefined) query = query.lte("usage_rate", filters.usageRateMax);
     const { data } = await query;
     usageOracleIds = (data ?? []).map((r) => r.oracle_id);
-    if (usageOracleIds.length === 0) return { results: [], totalCount: 0 };
+    if (usageOracleIds.length === 0) return { results: [], totalCount: 0, capped: false };
   }
 
   // textOracleIds・usageOracleIdsはどちらも「事前にoracle_id候補を絞る」フィルタなので、
@@ -257,7 +260,7 @@ export async function advancedSearchCards(
   if (textOracleIds && usageOracleIds) {
     const usageSet = new Set(usageOracleIds);
     restrictOracleIds = textOracleIds.filter((id) => usageSet.has(id));
-    if (restrictOracleIds.length === 0) return { results: [], totalCount: 0 };
+    if (restrictOracleIds.length === 0) return { results: [], totalCount: 0, capped: false };
   } else {
     restrictOracleIds = textOracleIds ?? usageOracleIds;
   }
@@ -282,6 +285,14 @@ export async function advancedSearchCards(
     // 複数フォーマットが選ばれている場合は「いずれかで合法」（OR）にする
     if (filters.formats && filters.formats.length > 0) {
       query = query.or(filters.formats.map((f) => `legalities->>${formatSlug(f)}.eq.legal`).join(","));
+    }
+    // 登録日順ソート時はDB側で並べ替えてから走査する。こうしておくと、候補がCANDIDATE_CAPで
+    // 打ち切られても「先頭CANDIDATE_CAP件」＝「実際の発売日順の先頭」になるため、
+    // 該当件数が多い検索でも並び順が壊れない。価格順はcards側に価格の列・直接のFKが無く
+    // （card_current_pricesはoracle_id単位で別テーブル）、同じ方法が使えないため対象外
+    // （price順は依然としてCANDIDATE_CAPに達すると走査済みの範囲内でのみ正確）。
+    if (filters.sortKey === "releasedAt") {
+      query = query.order("released_at", { ascending: filters.sortDir === "asc", nullsFirst: false });
     }
     return query;
   }
@@ -334,7 +345,7 @@ export async function advancedSearchCards(
         data: CardRow[] | null;
         error: unknown;
       };
-      if (error) return { results: [], totalCount: 0 };
+      if (error) return { results: [], totalCount: 0, capped: false };
       if (!data || data.length === 0) break;
       scanned += data.length;
       for (const c of data) {
@@ -347,7 +358,10 @@ export async function advancedSearchCards(
       if (data.length < RANGE_PAGE_SIZE) break;
     }
   }
-  if (candidates.length === 0) return { results: [], totalCount: 0 };
+  // CANDIDATE_CAPに達して打ち切った場合は「実際にはもっとある」ことを呼び出し側に伝える
+  // （安全弁のMAX_SCAN_ROWSで打ち切られた場合も同様に不完全なので、その場合もcappedを立てる）
+  const capped = candidates.length >= CANDIDATE_CAP;
+  if (candidates.length === 0) return { results: [], totalCount: 0, capped: false };
 
   // 価格帯フィルタが無い場合でも一覧表示に価格を出したいので、候補全件分まとめて取得する
   const oracleIds = candidates.map((c) => c.oracle_id);
@@ -362,7 +376,7 @@ export async function advancedSearchCards(
       return true;
     });
   }
-  if (withPrice.length === 0) return { results: [], totalCount: 0 };
+  if (withPrice.length === 0) return { results: [], totalCount: 0, capped: false };
 
   // 価格変化率はD1（price_history_archive）の履歴が必要で、全件に対してやると重いため、
   // ここまでで絞り込んだ候補（最大でもCANDIDATE_CAP件）に対してだけ計算する。
@@ -406,7 +420,7 @@ export async function advancedSearchCards(
       return true;
     });
   }
-  if (withChange.length === 0) return { results: [], totalCount: 0 };
+  if (withChange.length === 0) return { results: [], totalCount: 0, capped: false };
 
   // 価格順（価格不明は末尾）・登録日順（新しい順、日付不明は末尾）を選べる。デフォルトは価格順
   // （価格が高いカードほど有名で見覚えがあることが多いため）。totalCountは全フィルタ適用後・
@@ -430,7 +444,7 @@ export async function advancedSearchCards(
   });
   const totalCount = withChange.length;
   const sorted = withChange.slice(offset, offset + limit);
-  if (sorted.length === 0) return { results: [], totalCount };
+  if (sorted.length === 0) return { results: [], totalCount, capped };
 
   // 日本語名・日本語版画像は別途まとめて取得する（候補が絞れた後なのでコストは小さい）
   const finalOracleIds = sorted.map((r) => r.card.oracle_id);
@@ -454,5 +468,5 @@ export async function advancedSearchCards(
     rarity: card.rarity,
     priceJpy,
   }));
-  return { results, totalCount };
+  return { results, totalCount, capped };
 }
