@@ -29,6 +29,8 @@ export interface AdvancedSearchFilters {
   priceChangeMin?: number;
   priceChangeMax?: number;
   priceChangePeriodDays?: 7 | 30 | 90;
+  sortKey?: "price" | "releasedAt";
+  sortDir?: "asc" | "desc";
 }
 
 export interface AdvancedSearchResult {
@@ -51,9 +53,12 @@ interface CardRow {
   rarity: string;
   legalities: Record<string, string>;
   image_uri_normal: string | null;
+  /** 代表プリント（lang='en'）の発売日。登録日順ソート用の目安（再録の代表行だと初出より新しい日付になりうる） */
+  released_at: string | null;
 }
 
-const CARD_SELECT = "oracle_id, name, mana_cost, type_line, power, toughness, rarity, legalities, image_uri_normal";
+const CARD_SELECT =
+  "oracle_id, name, mana_cost, type_line, power, toughness, rarity, legalities, image_uri_normal, released_at";
 
 // 候補が多すぎるとフィルタ処理・後続の価格問い合わせが重くなるため、SQL側の絞り込み後の
 // 候補数に上限を設ける（色・マナ総量・価格帯・価格変化率はここではなくJS側で判定するため、
@@ -377,11 +382,28 @@ export async function advancedSearchCards(
   }
   if (withChange.length === 0) return { results: [], totalCount: 0 };
 
-  // 価格が高いカードほど有名で見覚えがあることが多いため、価格の高い順をデフォルトにする
-  // （価格不明のカードは末尾に回す）。totalCountは全フィルタ適用後・ページング前の件数
-  // （もっと見るボタンの「残り件数」表示に使う）。
+  // 価格順（価格不明は末尾）・登録日順（新しい順、日付不明は末尾）を選べる。デフォルトは価格順
+  // （価格が高いカードほど有名で見覚えがあることが多いため）。totalCountは全フィルタ適用後・
+  // ページング前の件数（ページ送りの総ページ数計算に使う）。
+  const sortKey = filters.sortKey ?? "price";
+  const sortDir = filters.sortDir ?? "desc";
+  const dirMul = sortDir === "asc" ? 1 : -1;
+  withChange.sort((a, b) => {
+    if (sortKey === "releasedAt") {
+      const av = a.card.released_at ?? "";
+      const bv = b.card.released_at ?? "";
+      if (av === "" && bv === "") return 0;
+      if (av === "") return 1; // 日付不明は常に末尾
+      if (bv === "") return -1;
+      return dirMul * av.localeCompare(bv);
+    }
+    if (a.priceJpy === null && b.priceJpy === null) return 0;
+    if (a.priceJpy === null) return 1; // 価格不明は常に末尾
+    if (b.priceJpy === null) return -1;
+    return dirMul * (a.priceJpy - b.priceJpy);
+  });
   const totalCount = withChange.length;
-  const sorted = withChange.sort((a, b) => (b.priceJpy ?? -1) - (a.priceJpy ?? -1)).slice(offset, offset + limit);
+  const sorted = withChange.slice(offset, offset + limit);
   if (sorted.length === 0) return { results: [], totalCount };
 
   // 日本語名・日本語版画像は別途まとめて取得する（候補が絞れた後なのでコストは小さい）

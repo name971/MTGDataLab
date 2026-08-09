@@ -38,8 +38,23 @@ function toPeriod(value: string | string[] | undefined): 7 | 30 | 90 | undefined
   return (PERIODS as readonly number[]).includes(n as number) ? (n as 7 | 30 | 90) : undefined;
 }
 
-/** ページ側のフォームsearchParamsと、もっと見るAPI（/api/advanced-search）のクエリパラメータ
- * どちらからも同じ規則でフィルタを組み立てられるよう共通化したもの。 */
+function toSortKey(value: string | string[] | undefined): "price" | "releasedAt" {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return raw === "releasedAt" ? "releasedAt" : "price";
+}
+
+function toSortDir(value: string | string[] | undefined): "asc" | "desc" {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return raw === "asc" ? "asc" : "desc";
+}
+
+/** ページ番号（1始まり）。不正・未指定時は1ページ目扱い */
+export function parsePage(sp: RawSearchParams): number {
+  const raw = Array.isArray(sp.page) ? sp.page[0] : sp.page;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1;
+}
+
 export function parseAdvancedSearchFilters(sp: RawSearchParams): AdvancedSearchFilters {
   const format = Array.isArray(sp.format) ? sp.format[0] : sp.format;
   return {
@@ -61,5 +76,7 @@ export function parseAdvancedSearchFilters(sp: RawSearchParams): AdvancedSearchF
     priceChangeMin: toNumber(sp.priceChangeMin),
     priceChangeMax: toNumber(sp.priceChangeMax),
     priceChangePeriodDays: toPeriod(sp.priceChangePeriodDays) ?? 7,
+    sortKey: toSortKey(sp.sortKey),
+    sortDir: toSortDir(sp.sortDir),
   };
 }

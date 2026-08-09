@@ -1,13 +1,34 @@
 import Image from "next/image";
 import Link from "next/link";
-import { advancedSearchCards } from "@/lib/dbAdvancedSearch";
+import { advancedSearchCards, PAGE_SIZE } from "@/lib/dbAdvancedSearch";
 import { RARITY_LABEL_JA } from "@/lib/scryfall";
 import { FORMATS } from "@/lib/formats";
 import { COLOR_ORDER } from "@/lib/manaColors";
-import { COMMON_TYPES, PERIODS, RARITIES, parseAdvancedSearchFilters, type RawSearchParams } from "@/lib/parseAdvancedSearchParams";
-import AdvancedSearchResults from "@/components/AdvancedSearchResults";
+import {
+  COMMON_TYPES,
+  PERIODS,
+  RARITIES,
+  parseAdvancedSearchFilters,
+  parsePage,
+  type RawSearchParams,
+} from "@/lib/parseAdvancedSearchParams";
 
 export const metadata = { title: "高度検索 - MTG DataLab" };
+
+/** 現在のsearchParamsを引き継ぎつつ、指定したキーだけ上書きしたクエリ文字列を作る
+ * （ソート切り替え・ページ送りのリンク用。値がundefinedのキーは削除する）。 */
+function buildHref(sp: RawSearchParams, overrides: Record<string, string | undefined>): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(sp)) {
+    if (key in overrides || value === undefined) continue;
+    for (const v of Array.isArray(value) ? value : [value]) params.append(key, v);
+  }
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value !== undefined) params.set(key, value);
+  }
+  const qs = params.toString();
+  return qs ? `?${qs}` : "";
+}
 
 export default async function AdvancedSearchPage({
   searchParams,
@@ -16,20 +37,21 @@ export default async function AdvancedSearchPage({
 }) {
   const sp = await searchParams;
   const filters = parseAdvancedSearchFilters(sp);
+  const page = parsePage(sp);
   const hasSubmitted = Object.keys(sp).length > 0;
   const { results, totalCount } = hasSubmitted
-    ? await advancedSearchCards(filters)
+    ? await advancedSearchCards(filters, (page - 1) * PAGE_SIZE, PAGE_SIZE)
     : { results: [], totalCount: 0 };
-
-  // 「もっと見る」で/api/advanced-searchに渡す時も同じ条件になるよう、フォームの実際の
-  // searchParams（配列パラメータも含む）からそのままクエリ文字列を組み立てる
-  const queryString = new URLSearchParams(
-    Object.entries(sp).flatMap(([k, v]) => (v === undefined ? [] : (Array.isArray(v) ? v : [v]).map((x) => [k, x]))),
-  ).toString();
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   const selectedColors = new Set(filters.colors);
   const selectedRarities = new Set(filters.rarities);
   const selectedTypes = new Set(filters.types);
+
+  const SORT_OPTIONS = [
+    { key: "price", label: "価格順" },
+    { key: "releasedAt", label: "登録日順" },
+  ] as const;
 
   return (
     <div className="flex flex-col gap-6">
@@ -269,7 +291,103 @@ export default async function AdvancedSearchPage({
       </form>
 
       {hasSubmitted && (
-        <AdvancedSearchResults initialResults={results} totalCount={totalCount} queryString={queryString} />
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-neutral-500">{totalCount}件ヒット</p>
+            <div className="flex items-center gap-1 text-xs">
+              <span className="text-neutral-400">並び順:</span>
+              {SORT_OPTIONS.map((opt) => {
+                const isActive = (filters.sortKey ?? "price") === opt.key;
+                const nextDir = isActive && filters.sortDir === "asc" ? "desc" : "asc";
+                return (
+                  <Link
+                    key={opt.key}
+                    href={buildHref(sp, { sortKey: opt.key, sortDir: nextDir, page: undefined })}
+                    className={`rounded-md border px-2 py-0.5 ${
+                      isActive
+                        ? "border-neutral-500 bg-neutral-100 text-neutral-900"
+                        : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
+                    }`}
+                  >
+                    {opt.label}
+                    {isActive && (filters.sortDir === "asc" ? " ▲" : " ▼")}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+
+          {results.length > 0 ? (
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+              {results.map((card) => (
+                <Link
+                  key={card.oracleId}
+                  href={`/cards/${card.oracleId}`}
+                  className="flex flex-col overflow-hidden rounded-lg border border-neutral-200 hover:border-neutral-400"
+                >
+                  {card.imageUrl && (
+                    <Image
+                      src={card.imageUrl}
+                      alt={card.nameEn}
+                      width={223}
+                      height={311}
+                      className="w-full object-contain"
+                    />
+                  )}
+                  <div className="flex flex-col gap-0.5 p-2">
+                    <p className="truncate text-sm font-medium">{card.nameJa ?? card.nameEn}</p>
+                    <p className="truncate text-xs text-neutral-500">{card.nameEn}</p>
+                    <div className="mt-1 flex items-center justify-between text-xs text-neutral-500">
+                      <span>{RARITY_LABEL_JA[card.rarity] ?? card.rarity}</span>
+                      <span>
+                        {card.priceJpy !== null
+                          ? `¥${card.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}`
+                          : "-"}
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <p className="py-6 text-center text-sm text-neutral-500">
+              条件に一致するカードが見つかりませんでした。
+            </p>
+          )}
+
+          {totalPages > 1 && (
+            // モバイルでも軽く動くよう、読み込み式(もっと見る)ではなくページ単位のリンク遷移にしている
+            // （SSRで必要な分だけ取得・都度DBソート済みで返るので、途中まで読み込んだ状態を
+            // クライアント側に持ち続ける必要がない）。
+            <div className="flex flex-wrap items-center justify-center gap-1 text-sm">
+              <Link
+                href={buildHref(sp, { page: String(Math.max(1, page - 1)) })}
+                aria-disabled={page <= 1}
+                className={`rounded-md border px-3 py-1 ${
+                  page <= 1
+                    ? "pointer-events-none border-neutral-200 text-neutral-300"
+                    : "border-neutral-300 text-neutral-600 hover:border-neutral-500"
+                }`}
+              >
+                前へ
+              </Link>
+              <span className="px-2 text-neutral-500">
+                {page} / {totalPages}
+              </span>
+              <Link
+                href={buildHref(sp, { page: String(Math.min(totalPages, page + 1)) })}
+                aria-disabled={page >= totalPages}
+                className={`rounded-md border px-3 py-1 ${
+                  page >= totalPages
+                    ? "pointer-events-none border-neutral-200 text-neutral-300"
+                    : "border-neutral-300 text-neutral-600 hover:border-neutral-500"
+                }`}
+              >
+                次へ
+              </Link>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
