@@ -293,12 +293,15 @@ export async function advancedSearchCards(
     // （price順は依然としてCANDIDATE_CAPに達すると走査済みの範囲内でのみ正確）。
     if (filters.sortKey === "releasedAt") {
       query = query.order("released_at", { ascending: filters.sortDir === "asc", nullsFirst: false });
+      // released_atは同点（同じ発売日）だらけなので、これだけだと.range()ページングの際に
+      // PostgRESTが同点内の順序を保証せず、リクエストごとに順序が入れ替わって同じ行が複数
+      // ページに重複して現れたり、逆に一件も現れないまま漏れたりする事故があった。
+      // oracle_idを最終タイブレーカーにして並びを完全に決定的にする（oracle_idにインデックス
+      // 済みなのでコストは小さい）。価格順（デフォルト）はSQL側で並べ替えていないため、
+      // このタイブレーカーを付けても走査順の安定性には寄与せず、余計なソートコストが
+      // 掛かるだけなのでreleasedAt時のみに限定する。
+      query = query.order("oracle_id", { ascending: true });
     }
-    // .range()でページングする以上、ORDER BYが同点だらけだとPostgRESTが行の並びを保証せず、
-    // ページ（特に並列取得時の複数リクエスト）ごとに同点内の順序が入れ替わり、同じ行が
-    // 複数ページに重複して現れたり、逆に一件も現れないまま漏れたりする事故があった。
-    // oracle_idを常に最終タイブレーカーにして、並び自体を完全に決定的にする。
-    query = query.order("oracle_id", { ascending: true });
     return query;
   }
 
