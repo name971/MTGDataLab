@@ -1,4 +1,4 @@
-import type { AdvancedSearchFilters } from "./dbAdvancedSearch";
+import { MV_BUCKETS, type AdvancedSearchFilters } from "./dbAdvancedSearch";
 import { FORMATS, type Format } from "./formats";
 import { COLOR_ORDER } from "./manaColors";
 
@@ -65,8 +65,7 @@ export function parseAdvancedSearchFilters(sp: RawSearchParams): AdvancedSearchF
     colorlessOnly: sp.colorless === "1",
     rarities: toArray(sp.rarity).filter((r) => (RARITIES as readonly string[]).includes(r)),
     formats: toArray(sp.formats).filter((f) => (FORMATS as readonly string[]).includes(f)) as Format[],
-    mvMin: toNumber(sp.mvMin),
-    mvMax: toNumber(sp.mvMax),
+    mvBuckets: toArray(sp.mv).filter((v) => (MV_BUCKETS as readonly string[]).includes(v)),
     priceMin: toNumber(sp.priceMin),
     priceMax: toNumber(sp.priceMax),
     usageRateMin: toNumber(sp.usageRateMin),

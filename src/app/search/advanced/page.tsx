@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { advancedSearchCards, PAGE_SIZE } from "@/lib/dbAdvancedSearch";
+import { advancedSearchCards, MV_BUCKETS, PAGE_SIZE } from "@/lib/dbAdvancedSearch";
 import { RARITY_LABEL_JA } from "@/lib/scryfall";
 import { FORMATS } from "@/lib/formats";
 import { COLOR_ORDER } from "@/lib/manaColors";
@@ -48,6 +48,7 @@ export default async function AdvancedSearchPage({
   const selectedRarities = new Set(filters.rarities);
   const selectedTypes = new Set(filters.types);
   const selectedFormats = new Set(filters.formats);
+  const selectedMvBuckets = new Set(filters.mvBuckets);
 
   // カード詳細ページ「その他のプリント」の並び順ボタンと同じ規則に揃える。
   // 発売日順のデフォルトは新しい順、価格順のデフォルトは安い順（キーを切り替えた直後の向き）
@@ -181,30 +182,28 @@ export default async function AdvancedSearchPage({
 
         <fieldset className="flex flex-col gap-4 border-t border-neutral-100 pt-4">
           <legend className="mb-1 text-xs font-semibold text-neutral-400">数値条件</legend>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="flex flex-col gap-1 text-sm">
-              <span className="text-neutral-600">マナ総量</span>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  name="mvMin"
-                  min={0}
-                  defaultValue={filters.mvMin ?? ""}
-                  placeholder="下限"
-                  className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
-                />
-                <span className="text-neutral-400">〜</span>
-                <input
-                  type="number"
-                  name="mvMax"
-                  min={0}
-                  defaultValue={filters.mvMax ?? ""}
-                  placeholder="上限"
-                  className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
-                />
-              </div>
-            </div>
 
+          <div className="flex flex-col gap-1.5 text-sm">
+            <span className="text-neutral-600">マナ総量（複数選択可、デッキ詳細のマナカーブと同じ区分）</span>
+            <div className="flex flex-wrap gap-1.5">
+              {MV_BUCKETS.map((mv) => (
+                <label key={mv} className="cursor-pointer">
+                  <input
+                    type="checkbox"
+                    name="mv"
+                    value={mv}
+                    defaultChecked={selectedMvBuckets.has(mv)}
+                    className="peer sr-only"
+                  />
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-300 text-xs text-neutral-500 hover:border-neutral-500 peer-checked:border-neutral-500 peer-checked:bg-neutral-100 peer-checked:font-semibold peer-checked:text-neutral-900">
+                    {mv}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1 text-sm">
               <span className="text-neutral-600">価格帯（円）</span>
               <div className="flex items-center gap-2">

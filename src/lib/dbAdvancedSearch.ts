@@ -18,8 +18,8 @@ export interface AdvancedSearchFilters {
   rarities?: string[]; // common/uncommon/rare/mythic
   /** フォーマット適正（複数選択可、OR。いずれかのフォーマットで合法なら該当） */
   formats?: Format[];
-  mvMin?: number;
-  mvMax?: number;
+  /** マナ総量（マナカーブと同じ"0"〜"6"・"7+"表記、複数選択可・OR。"7+"は7以上） */
+  mvBuckets?: string[];
   priceMin?: number;
   priceMax?: number;
   /** 採用率(%)フィルタ。formatsが複数ある場合は先頭の1つだけを対象にする（採用率はフォーマット単位の値のため）。
@@ -90,6 +90,13 @@ function manaValueFromCost(manaCost: string | null | undefined): number {
   return total;
 }
 
+/** マナ総量をマナカーブ表示（DeckStatsBar.tsx）と同じ"0"〜"6"・"7+"のバケットに丸める */
+export const MV_BUCKETS = ["0", "1", "2", "3", "4", "5", "6", "7+"] as const;
+function mvBucket(mv: number): string {
+  if (mv >= 7) return "7+";
+  return String(Math.floor(mv));
+}
+
 // ルール変更でカード・タイプ名が変わったが、古いプリントのtype_lineには旧名称のまま残っているもの。
 // 例: 同族(Kindred)は元々「部族」(Tribal)、インスタント(Instant)は「インターラプト」(Interrupt)を
 // 統合した経緯があり、ごく一部の古いカードのtype_lineには今も旧名称が残っている。
@@ -125,8 +132,7 @@ function hasAnyFilter(f: AdvancedSearchFilters): boolean {
     f.colorlessOnly ||
     (f.rarities && f.rarities.length > 0) ||
     (f.formats && f.formats.length > 0) ||
-    f.mvMin !== undefined ||
-    f.mvMax !== undefined ||
+    (f.mvBuckets && f.mvBuckets.length > 0) ||
     f.priceMin !== undefined ||
     f.priceMax !== undefined ||
     f.usageRateMin !== undefined ||
@@ -320,13 +326,9 @@ export async function advancedSearchCards(
       return selected.every((col) => cardColors.includes(col));
     });
   }
-  if (filters.mvMin !== undefined || filters.mvMax !== undefined) {
-    candidates = candidates.filter((c) => {
-      const mv = manaValueFromCost(c.mana_cost);
-      if (filters.mvMin !== undefined && mv < filters.mvMin) return false;
-      if (filters.mvMax !== undefined && mv > filters.mvMax) return false;
-      return true;
-    });
+  if (filters.mvBuckets && filters.mvBuckets.length > 0) {
+    const selected = new Set(filters.mvBuckets);
+    candidates = candidates.filter((c) => selected.has(mvBucket(manaValueFromCost(c.mana_cost))));
   }
   if (candidates.length === 0) return { results: [], totalCount: 0 };
 
