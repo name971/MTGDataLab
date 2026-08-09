@@ -68,8 +68,34 @@ export default async function AdvancedSearchPage({
 
       <form className="flex flex-col gap-5 rounded-lg border border-neutral-200 p-4">
         {/* 項目が増えて見通しが悪くなってきたため、意味のまとまりごとにセクション見出し付きで
-            区切っている（カード自体の特徴 → フォーマット/レアリティ → 数値レンジ条件、の3段）。 */}
-        <fieldset className="flex flex-col gap-4">
+            区切っている（検索コマンド → カード自体の特徴 → フォーマット/レアリティ →
+            数値レンジ条件、の4段）。 */}
+        <fieldset className="flex flex-col gap-1.5">
+          <legend className="mb-1 text-xs font-semibold text-neutral-400">検索コマンド（上級者向け）</legend>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-neutral-600">
+              下の各項目と併用可。
+              <a
+                href="https://scryfall.com/docs/syntax"
+                target="_blank"
+                rel="noreferrer"
+                className="text-neutral-500 underline hover:text-neutral-700"
+              >
+                Scryfallの検索構文
+              </a>
+              のうち一部（t: c: r: f: o: cmc、円建て価格の独自拡張jpy）に対応
+            </span>
+            <input
+              type="text"
+              name="q"
+              defaultValue={sp.q && !Array.isArray(sp.q) ? sp.q : ""}
+              placeholder="例: t:creature c:r r:rare cmc>=4"
+              className="rounded-md border border-neutral-300 px-2.5 py-1.5 font-mono text-sm"
+            />
+          </label>
+        </fieldset>
+
+        <fieldset className="flex flex-col gap-4 border-t border-neutral-100 pt-4">
           <legend className="mb-1 text-xs font-semibold text-neutral-400">カードの特徴</legend>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-sm">
@@ -202,7 +228,12 @@ export default async function AdvancedSearchPage({
               ))}
             </div>
           </div>
+        </fieldset>
 
+        <fieldset className="flex flex-col gap-4 border-t border-neutral-100 pt-4">
+          {/* 価格・値動き・採用率はScryfallには無いこのサイト独自の条件（日次の実勢価格・
+              トーナメント採用率データを持っているからこそ出せる指標）なので、あえて区別して見出しを付ける */}
+          <legend className="mb-1 text-xs font-semibold text-neutral-400">MTG DataLab独自条件</legend>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1 text-sm">
               <span className="text-neutral-600">価格帯（円）</span>

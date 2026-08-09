@@ -1,6 +1,7 @@
 import { MV_BUCKETS, type AdvancedSearchFilters } from "./dbAdvancedSearch";
 import { FORMATS, type Format } from "./formats";
 import { COLOR_ORDER } from "./manaColors";
+import { parseScryfallQuery } from "./scryfallQuerySyntax";
 
 export const RARITIES = ["common", "uncommon", "rare", "mythic"] as const;
 export const PERIODS = [7, 30, 90] as const;
@@ -55,8 +56,13 @@ export function parsePage(sp: RawSearchParams): number {
   return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1;
 }
 
+/** 配列を重複無しで結合する（フォームの選択とコマンド欄由来の値を合算するため） */
+function union<T>(a: T[] | undefined, b: T[] | undefined): T[] {
+  return [...new Set([...(a ?? []), ...(b ?? [])])];
+}
+
 export function parseAdvancedSearchFilters(sp: RawSearchParams): AdvancedSearchFilters {
-  return {
+  const base: AdvancedSearchFilters = {
     name: (Array.isArray(sp.name) ? sp.name[0] : sp.name) || undefined,
     text: (Array.isArray(sp.text) ? sp.text[0] : sp.text) || undefined,
     types: toArray(sp.types).filter((t) => (COMMON_TYPES as readonly string[]).includes(t)),
@@ -76,5 +82,25 @@ export function parseAdvancedSearchFilters(sp: RawSearchParams): AdvancedSearchF
     priceChangePeriodDays: toPeriod(sp.priceChangePeriodDays) ?? 7,
     sortKey: toSortKey(sp.sortKey),
     sortDir: toSortDir(sp.sortDir),
+  };
+
+  // 検索コマンド欄（Scryfall構文の一部、src/lib/scryfallQuerySyntax.ts）はフォームの他の項目と
+  // 併用できる。配列系（タイプ・色・レアリティ・フォーマット・マナ総量）は合算（OR拡張）、
+  // 単一値（名前・テキスト・価格帯）はコマンド欄の指定があればそちらを優先する。
+  const q = (Array.isArray(sp.q) ? sp.q[0] : sp.q) || undefined;
+  if (!q) return base;
+  const fromQuery = parseScryfallQuery(q);
+  return {
+    ...base,
+    name: fromQuery.name ?? base.name,
+    text: fromQuery.text ?? base.text,
+    types: union(base.types, fromQuery.types),
+    colors: union(base.colors, fromQuery.colors),
+    colorlessOnly: base.colorlessOnly || fromQuery.colorlessOnly,
+    rarities: union(base.rarities, fromQuery.rarities),
+    formats: union(base.formats, fromQuery.formats),
+    mvBuckets: union(base.mvBuckets, fromQuery.mvBuckets),
+    priceMin: fromQuery.priceMin ?? base.priceMin,
+    priceMax: fromQuery.priceMax ?? base.priceMax,
   };
 }
