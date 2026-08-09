@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { calculatePackEv, type SampleSet } from "@/lib/samplePackData";
 import { setNameJa } from "@/lib/packSetNamesJa";
 
@@ -125,7 +125,7 @@ function PackCard({
   ev: number;
   diffHighlight: "max" | "min" | null;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const diff = ev - set.packPriceJpy;
 
   return (
@@ -166,37 +166,53 @@ function PackCard({
         </p>
 
         <button
-          onClick={() => setExpanded((v) => !v)}
+          onClick={() => dialogRef.current?.showModal()}
           className="mt-1 text-left text-xs text-neutral-400 underline hover:text-neutral-600"
         >
-          {expanded ? "内訳を閉じる" : "内訳を見る"}
+          内訳を見る
         </button>
-
-        {expanded && (
-          <div className="mt-1 flex flex-col gap-2 border-t border-neutral-200 pt-2">
-            {set.slots.map((slot) => (
-              <div key={slot.slotName} className="text-xs">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="font-medium">{slot.slotName}</span>
-                  <span className="shrink-0 text-neutral-500">
-                    {slot.cardCount}枚 × ¥{slot.avgPriceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
-                  </span>
-                </div>
-                <p className="text-neutral-400">
-                  {Object.entries(slot.probabilityByRarity)
-                    .map(([rarity, p]) => `${rarity} ${((p ?? 0) * 100).toFixed(1)}%`)
-                    .join(" / ")}
-                  {slot.matchRate < 0.99 && (
-                    <span className="ml-1 text-amber-600">
-                      （マッチ率{(slot.matchRate * 100).toFixed(1)}%）
-                    </span>
-                  )}
-                </p>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
+
+      <dialog
+        ref={dialogRef}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) dialogRef.current?.close();
+        }}
+        className="m-auto w-[90vw] max-w-sm rounded-lg border border-neutral-200 p-0 backdrop:bg-black/50"
+      >
+        <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3">
+          <h3 className="text-sm font-medium text-neutral-700">
+            {setNameJa(set.setCode, set.setName)}の内訳
+          </h3>
+          <button
+            onClick={() => dialogRef.current?.close()}
+            aria-label="閉じる"
+            className="rounded-full px-2 py-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="flex flex-col gap-3 p-4">
+          {set.slots.map((slot) => (
+            <div key={slot.slotName} className="text-xs">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="font-medium">{slot.slotName}</span>
+                <span className="shrink-0 text-neutral-500">
+                  {slot.cardCount}枚 × ¥{slot.avgPriceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
+                </span>
+              </div>
+              <p className="text-neutral-400">
+                {Object.entries(slot.probabilityByRarity)
+                  .map(([rarity, p]) => `${rarity} ${((p ?? 0) * 100).toFixed(1)}%`)
+                  .join(" / ")}
+                {slot.matchRate < 0.99 && (
+                  <span className="ml-1 text-amber-600">（マッチ率{(slot.matchRate * 100).toFixed(1)}%）</span>
+                )}
+              </p>
+            </div>
+          ))}
+        </div>
+      </dialog>
     </div>
   );
 }
