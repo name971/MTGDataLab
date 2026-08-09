@@ -8,6 +8,7 @@ import { COLOR_ORDER } from "@/lib/manaColors";
 export const metadata = { title: "高度検索 - MTG DataLab" };
 
 const RARITIES = ["common", "uncommon", "rare", "mythic"] as const;
+const PERIODS = [7, 30, 90] as const;
 
 // 他のクリーチャー・タイプ等に比べて検索頻度が高いカード種類は、入力の手間を省くため
 // クリック1つで選べるボタンにする（タイプ行の日本語表記、src/lib/typeGlossary.tsと対応）
@@ -37,16 +38,18 @@ function toNumber(value: string | string[] | undefined): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+function toPeriod(value: string | string[] | undefined): 7 | 30 | 90 | undefined {
+  const n = toNumber(value);
+  return (PERIODS as readonly number[]).includes(n as number) ? (n as 7 | 30 | 90) : undefined;
+}
+
 function parseFilters(sp: RawSearchParams): AdvancedSearchFilters {
   const format = Array.isArray(sp.format) ? sp.format[0] : sp.format;
-  // タイプ行クイック選択ボタン（typeQuick）が押された場合は、手入力のtype欄より優先する
-  // （同じフォーム内の値なので、クイック選択時は手入力欄の内容を上書きする挙動になる）
-  const typeQuick = Array.isArray(sp.typeQuick) ? sp.typeQuick[0] : sp.typeQuick;
-  const typeManual = (Array.isArray(sp.type) ? sp.type[0] : sp.type) || undefined;
   return {
     name: (Array.isArray(sp.name) ? sp.name[0] : sp.name) || undefined,
     text: (Array.isArray(sp.text) ? sp.text[0] : sp.text) || undefined,
-    type: typeQuick || typeManual,
+    types: toArray(sp.types).filter((t) => (COMMON_TYPES as readonly string[]).includes(t)),
+    typeText: (Array.isArray(sp.type) ? sp.type[0] : sp.type) || undefined,
     colors: toArray(sp.colors).filter((c) => (COLOR_ORDER as readonly string[]).includes(c)),
     colorlessOnly: sp.colorless === "1",
     rarities: toArray(sp.rarity).filter((r) => (RARITIES as readonly string[]).includes(r)),
@@ -55,6 +58,12 @@ function parseFilters(sp: RawSearchParams): AdvancedSearchFilters {
     mvMax: toNumber(sp.mvMax),
     priceMin: toNumber(sp.priceMin),
     priceMax: toNumber(sp.priceMax),
+    usageRateMin: toNumber(sp.usageRateMin),
+    usageRateMax: toNumber(sp.usageRateMax),
+    usagePeriodDays: toPeriod(sp.usagePeriodDays) ?? 30,
+    priceChangeMin: toNumber(sp.priceChangeMin),
+    priceChangeMax: toNumber(sp.priceChangeMax),
+    priceChangePeriodDays: toPeriod(sp.priceChangePeriodDays) ?? 7,
   };
 }
 
@@ -70,6 +79,7 @@ export default async function AdvancedSearchPage({
 
   const selectedColors = new Set(filters.colors);
   const selectedRarities = new Set(filters.rarities);
+  const selectedTypes = new Set(filters.types);
 
   return (
     <div className="flex flex-col gap-6">
@@ -97,25 +107,29 @@ export default async function AdvancedSearchPage({
             <input
               type="text"
               name="type"
-              defaultValue={filters.type ?? ""}
+              defaultValue={filters.typeText ?? ""}
               placeholder="例: 人魚、瞬間魔法"
               className="rounded-md border border-neutral-300 px-2.5 py-1.5"
             />
+            {/* チェックボックスをボタン風に見せるだけの選択トグル（送信ボタンではない）。
+                複数同時にONにでき、フォーム送信時に全て"types"としてまとめて送られる
+                （AND絞り込み。例: クリーチャー+エンチャントでエンチャント・クリーチャーに絞れる）。
+                以前はtype="submit"のボタンで、押すたびに単独の値で即送信していたため
+                2つ以上同時に選べなかった。 */}
             <div className="flex flex-wrap gap-1.5">
               {COMMON_TYPES.map((t) => (
-                <button
-                  key={t}
-                  type="submit"
-                  name="typeQuick"
-                  value={t}
-                  className={`rounded-full border px-2.5 py-0.5 text-xs ${
-                    filters.type === t
-                      ? "border-neutral-500 bg-neutral-100 text-neutral-900"
-                      : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
-                  }`}
-                >
-                  {t}
-                </button>
+                <label key={t} className="cursor-pointer">
+                  <input
+                    type="checkbox"
+                    name="types"
+                    value={t}
+                    defaultChecked={selectedTypes.has(t)}
+                    className="peer sr-only"
+                  />
+                  <span className="rounded-full border border-neutral-300 px-2.5 py-0.5 text-xs text-neutral-500 hover:border-neutral-500 peer-checked:border-neutral-500 peer-checked:bg-neutral-100 peer-checked:text-neutral-900">
+                    {t}
+                  </span>
+                </label>
               ))}
             </div>
           </div>
@@ -201,26 +215,98 @@ export default async function AdvancedSearchPage({
           </div>
         </div>
 
-        <div className="flex flex-col gap-1 text-sm sm:w-64">
-          <span className="text-neutral-600">価格帯（円）</span>
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              name="priceMin"
-              min={0}
-              defaultValue={filters.priceMin ?? ""}
-              placeholder="下限"
-              className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
-            />
-            <span className="text-neutral-400">〜</span>
-            <input
-              type="number"
-              name="priceMax"
-              min={0}
-              defaultValue={filters.priceMax ?? ""}
-              placeholder="上限"
-              className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
-            />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="flex flex-col gap-1 text-sm">
+            <span className="text-neutral-600">価格帯（円）</span>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                name="priceMin"
+                min={0}
+                defaultValue={filters.priceMin ?? ""}
+                placeholder="下限"
+                className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
+              />
+              <span className="text-neutral-400">〜</span>
+              <input
+                type="number"
+                name="priceMax"
+                min={0}
+                defaultValue={filters.priceMax ?? ""}
+                placeholder="上限"
+                className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1 text-sm">
+            <span className="text-neutral-600">
+              価格変化率（%、指定期間前との比較。マイナス指定で値下がりも絞れる）
+            </span>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                name="priceChangeMin"
+                defaultValue={filters.priceChangeMin ?? ""}
+                placeholder="下限"
+                className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
+              />
+              <span className="text-neutral-400">〜</span>
+              <input
+                type="number"
+                name="priceChangeMax"
+                defaultValue={filters.priceChangeMax ?? ""}
+                placeholder="上限"
+                className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
+              />
+              <select
+                name="priceChangePeriodDays"
+                defaultValue={filters.priceChangePeriodDays ?? 7}
+                className="shrink-0 rounded-md border border-neutral-300 px-2 py-1.5 text-xs"
+              >
+                {PERIODS.map((p) => (
+                  <option key={p} value={p}>
+                    {p}日前比
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1 text-sm">
+            <span className="text-neutral-600">採用率（%、「フォーマット適正」の指定が必要）</span>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                name="usageRateMin"
+                min={0}
+                max={100}
+                defaultValue={filters.usageRateMin ?? ""}
+                placeholder="下限"
+                className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
+              />
+              <span className="text-neutral-400">〜</span>
+              <input
+                type="number"
+                name="usageRateMax"
+                min={0}
+                max={100}
+                defaultValue={filters.usageRateMax ?? ""}
+                placeholder="上限"
+                className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
+              />
+              <select
+                name="usagePeriodDays"
+                defaultValue={filters.usagePeriodDays ?? 30}
+                className="shrink-0 rounded-md border border-neutral-300 px-2 py-1.5 text-xs"
+              >
+                {PERIODS.map((p) => (
+                  <option key={p} value={p}>
+                    直近{p}日
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 
