@@ -43,8 +43,17 @@ CREATE TABLE cards (
   is_borderless        BOOLEAN DEFAULT false,
   is_promo             BOOLEAN DEFAULT false,
   is_universes_beyond  BOOLEAN DEFAULT false, -- promo_typesに"universesbeyond"を含むか（コラボ作品プリント）
-  updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- mana_costから計算した数値のマナ総量（生成列、インデックス済み）。高度検索のマナ総量フィルタを
+  -- SQL側で完結させるために追加した（以前はJS側でmana_costをパースしていたため、該当が少ない
+  -- 条件だと候補を集めるのに何度もページを取りに行く必要があり遅かった）。
+  -- 計算ロジックはsrc/lib/parseAdvancedSearchParams.ts等のJS版と同じ（X/Y/Zは0、
+  -- ハイブリッド/Phyrexianは1として数える。分割/両面カードの裏面もまとめて合算する）。
+  -- 定義: mana_value_from_cost(TEXT) SQL関数（マイグレーション履歴参照）
+  mana_value          INTEGER GENERATED ALWAYS AS (mana_value_from_cost(mana_cost)) STORED
 );
+
+CREATE INDEX IF NOT EXISTS idx_cards_mana_value ON cards (mana_value);
 
 -- 代表プリントの選定ルール（一覧・ランキングでどのプリントの画像/価格を使うか）:
 -- 1. 通常版nonfoil（is_showcase/is_borderless/is_promoが全てfalse、finishesにnonfoilを含む）があればそれを優先
@@ -593,3 +602,26 @@ AS $$
 $$;
 
 GRANT EXECUTE ON FUNCTION public.get_database_size_bytes() TO anon, authenticated;
+
+-- cards.mana_valueの生成列が使う関数。mana_cost（例:"{2}{W/U}{B}"）中の{...}記号を全て合算する。
+-- X/Y/Zは0、数値記号はその数値、それ以外（色記号・ハイブリッド・Phyrexian等）は1として数える。
+-- 分割・両面カードの" // "区切りされた両面分の記号もまとめて合算する（JS版のmanaValueFromCostと
+-- 同じ挙動。src/lib/dbAdvancedSearch.ts参照）。IMMUTABLEなので生成列の定義に使える。
+CREATE OR REPLACE FUNCTION mana_value_from_cost(mana_cost TEXT) RETURNS INTEGER AS $$
+DECLARE
+  total INTEGER := 0;
+  sym TEXT;
+BEGIN
+  IF mana_cost IS NULL THEN RETURN 0; END IF;
+  FOR sym IN SELECT (regexp_matches(mana_cost, '\{([^}]+)\}', 'g'))[1] LOOP
+    IF sym IN ('X','Y','Z') THEN
+      total := total + 0;
+    ELSIF sym ~ '^[0-9]+$' THEN
+      total := total + sym::INTEGER;
+    ELSE
+      total := total + 1;
+    END IF;
+  END LOOP;
+  RETURN total;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;

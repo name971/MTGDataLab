@@ -77,25 +77,10 @@ const ID_CHUNK = 150;
 // CANDIDATE_CAP件しか使わないため、候補集めの上限もそれに合わせて確保しておけば十分。
 const ID_LOOKUP_LIMIT = CANDIDATE_CAP * 2;
 
-/** "{2}{W/U}{B}"のようなmana_costからマナ総量を概算する（X等は0扱い、ハイブリッド/Phyrexianは1扱い） */
-function manaValueFromCost(manaCost: string | null | undefined): number {
-  if (!manaCost) return 0;
-  const symbols = [...manaCost.matchAll(/\{([^}]+)\}/g)].map((m) => m[1]);
-  let total = 0;
-  for (const inner of symbols) {
-    if (inner === "X" || inner === "Y" || inner === "Z") continue;
-    const numeric = Number(inner);
-    total += Number.isNaN(numeric) ? 1 : numeric;
-  }
-  return total;
-}
-
-/** マナ総量をマナカーブ表示（DeckStatsBar.tsx）と同じ"0"〜"6"・"7+"のバケットに丸める */
+// マナ総量は以前は"{2}{W/U}{B}"のようなmana_costをJS側でパースして判定していたが、
+// cards.mana_value（生成列、db/schema.sql参照。同じロジックのSQL関数mana_value_from_costで
+// mana_costから計算・インデックス済み）に切り替えたため、JS側の計算は不要になった。
 export const MV_BUCKETS = ["0", "1", "2", "3", "4", "5", "6", "7+"] as const;
-function mvBucket(mv: number): string {
-  if (mv >= 7) return "7+";
-  return String(Math.floor(mv));
-}
 
 // ルール変更でカード・タイプ名が変わったが、古いプリントのtype_lineには旧名称のまま残っているもの。
 // 例: 同族(Kindred)は元々「部族」(Tribal)、インスタント(Instant)は「インターラプト」(Interrupt)を
@@ -286,6 +271,16 @@ export async function advancedSearchCards(
     if (filters.formats && filters.formats.length > 0) {
       query = query.or(filters.formats.map((f) => `legalities->>${formatSlug(f)}.eq.legal`).join(","));
     }
+    // マナ総量はcards.mana_value（mana_costから生成した計算列＋インデックス済み、db/schema.sql参照）で
+    // SQL側に絞り込める。以前はJS側でしか判定できず、該当が多い/少ない条件だと候補を集めるのに
+    // 何度もページを取りに行く必要があって遅かった（ネットワーク往復の積み重ねが支配的だった）。
+    if (filters.mvBuckets && filters.mvBuckets.length > 0) {
+      const exact = filters.mvBuckets.filter((b) => b !== "7+").map(Number);
+      const orParts: string[] = [];
+      if (exact.length > 0) orParts.push(`mana_value.in.(${exact.join(",")})`);
+      if (filters.mvBuckets.includes("7+")) orParts.push("mana_value.gte.7");
+      query = query.or(orParts.join(","));
+    }
     // 登録日順ソート時はDB側で並べ替えてから走査する。こうしておくと、候補がCANDIDATE_CAPで
     // 打ち切られても「先頭CANDIDATE_CAP件」＝「実際の発売日順の先頭」になるため、
     // 該当件数が多い検索でも並び順が壊れない。価格順はcards側に価格の列・直接のFKが無く
@@ -305,21 +300,18 @@ export async function advancedSearchCards(
     return query;
   }
 
-  // 色・マナ総量はDBに列を持たないため、行単位でJS側フィルタする。以前はSQLで拾った
-  // 最初のCANDIDATE_CAP件（色・マナ総量を見る前の生の行）だけをJS側で絞り込んでいたため、
-  // 他の条件（名前・タイプ等）が緩い検索だと、実際に該当するカードがSQLの先頭CANDIDATE_CAP件
-  // より後ろに埋もれて拾われない事故があった（マナ総量フィルタが「全カード対象」になっていない
-  // ように見えた原因）。ページングしながら都度この判定を通し、判定後の件数でCANDIDATE_CAPに
-  // 達するまで（＝実際にヒットする候補がCANDIDATE_CAP件集まるまで）SQL側を読み進める。
+  // 色はDBに列を持たないため、行単位でJS側フィルタする（マナ総量はcards.mana_value列を
+  // 追加してSQL側に絞り込めるようにした。上のapplyCommonFilters参照）。以前はSQLで拾った
+  // 最初のCANDIDATE_CAP件（色を見る前の生の行）だけをJS側で絞り込んでいたため、他の条件が
+  // 緩い検索だと該当カードがSQLの先頭CANDIDATE_CAP件より後ろに埋もれて拾われない事故があった。
+  // ページングしながら都度この判定を通し、判定後の件数でCANDIDATE_CAPに達するまで
+  // （＝実際にヒットする候補がCANDIDATE_CAP件集まるまで）SQL側を読み進める。
   function matchesRowFilters(c: CardRow): boolean {
     if (filters.colorlessOnly) {
       if (colorsFromManaCost(c.mana_cost).length !== 0) return false;
     } else if (filters.colors && filters.colors.length > 0) {
       const cardColors = colorsFromManaCost(c.mana_cost);
       if (!filters.colors.every((col) => cardColors.includes(col))) return false;
-    }
-    if (filters.mvBuckets && filters.mvBuckets.length > 0) {
-      if (!filters.mvBuckets.includes(mvBucket(manaValueFromCost(c.mana_cost)))) return false;
     }
     return true;
   }
@@ -366,12 +358,19 @@ export async function advancedSearchCards(
     const RANGE_PAGE_SIZE = 1000;
     let scanned = 0;
     let exhausted = false;
+    // 最初の1回は単独リクエストで様子を見て（大半のケースはこれで足りる。cardsは1オラクルに
+    // つき再録分などで複数行持つため、色フィルタが無くてもoracle_id単位のユニーク化で
+    // CANDIDATE_CAPに届かないことがあり、その場合は自然に次のラウンドへ進んで追加取得する）、
+    // それでも足りない時だけBATCH_CONCURRENCYページ分をまとめて並列取得する（毎回5並列で
+    // 先読みすると、1ページで足りるケースまで無駄な同時接続を作ってしまい、かえって
+    // 遅くなっていたため）。
+    let roundSize = 1;
     for (
       let batchStart = 0;
       candidates.length < CANDIDATE_CAP && scanned < MAX_SCAN_ROWS && !exhausted;
-      batchStart += BATCH_CONCURRENCY * RANGE_PAGE_SIZE
+      batchStart += roundSize * RANGE_PAGE_SIZE
     ) {
-      const offsets = Array.from({ length: BATCH_CONCURRENCY }, (_, i) => batchStart + i * RANGE_PAGE_SIZE);
+      const offsets = Array.from({ length: roundSize }, (_, i) => batchStart + i * RANGE_PAGE_SIZE);
       const pages = await Promise.all(
         offsets.map(async (offset) => {
           const q = applyCommonFilters(supabase.from("cards").select(CARD_SELECT).eq("lang", "en"));
@@ -401,6 +400,7 @@ export async function advancedSearchCards(
         }
         if (candidates.length >= CANDIDATE_CAP || scanned >= MAX_SCAN_ROWS) break;
       }
+      roundSize = BATCH_CONCURRENCY;
     }
   }
   // CANDIDATE_CAPに達して打ち切った場合は「実際にはもっとある」ことを呼び出し側に伝える
