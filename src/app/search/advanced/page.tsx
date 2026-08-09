@@ -65,101 +65,107 @@ export default async function AdvancedSearchPage({
         </Link>
       </div>
 
-      <form className="flex flex-col gap-4 rounded-lg border border-neutral-200 p-4">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <form className="flex flex-col gap-5 rounded-lg border border-neutral-200 p-4">
+        {/* 項目が増えて見通しが悪くなってきたため、意味のまとまりごとにセクション見出し付きで
+            区切っている（カード自体の特徴 → フォーマット/レアリティ → 数値レンジ条件、の3段）。 */}
+        <fieldset className="flex flex-col gap-4">
+          <legend className="mb-1 text-xs font-semibold text-neutral-400">カードの特徴</legend>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-neutral-600">カード名</span>
+              <input
+                type="text"
+                name="name"
+                defaultValue={filters.name ?? ""}
+                placeholder="例: 稲妻"
+                className="rounded-md border border-neutral-300 px-2.5 py-1.5"
+              />
+            </label>
+            <div className="flex flex-col gap-1 text-sm">
+              <span className="text-neutral-600">タイプ行</span>
+              <input
+                type="text"
+                name="type"
+                defaultValue={filters.typeText ?? ""}
+                placeholder="例: 人魚、瞬間魔法"
+                className="rounded-md border border-neutral-300 px-2.5 py-1.5"
+              />
+              {/* チェックボックスをボタン風に見せるだけの選択トグル（送信ボタンではない）。
+                  複数同時にONにでき、フォーム送信時に全て"types"としてまとめて送られる
+                  （AND絞り込み。例: クリーチャー+エンチャントでエンチャント・クリーチャーに絞れる）。
+                  以前はtype="submit"のボタンで、押すたびに単独の値で即送信していたため
+                  2つ以上同時に選べなかった。 */}
+              <div className="flex flex-wrap gap-1.5">
+                {COMMON_TYPES.map((t) => (
+                  <label key={t} className="cursor-pointer">
+                    <input
+                      type="checkbox"
+                      name="types"
+                      value={t}
+                      defaultChecked={selectedTypes.has(t)}
+                      className="peer sr-only"
+                    />
+                    <span className="rounded-full border border-neutral-300 px-2.5 py-0.5 text-xs text-neutral-500 hover:border-neutral-500 peer-checked:border-neutral-500 peer-checked:bg-neutral-100 peer-checked:text-neutral-900">
+                      {t}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-neutral-600">カード名</span>
+            <span className="text-neutral-600">ルールテキスト（英語のオラクルテキストに含む語句）</span>
             <input
               type="text"
-              name="name"
-              defaultValue={filters.name ?? ""}
-              placeholder="例: 稲妻"
+              name="text"
+              defaultValue={filters.text ?? ""}
+              placeholder="例: draw a card"
               className="rounded-md border border-neutral-300 px-2.5 py-1.5"
             />
           </label>
-          <div className="flex flex-col gap-1 text-sm">
-            <span className="text-neutral-600">タイプ行</span>
-            <input
-              type="text"
-              name="type"
-              defaultValue={filters.typeText ?? ""}
-              placeholder="例: 人魚、瞬間魔法"
-              className="rounded-md border border-neutral-300 px-2.5 py-1.5"
-            />
-            {/* チェックボックスをボタン風に見せるだけの選択トグル（送信ボタンではない）。
-                複数同時にONにでき、フォーム送信時に全て"types"としてまとめて送られる
-                （AND絞り込み。例: クリーチャー+エンチャントでエンチャント・クリーチャーに絞れる）。
-                以前はtype="submit"のボタンで、押すたびに単独の値で即送信していたため
-                2つ以上同時に選べなかった。 */}
+
+          <div className="flex flex-col gap-1.5 text-sm">
+            <span className="text-neutral-600">色（選択した色を全て含むカード）</span>
+            <div className="flex flex-wrap items-center gap-3">
+              {COLOR_ORDER.map((c) => (
+                <label key={c} className="flex items-center gap-1.5">
+                  <input type="checkbox" name="colors" value={c} defaultChecked={selectedColors.has(c)} />
+                  <Image src={`/mana/${c}.svg`} alt={c} width={20} height={20} />
+                </label>
+              ))}
+              <label className="ml-2 flex items-center gap-1.5 border-l border-neutral-200 pl-3">
+                <input type="checkbox" name="colorless" value="1" defaultChecked={filters.colorlessOnly} />
+                無色のみ
+              </label>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset className="flex flex-col gap-4 border-t border-neutral-100 pt-4">
+          <legend className="mb-1 text-xs font-semibold text-neutral-400">フォーマット・レアリティ</legend>
+          <div className="flex flex-col gap-1.5 text-sm">
+            <span className="text-neutral-600">
+              フォーマット適正（複数選択可、いずれかで合法なカード。採用率は先頭選択分のみ対象）
+            </span>
             <div className="flex flex-wrap gap-1.5">
-              {COMMON_TYPES.map((t) => (
-                <label key={t} className="cursor-pointer">
+              {FORMATS.map((f) => (
+                <label key={f} className="cursor-pointer">
                   <input
                     type="checkbox"
-                    name="types"
-                    value={t}
-                    defaultChecked={selectedTypes.has(t)}
+                    name="formats"
+                    value={f}
+                    defaultChecked={selectedFormats.has(f)}
                     className="peer sr-only"
                   />
                   <span className="rounded-full border border-neutral-300 px-2.5 py-0.5 text-xs text-neutral-500 hover:border-neutral-500 peer-checked:border-neutral-500 peer-checked:bg-neutral-100 peer-checked:text-neutral-900">
-                    {t}
+                    {f}
                   </span>
                 </label>
               ))}
             </div>
           </div>
-        </div>
 
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-neutral-600">ルールテキスト（英語のオラクルテキストに含む語句）</span>
-          <input
-            type="text"
-            name="text"
-            defaultValue={filters.text ?? ""}
-            placeholder="例: draw a card"
-            className="rounded-md border border-neutral-300 px-2.5 py-1.5"
-          />
-        </label>
-
-        <div className="flex flex-col gap-1.5 text-sm">
-          <span className="text-neutral-600">色（選択した色を全て含むカード）</span>
-          <div className="flex flex-wrap items-center gap-3">
-            {COLOR_ORDER.map((c) => (
-              <label key={c} className="flex items-center gap-1.5">
-                <input type="checkbox" name="colors" value={c} defaultChecked={selectedColors.has(c)} />
-                <Image src={`/mana/${c}.svg`} alt={c} width={20} height={20} />
-              </label>
-            ))}
-            <label className="ml-2 flex items-center gap-1.5 border-l border-neutral-200 pl-3">
-              <input type="checkbox" name="colorless" value="1" defaultChecked={filters.colorlessOnly} />
-              無色のみ
-            </label>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-1.5 text-sm">
-          <span className="text-neutral-600">
-            フォーマット適正（複数選択可、いずれかで合法なカード。採用率は先頭選択分のみ対象）
-          </span>
-          <div className="flex flex-wrap gap-1.5">
-            {FORMATS.map((f) => (
-              <label key={f} className="cursor-pointer">
-                <input
-                  type="checkbox"
-                  name="formats"
-                  value={f}
-                  defaultChecked={selectedFormats.has(f)}
-                  className="peer sr-only"
-                />
-                <span className="rounded-full border border-neutral-300 px-2.5 py-0.5 text-xs text-neutral-500 hover:border-neutral-500 peer-checked:border-neutral-500 peer-checked:bg-neutral-100 peer-checked:text-neutral-900">
-                  {f}
-                </span>
-              </label>
-            ))}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5 text-sm">
             <span className="text-neutral-600">レアリティ</span>
             <div className="flex flex-wrap gap-3">
@@ -171,125 +177,128 @@ export default async function AdvancedSearchPage({
               ))}
             </div>
           </div>
+        </fieldset>
 
-          <div className="flex flex-col gap-1 text-sm">
-            <span className="text-neutral-600">マナ総量</span>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                name="mvMin"
-                min={0}
-                defaultValue={filters.mvMin ?? ""}
-                placeholder="下限"
-                className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
-              />
-              <span className="text-neutral-400">〜</span>
-              <input
-                type="number"
-                name="mvMax"
-                min={0}
-                defaultValue={filters.mvMax ?? ""}
-                placeholder="上限"
-                className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
-              />
+        <fieldset className="flex flex-col gap-4 border-t border-neutral-100 pt-4">
+          <legend className="mb-1 text-xs font-semibold text-neutral-400">数値条件</legend>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-1 text-sm">
+              <span className="text-neutral-600">マナ総量</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  name="mvMin"
+                  min={0}
+                  defaultValue={filters.mvMin ?? ""}
+                  placeholder="下限"
+                  className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
+                />
+                <span className="text-neutral-400">〜</span>
+                <input
+                  type="number"
+                  name="mvMax"
+                  min={0}
+                  defaultValue={filters.mvMax ?? ""}
+                  placeholder="上限"
+                  className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1 text-sm">
+              <span className="text-neutral-600">価格帯（円）</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  name="priceMin"
+                  min={0}
+                  defaultValue={filters.priceMin ?? ""}
+                  placeholder="下限"
+                  className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
+                />
+                <span className="text-neutral-400">〜</span>
+                <input
+                  type="number"
+                  name="priceMax"
+                  min={0}
+                  defaultValue={filters.priceMax ?? ""}
+                  placeholder="上限"
+                  className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1 text-sm">
+              <span className="text-neutral-600">
+                価格変化率（%、指定期間前との比較。マイナス指定で値下がりも絞れる）
+              </span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  name="priceChangeMin"
+                  defaultValue={filters.priceChangeMin ?? ""}
+                  placeholder="下限"
+                  className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
+                />
+                <span className="text-neutral-400">〜</span>
+                <input
+                  type="number"
+                  name="priceChangeMax"
+                  defaultValue={filters.priceChangeMax ?? ""}
+                  placeholder="上限"
+                  className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
+                />
+                <select
+                  name="priceChangePeriodDays"
+                  defaultValue={filters.priceChangePeriodDays ?? 7}
+                  className="shrink-0 rounded-md border border-neutral-300 px-2 py-1.5 text-xs"
+                >
+                  {PERIODS.map((p) => (
+                    <option key={p} value={p}>
+                      {p}日前比
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1 text-sm">
+              <span className="text-neutral-600">採用率（%、「フォーマット適正」の指定が必要）</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  name="usageRateMin"
+                  min={0}
+                  max={100}
+                  defaultValue={filters.usageRateMin ?? ""}
+                  placeholder="下限"
+                  className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
+                />
+                <span className="text-neutral-400">〜</span>
+                <input
+                  type="number"
+                  name="usageRateMax"
+                  min={0}
+                  max={100}
+                  defaultValue={filters.usageRateMax ?? ""}
+                  placeholder="上限"
+                  className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
+                />
+                <select
+                  name="usagePeriodDays"
+                  defaultValue={filters.usagePeriodDays ?? 30}
+                  className="shrink-0 rounded-md border border-neutral-300 px-2 py-1.5 text-xs"
+                >
+                  {PERIODS.map((p) => (
+                    <option key={p} value={p}>
+                      直近{p}日
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="flex flex-col gap-1 text-sm">
-            <span className="text-neutral-600">価格帯（円）</span>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                name="priceMin"
-                min={0}
-                defaultValue={filters.priceMin ?? ""}
-                placeholder="下限"
-                className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
-              />
-              <span className="text-neutral-400">〜</span>
-              <input
-                type="number"
-                name="priceMax"
-                min={0}
-                defaultValue={filters.priceMax ?? ""}
-                placeholder="上限"
-                className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
-              />
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-1 text-sm">
-            <span className="text-neutral-600">
-              価格変化率（%、指定期間前との比較。マイナス指定で値下がりも絞れる）
-            </span>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                name="priceChangeMin"
-                defaultValue={filters.priceChangeMin ?? ""}
-                placeholder="下限"
-                className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
-              />
-              <span className="text-neutral-400">〜</span>
-              <input
-                type="number"
-                name="priceChangeMax"
-                defaultValue={filters.priceChangeMax ?? ""}
-                placeholder="上限"
-                className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
-              />
-              <select
-                name="priceChangePeriodDays"
-                defaultValue={filters.priceChangePeriodDays ?? 7}
-                className="shrink-0 rounded-md border border-neutral-300 px-2 py-1.5 text-xs"
-              >
-                {PERIODS.map((p) => (
-                  <option key={p} value={p}>
-                    {p}日前比
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-1 text-sm">
-            <span className="text-neutral-600">採用率（%、「フォーマット適正」の指定が必要）</span>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                name="usageRateMin"
-                min={0}
-                max={100}
-                defaultValue={filters.usageRateMin ?? ""}
-                placeholder="下限"
-                className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
-              />
-              <span className="text-neutral-400">〜</span>
-              <input
-                type="number"
-                name="usageRateMax"
-                min={0}
-                max={100}
-                defaultValue={filters.usageRateMax ?? ""}
-                placeholder="上限"
-                className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
-              />
-              <select
-                name="usagePeriodDays"
-                defaultValue={filters.usagePeriodDays ?? 30}
-                className="shrink-0 rounded-md border border-neutral-300 px-2 py-1.5 text-xs"
-              >
-                {PERIODS.map((p) => (
-                  <option key={p} value={p}>
-                    直近{p}日
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </div>
+        </fieldset>
 
         <button
           type="submit"
