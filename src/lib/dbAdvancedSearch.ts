@@ -16,12 +16,14 @@ export interface AdvancedSearchFilters {
   colors?: string[]; // W/U/B/R/Gのサブセット。「これらの色を全て含む」で判定する
   colorlessOnly?: boolean;
   rarities?: string[]; // common/uncommon/rare/mythic
-  format?: Format;
+  /** フォーマット適正（複数選択可、OR。いずれかのフォーマットで合法なら該当） */
+  formats?: Format[];
   mvMin?: number;
   mvMax?: number;
   priceMin?: number;
   priceMax?: number;
-  /** 採用率(%)フィルタ。formatの指定が無いと判定しようがないため、format未指定時は無視する */
+  /** 採用率(%)フィルタ。formatsが複数ある場合は先頭の1つだけを対象にする（採用率はフォーマット単位の値のため）。
+   * formats未指定時は無視する */
   usageRateMin?: number;
   usageRateMax?: number;
   usagePeriodDays?: 7 | 30 | 90;
@@ -122,7 +124,7 @@ function hasAnyFilter(f: AdvancedSearchFilters): boolean {
     (f.colors && f.colors.length > 0) ||
     f.colorlessOnly ||
     (f.rarities && f.rarities.length > 0) ||
-    f.format ||
+    (f.formats && f.formats.length > 0) ||
     f.mvMin !== undefined ||
     f.mvMax !== undefined ||
     f.priceMin !== undefined ||
@@ -213,15 +215,17 @@ export async function advancedSearchCards(
     if (textOracleIds.length === 0) return { results: [], totalCount: 0 }; // ルールテキストに一致するカードが無ければこの時点で確定
   }
 
-  // 採用率フィルタはフォーマット指定が無いと判定しようがないため、format未指定時は無視する。
+  // 採用率フィルタはフォーマット指定が無いと判定しようがないため、formats未指定時は無視する。
+  // 複数フォーマットが選ばれている場合は先頭の1つだけを対象にする（採用率はフォーマット単位の値のため）。
   // card_usage_statsから該当フォーマット・期間の最新日の行を絞り込み、oracle_id候補にする。
+  const usageFormat = filters.formats?.[0];
   let usageOracleIds: string[] | null = null;
-  if (filters.format && (filters.usageRateMin !== undefined || filters.usageRateMax !== undefined)) {
+  if (usageFormat && (filters.usageRateMin !== undefined || filters.usageRateMax !== undefined)) {
     const periodDays = filters.usagePeriodDays ?? 30;
     const { data: latestRow } = await supabase
       .from("card_usage_stats")
       .select("calculated_at")
-      .eq("format", filters.format)
+      .eq("format", usageFormat)
       .eq("period_days", periodDays)
       .order("calculated_at", { ascending: false })
       .limit(1)
@@ -230,7 +234,7 @@ export async function advancedSearchCards(
     let query = supabase
       .from("card_usage_stats")
       .select("oracle_id, usage_rate")
-      .eq("format", filters.format)
+      .eq("format", usageFormat)
       .eq("period_days", periodDays)
       .eq("calculated_at", latestRow.calculated_at)
       .limit(ID_LOOKUP_LIMIT);
@@ -269,7 +273,10 @@ export async function advancedSearchCards(
     // エンチャント・クリーチャーだけがヒットする）。
     for (const orClause of typeOrClauses) query = query.or(orClause);
     if (filters.rarities && filters.rarities.length > 0) query = query.in("rarity", filters.rarities);
-    if (filters.format) query = query.eq(`legalities->>${formatSlug(filters.format)}`, "legal");
+    // 複数フォーマットが選ばれている場合は「いずれかで合法」（OR）にする
+    if (filters.formats && filters.formats.length > 0) {
+      query = query.or(filters.formats.map((f) => `legalities->>${formatSlug(f)}.eq.legal`).join(","));
+    }
     return query;
   }
 

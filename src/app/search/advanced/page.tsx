@@ -47,6 +47,7 @@ export default async function AdvancedSearchPage({
   const selectedColors = new Set(filters.colors);
   const selectedRarities = new Set(filters.rarities);
   const selectedTypes = new Set(filters.types);
+  const selectedFormats = new Set(filters.formats);
 
   // カード詳細ページ「その他のプリント」の並び順ボタンと同じ規則に揃える。
   // 発売日順のデフォルトは新しい順、価格順のデフォルトは安い順（キーを切り替えた直後の向き）
@@ -136,7 +137,29 @@ export default async function AdvancedSearchPage({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="flex flex-col gap-1.5 text-sm">
+          <span className="text-neutral-600">
+            フォーマット適正（複数選択可、いずれかで合法なカード。採用率は先頭選択分のみ対象）
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            {FORMATS.map((f) => (
+              <label key={f} className="cursor-pointer">
+                <input
+                  type="checkbox"
+                  name="formats"
+                  value={f}
+                  defaultChecked={selectedFormats.has(f)}
+                  className="peer sr-only"
+                />
+                <span className="rounded-full border border-neutral-300 px-2.5 py-0.5 text-xs text-neutral-500 hover:border-neutral-500 peer-checked:border-neutral-500 peer-checked:bg-neutral-100 peer-checked:text-neutral-900">
+                  {f}
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5 text-sm">
             <span className="text-neutral-600">レアリティ</span>
             <div className="flex flex-wrap gap-3">
@@ -148,22 +171,6 @@ export default async function AdvancedSearchPage({
               ))}
             </div>
           </div>
-
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-neutral-600">フォーマット適正</span>
-            <select
-              name="format"
-              defaultValue={filters.format ?? ""}
-              className="rounded-md border border-neutral-300 px-2.5 py-1.5"
-            >
-              <option value="">指定なし</option>
-              {FORMATS.map((f) => (
-                <option key={f} value={f}>
-                  {f}
-                </option>
-              ))}
-            </select>
-          </label>
 
           <div className="flex flex-col gap-1 text-sm">
             <span className="text-neutral-600">マナ総量</span>

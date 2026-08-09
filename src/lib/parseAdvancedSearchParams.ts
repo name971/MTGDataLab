@@ -56,7 +56,6 @@ export function parsePage(sp: RawSearchParams): number {
 }
 
 export function parseAdvancedSearchFilters(sp: RawSearchParams): AdvancedSearchFilters {
-  const format = Array.isArray(sp.format) ? sp.format[0] : sp.format;
   return {
     name: (Array.isArray(sp.name) ? sp.name[0] : sp.name) || undefined,
     text: (Array.isArray(sp.text) ? sp.text[0] : sp.text) || undefined,
@@ -65,7 +64,7 @@ export function parseAdvancedSearchFilters(sp: RawSearchParams): AdvancedSearchF
     colors: toArray(sp.colors).filter((c) => (COLOR_ORDER as readonly string[]).includes(c)),
     colorlessOnly: sp.colorless === "1",
     rarities: toArray(sp.rarity).filter((r) => (RARITIES as readonly string[]).includes(r)),
-    format: format && (FORMATS as readonly string[]).includes(format) ? (format as Format) : undefined,
+    formats: toArray(sp.formats).filter((f) => (FORMATS as readonly string[]).includes(f)) as Format[],
     mvMin: toNumber(sp.mvMin),
     mvMax: toNumber(sp.mvMax),
     priceMin: toNumber(sp.priceMin),
