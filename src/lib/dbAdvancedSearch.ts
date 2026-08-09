@@ -59,7 +59,9 @@ const CARD_SELECT = "oracle_id, name, mana_cost, type_line, power, toughness, ra
 // 候補数に上限を設ける（色・マナ総量・価格帯・価格変化率はここではなくJS側で判定するため、
 // SQLだけでは絞り切れないことがある）。
 const CANDIDATE_CAP = 500;
-const DISPLAY_LIMIT = 60;
+// 1回の応答件数（初回表示・もっと見る共通）。全件はCANDIDATE_CAPまでで、残りは
+// もっと見るボタン（/api/advanced-search）でこの単位ずつ追加取得する。
+export const PAGE_SIZE = 60;
 // .in()にUUIDを一度に大量に並べるとURLが長すぎてPostgRESTが400 Bad Requestを返す
 // （dbCardPrintPrices.ts等、他所で実際に踏んだのと同じ問題）。チャンクに分割して問い合わせる。
 const ID_CHUNK = 150;
@@ -146,15 +148,28 @@ async function buildTypeOrClause(keyword: string): Promise<string> {
   return orParts.join(",");
 }
 
+export interface AdvancedSearchPage {
+  results: AdvancedSearchResult[];
+  /** SQL・JS側の全フィルタを適用した後の該当件数（表示件数ではなく実際の総件数）。
+   * CANDIDATE_CAP（500）が実質的な上限になる。もっと見るボタンの残り件数表示に使う。 */
+  totalCount: number;
+}
+
 /**
  * Scryfallの高度検索（https://scryfall.com/advanced）を参考にした複合条件検索。
  * SQL側で絞り込める条件（名前・ルールテキスト・タイプ行・レアリティ・フォーマット適正・採用率）を
  * 先にDBへ問い合わせて候補を絞り、DBに列を持たない条件（色・マナ総量・価格帯）や、D1側の
  * 履歴データが必要な条件（価格変化率）はJS側で候補を絞ってから判定する。
  * 条件を1つも指定していない場合は全件スキャンを避けるため空配列を返す。
+ * offset/limitは絞り込み済みの並び順（価格降順）に対するページングで、もっと見るボタン
+ * （/api/advanced-search）から続きを取得する時に使う。
  */
-export async function advancedSearchCards(filters: AdvancedSearchFilters): Promise<AdvancedSearchResult[]> {
-  if (!hasAnyFilter(filters)) return [];
+export async function advancedSearchCards(
+  filters: AdvancedSearchFilters,
+  offset = 0,
+  limit: number = PAGE_SIZE,
+): Promise<AdvancedSearchPage> {
+  if (!hasAnyFilter(filters)) return { results: [], totalCount: 0 };
 
   const name = filters.name?.trim();
   const text = filters.text?.trim();
@@ -190,7 +205,7 @@ export async function advancedSearchCards(filters: AdvancedSearchFilters): Promi
     textOracleIds = [
       ...new Set([...(enTextRows ?? []).map((r) => r.oracle_id), ...(jaTextRows ?? []).map((r) => r.oracle_id)]),
     ];
-    if (textOracleIds.length === 0) return []; // ルールテキストに一致するカードが無ければこの時点で確定
+    if (textOracleIds.length === 0) return { results: [], totalCount: 0 }; // ルールテキストに一致するカードが無ければこの時点で確定
   }
 
   // 採用率フィルタはフォーマット指定が無いと判定しようがないため、format未指定時は無視する。
@@ -206,7 +221,7 @@ export async function advancedSearchCards(filters: AdvancedSearchFilters): Promi
       .order("calculated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (!latestRow) return []; // このフォーマット・期間の採用率データが無ければ確定で0件
+    if (!latestRow) return { results: [], totalCount: 0 }; // このフォーマット・期間の採用率データが無ければ確定で0件
     let query = supabase
       .from("card_usage_stats")
       .select("oracle_id, usage_rate")
@@ -218,7 +233,7 @@ export async function advancedSearchCards(filters: AdvancedSearchFilters): Promi
     if (filters.usageRateMax !== undefined) query = query.lte("usage_rate", filters.usageRateMax);
     const { data } = await query;
     usageOracleIds = (data ?? []).map((r) => r.oracle_id);
-    if (usageOracleIds.length === 0) return [];
+    if (usageOracleIds.length === 0) return { results: [], totalCount: 0 };
   }
 
   // textOracleIds・usageOracleIdsはどちらも「事前にoracle_id候補を絞る」フィルタなので、
@@ -227,7 +242,7 @@ export async function advancedSearchCards(filters: AdvancedSearchFilters): Promi
   if (textOracleIds && usageOracleIds) {
     const usageSet = new Set(usageOracleIds);
     restrictOracleIds = textOracleIds.filter((id) => usageSet.has(id));
-    if (restrictOracleIds.length === 0) return [];
+    if (restrictOracleIds.length === 0) return { results: [], totalCount: 0 };
   } else {
     restrictOracleIds = textOracleIds ?? usageOracleIds;
   }
@@ -267,10 +282,10 @@ export async function advancedSearchCards(filters: AdvancedSearchFilters): Promi
   } else {
     const q = applyCommonFilters(supabase.from("cards").select(CARD_SELECT).eq("lang", "en"));
     const { data, error } = (await q.limit(CANDIDATE_CAP)) as { data: CardRow[] | null; error: unknown };
-    if (error || !data) return [];
+    if (error || !data) return { results: [], totalCount: 0 };
     cardRows = data;
   }
-  if (cardRows.length === 0) return [];
+  if (cardRows.length === 0) return { results: [], totalCount: 0 };
 
   // cardsは本来oracle_idごとに代表プリント（lang='en'）1行のはずだが、実データには同じoracle_idの
   // 行が複数残っていることがある（例: 再録のたびに旧セットの行が消えず並存）。検索結果に同じカードが
@@ -301,7 +316,7 @@ export async function advancedSearchCards(filters: AdvancedSearchFilters): Promi
       return true;
     });
   }
-  if (candidates.length === 0) return [];
+  if (candidates.length === 0) return { results: [], totalCount: 0 };
 
   // 価格帯フィルタが無い場合でも一覧表示に価格を出したいので、候補全件分まとめて取得する
   const oracleIds = candidates.map((c) => c.oracle_id);
@@ -316,7 +331,7 @@ export async function advancedSearchCards(filters: AdvancedSearchFilters): Promi
       return true;
     });
   }
-  if (withPrice.length === 0) return [];
+  if (withPrice.length === 0) return { results: [], totalCount: 0 };
 
   // 価格変化率はD1（price_history_archive）の履歴が必要で、全件に対してやると重いため、
   // ここまでで絞り込んだ候補（最大でもCANDIDATE_CAP件）に対してだけ計算する。
@@ -360,11 +375,14 @@ export async function advancedSearchCards(filters: AdvancedSearchFilters): Promi
       return true;
     });
   }
-  if (withChange.length === 0) return [];
+  if (withChange.length === 0) return { results: [], totalCount: 0 };
 
   // 価格が高いカードほど有名で見覚えがあることが多いため、価格の高い順をデフォルトにする
-  // （価格不明のカードは末尾に回す）
-  const sorted = withChange.sort((a, b) => (b.priceJpy ?? -1) - (a.priceJpy ?? -1)).slice(0, DISPLAY_LIMIT);
+  // （価格不明のカードは末尾に回す）。totalCountは全フィルタ適用後・ページング前の件数
+  // （もっと見るボタンの「残り件数」表示に使う）。
+  const totalCount = withChange.length;
+  const sorted = withChange.sort((a, b) => (b.priceJpy ?? -1) - (a.priceJpy ?? -1)).slice(offset, offset + limit);
+  if (sorted.length === 0) return { results: [], totalCount };
 
   // 日本語名・日本語版画像は別途まとめて取得する（候補が絞れた後なのでコストは小さい）
   const finalOracleIds = sorted.map((r) => r.card.oracle_id);
@@ -379,7 +397,7 @@ export async function advancedSearchCards(filters: AdvancedSearchFilters): Promi
   const nameJaByOracle = new Map((oracles ?? []).map((o) => [o.oracle_id, o.printed_name_ja]));
   const jaImageByOracle = new Map((jaCards ?? []).map((c) => [c.oracle_id, c.image_uri_normal]));
 
-  return sorted.map(({ card, priceJpy }) => ({
+  const results = sorted.map(({ card, priceJpy }) => ({
     oracleId: card.oracle_id,
     nameEn: card.name,
     nameJa: nameJaByOracle.get(card.oracle_id) ?? null,
@@ -388,4 +406,5 @@ export async function advancedSearchCards(filters: AdvancedSearchFilters): Promi
     rarity: card.rarity,
     priceJpy,
   }));
+  return { results, totalCount };
 }
