@@ -48,9 +48,11 @@ export default async function AdvancedSearchPage({
   const selectedRarities = new Set(filters.rarities);
   const selectedTypes = new Set(filters.types);
 
+  // カード詳細ページ「その他のプリント」の並び順ボタンと同じ規則に揃える。
+  // 発売日順のデフォルトは新しい順、価格順のデフォルトは安い順（キーを切り替えた直後の向き）
   const SORT_OPTIONS = [
-    { key: "price", label: "価格順" },
-    { key: "releasedAt", label: "登録日順" },
+    { key: "price", label: "価格順", defaultDir: "asc" },
+    { key: "releasedAt", label: "発売日順", defaultDir: "desc" },
   ] as const;
 
   return (
@@ -298,7 +300,7 @@ export default async function AdvancedSearchPage({
               <span className="text-neutral-400">並び順:</span>
               {SORT_OPTIONS.map((opt) => {
                 const isActive = (filters.sortKey ?? "price") === opt.key;
-                const nextDir = isActive && filters.sortDir === "asc" ? "desc" : "asc";
+                const nextDir = isActive ? (filters.sortDir === "asc" ? "desc" : "asc") : opt.defaultDir;
                 return (
                   <Link
                     key={opt.key}
