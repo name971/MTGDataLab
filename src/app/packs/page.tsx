@@ -5,6 +5,11 @@ import { supabase } from "@/lib/supabase";
 
 export const metadata = { title: "パックEV計算 - MTG DataLab" };
 
+// revalidate未設定だとビルド時の1回だけ静的生成されて以降ずっとキャッシュされ続けてしまう
+// （match_rate等の日次更新が反映されない不具合の原因だった）。集計バッチは1日1回のみのため、
+// 他のページと同様に長めのキャッシュで十分。
+export const revalidate = 21600;
+
 export default async function PackEvPage() {
   // 発売日はplay/collectorで同じセットが重なるため、先に対象セット一覧をまとめて取ってから
   // 1回だけ取得する（getPackSetsFromDb内で毎回取り直すと往復が倍になる）。
