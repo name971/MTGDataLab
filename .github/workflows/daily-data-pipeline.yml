@@ -155,3 +155,10 @@ jobs:
       - name: Check DB size
         continue-on-error: true
         run: node scripts/check-db-size.mjs
+
+      # パックEVのmatch_rateが参照テーブルのズレで17〜23%まで落ちていても誰も気づかず
+      # 何日も放置される事故があった。同種の「集計は動いているがデータが実質空/古いまま」を
+      # 早期発見するため、主要な集計データの完全性・鮮度をまとめてチェックする。
+      - name: Check data health
+        continue-on-error: true
+        run: node scripts/check-data-health.mjs
