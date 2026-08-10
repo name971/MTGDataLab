@@ -88,9 +88,9 @@ export default function DeckStatsBar({ mainboard }: { mainboard: DeckCardDisplay
             </div>
             {/* バーの色比だけだと枚数が薄い色（1〜2枚のタッチ等）は見えづらいため、
                 色ごとの内訳をチップで数値と一緒に出す（ホバー無しで一目で分かるように） */}
-            <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-1">
+            <div className="mt-1.5 flex flex-wrap justify-center gap-x-3 gap-y-1">
               {COLOR_ORDER.filter((c) => colorCounts[c] > 0).map((c) => (
-                <span key={c} className="flex items-center gap-1 text-xs text-neutral-600">
+                <span key={c} className="flex flex-col items-center gap-0.5 text-xs text-neutral-600">
                   <span
                     className="h-2.5 w-2.5 shrink-0 rounded-full border border-neutral-300"
                     style={{ backgroundColor: COLOR_HEX[c] }}
@@ -99,7 +99,7 @@ export default function DeckStatsBar({ mainboard }: { mainboard: DeckCardDisplay
                 </span>
               ))}
               {colorlessCount > 0 && (
-                <span className="flex items-center gap-1 text-xs text-neutral-600">
+                <span className="flex flex-col items-center gap-0.5 text-xs text-neutral-600">
                   <span
                     className="h-2.5 w-2.5 shrink-0 rounded-full border border-neutral-300"
                     style={{ backgroundColor: COLORLESS_HEX }}
@@ -114,12 +114,12 @@ export default function DeckStatsBar({ mainboard }: { mainboard: DeckCardDisplay
 
       <div className="flex-1">
         <p className="mb-1 text-xs text-neutral-500">マナカーブ（土地除く）</p>
-        <div className="flex h-20 items-end gap-1.5">
+        <div className="flex h-24 items-end gap-1.5">
           {CURVE_BUCKETS.map((bucket) => (
             <div key={bucket} className="flex flex-1 flex-col items-center gap-1">
               {/* バーの高さの見た目だけだと枚数が伝わりづらいため、バーの上に枚数を常時表示する
                   （0枚の帯も高さを揃えるため空文字ではなくスペースで場所だけ確保） */}
-              <span className="text-[10px] leading-none text-neutral-500">
+              <span className="text-xs leading-none font-medium text-neutral-700">
                 {curveCounts[bucket] > 0 ? curveCounts[bucket] : " "}
               </span>
               <div className="flex h-16 w-full items-end">
@@ -129,7 +129,9 @@ export default function DeckStatsBar({ mainboard }: { mainboard: DeckCardDisplay
                   title={`CMC ${bucket}: ${curveCounts[bucket]}枚`}
                 />
               </div>
-              <span className="text-[10px] text-neutral-400">{bucket}</span>
+              <span className="flex h-5 w-5 items-center justify-center rounded-full border border-neutral-300 text-[10px] text-neutral-600">
+                {bucket}
+              </span>
             </div>
           ))}
         </div>
