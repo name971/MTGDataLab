@@ -114,26 +114,41 @@ export default function DeckStatsBar({ mainboard }: { mainboard: DeckCardDisplay
 
       <div className="flex-1">
         <p className="mb-1 text-xs text-neutral-500">マナカーブ（土地除く）</p>
-        <div className="flex h-24 items-end gap-1.5">
-          {CURVE_BUCKETS.map((bucket) => (
-            <div key={bucket} className="flex flex-1 flex-col items-center gap-1">
-              {/* バーの高さの見た目だけだと枚数が伝わりづらいため、バーの上に枚数を常時表示する
-                  （0枚の帯も高さを揃えるため空文字ではなくスペースで場所だけ確保） */}
-              <span className="text-xs leading-none font-medium text-neutral-700">
-                {curveCounts[bucket] > 0 ? curveCounts[bucket] : " "}
-              </span>
-              <div className="flex h-16 w-full items-end">
-                <div
-                  className="w-full rounded-t bg-neutral-400"
-                  style={{ height: `${(curveCounts[bucket] / maxCurveCount) * 100}%` }}
-                  title={`CMC ${bucket}: ${curveCounts[bucket]}枚`}
-                />
+        <div className="flex gap-2">
+          {/* Y軸目盛り（0・中間・最大）でバーの高さがどれくらいの枚数かを軸から読めるようにする */}
+          <div className="flex h-24 flex-col justify-between text-[10px] leading-none text-neutral-400">
+            <span>{maxCurveCount}</span>
+            <span>{Math.round(maxCurveCount / 2)}</span>
+            <span>0</span>
+          </div>
+          <div className="relative flex h-24 flex-1 items-end gap-1.5 border-l border-neutral-200">
+            <div className="pointer-events-none absolute inset-0 flex flex-col justify-between">
+              <div className="border-t border-neutral-100" />
+              <div className="border-t border-neutral-100" />
+              <div className="border-t border-neutral-200" />
+            </div>
+            {CURVE_BUCKETS.map((bucket) => (
+              <div key={bucket} className="z-10 flex h-full flex-1 flex-col items-center justify-end gap-1">
+                <div className="flex h-full w-full items-end">
+                  <div
+                    className="w-full rounded-t bg-purple-300"
+                    style={{ height: `${(curveCounts[bucket] / maxCurveCount) * 100}%` }}
+                    title={`CMC ${bucket}: ${curveCounts[bucket]}枚`}
+                  />
+                </div>
               </div>
-              <span className="flex h-5 w-5 items-center justify-center rounded-full border border-neutral-300 text-[10px] text-neutral-600">
+            ))}
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <div className="w-[1.5em]" />
+          <div className="flex flex-1 gap-1.5">
+            {CURVE_BUCKETS.map((bucket) => (
+              <span key={bucket} className="flex-1 text-center text-[10px] text-neutral-500">
                 {bucket}
               </span>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
     </div>
