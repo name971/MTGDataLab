@@ -91,7 +91,7 @@ export default async function AdvancedSearchPage({
                 type="text"
                 name="type"
                 defaultValue={filters.typeText ?? ""}
-                placeholder="例: 人魚、瞬間魔法"
+                placeholder="例: マーフォーク、ゾンビ"
                 className="rounded-md border border-neutral-300 px-2.5 py-1.5"
               />
               {/* チェックボックスをボタン風に見せるだけの選択トグル（送信ボタンではない）。
