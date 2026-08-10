@@ -2,20 +2,22 @@
 価格予測モデルの学習データを組み立てる。
 
 データソース:
-  1. Supabase（自前の実データ、REST経由）
-     - card_cheapest_price_snapshots: オラクル単位・日付単位の最安値（USD/JPY）
-       2026-07-24以降のみ（本番サイトの実運用データ、最も信頼できる）
+  1. Cloudflare D1（自前の実データ、HTTP API経由）
+     - price_history_archive: オラクル単位・日付単位の最安値（USD/JPY）。
+       scripts/compute-cheapest-price-snapshots.mjsが日次で書き込む本番の日次履歴
+       （DB容量対策でPostgres card_cheapest_price_snapshotsから移行済み、最も信頼できる）。
+  2. Supabase（自前の実データ、REST経由）
      - card_usage_stats: フォーマット別・日付別の採用率
      - card_oracles / cards: 静的属性（レアリティ・タイプ・マナコスト）
-     - exchange_rates: USD→JPY換算用
-  2. MTGJSON（AllIdentifiers / AllPrices）
-     - 直近90日分のTCGplayer価格。Supabase実データより古い日付だけを補完に使う
-       （実データと重複する日付はSupabase側を優先）。
+  3. MTGJSON（AllIdentifiers / AllPrices）
+     - 直近90日分のTCGplayer価格。実データより古い日付だけを補完に使う
+       （実データと重複する日付は実データ側を優先）。
 
 本番のPostgres DB（無料枠500MB）には一切書き込まない。取得結果はml/data/配下に
 Parquetでキャッシュするのみ（再実行時の高速化・オフライン作業用）。
 
-実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... python ml/fetch_data.py
+実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+      CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=... python ml/fetch_data.py
 """
 
 from __future__ import annotations
@@ -34,6 +36,11 @@ CACHE_DIR = DATA_DIR / "cache"
 
 SUPABASE_URL = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
 SUPABASE_ANON_KEY = os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+
+CLOUDFLARE_API_TOKEN = os.environ.get("CLOUDFLARE_API_TOKEN")
+CLOUDFLARE_ACCOUNT_ID = os.environ.get("CLOUDFLARE_ACCOUNT_ID")
+# wrangler.jsonc の d1_databases[].database_id と同じ（jp-mtgstocks-archive）
+D1_DATABASE_ID = "a3f8dcb4-80d1-4dba-81dd-9ecd900e7623"
 
 MTGJSON_IDENTIFIERS_URL = "https://mtgjson.com/api/v5/AllIdentifiers.json.zip"
 MTGJSON_PRICES_URL = "https://mtgjson.com/api/v5/AllPrices.json.zip"
@@ -72,12 +79,45 @@ def supabase_get_all(path: str) -> list[dict]:
     return rows
 
 
-def fetch_supabase_price_history() -> pd.DataFrame:
-    """card_cheapest_price_snapshots: 自前の実価格履歴（最も信頼できるソース）。"""
-    print("Supabase: card_cheapest_price_snapshots を取得中...")
-    rows = supabase_get_all(
-        "card_cheapest_price_snapshots?select=oracle_id,date,jpy_est&jpy_est=not.is.null"
+def _require_d1_env() -> None:
+    if not CLOUDFLARE_API_TOKEN or not CLOUDFLARE_ACCOUNT_ID:
+        raise SystemExit("CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID を設定してください")
+
+
+def d1_query(sql: str, params: list) -> list[dict]:
+    _require_d1_env()
+    res = requests.post(
+        f"https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}"
+        f"/d1/database/{D1_DATABASE_ID}/query",
+        headers={"Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}"},
+        json={"sql": sql, "params": params},
+        timeout=60,
     )
+    res.raise_for_status()
+    body = res.json()
+    if not body.get("success"):
+        raise RuntimeError(f"D1 query failed: {body}")
+    return body["result"][0]["results"]
+
+
+def fetch_own_price_history() -> pd.DataFrame:
+    """price_history_archive（Cloudflare D1）: 自前の実価格履歴（最も信頼できるソース）。
+    scripts/compute-cheapest-price-snapshots.mjsが日次で書き込む本番データ。1回のHTTP
+    レスポンスが肥大化しないよう、日付単位でページングして取得する。"""
+    print("D1: price_history_archive を取得中...")
+    rows: list[dict] = []
+    offset = 0
+    d1_page_size = 50000
+    while True:
+        page = d1_query(
+            "SELECT oracle_id, date, jpy_est FROM price_history_archive "
+            "WHERE jpy_est IS NOT NULL ORDER BY date, oracle_id LIMIT ? OFFSET ?",
+            [d1_page_size, offset],
+        )
+        rows.extend(page)
+        if len(page) < d1_page_size:
+            break
+        offset += d1_page_size
     df = pd.DataFrame(rows)
     if df.empty:
         return df
@@ -224,7 +264,7 @@ def build_mtgjson_oracle_price_history(
 def main() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    own_history = fetch_supabase_price_history()
+    own_history = fetch_own_price_history()
     exchange_rates = fetch_supabase_exchange_rates()
     print_to_oracle = fetch_supabase_print_to_oracle()
 

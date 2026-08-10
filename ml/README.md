@@ -7,8 +7,8 @@
 
 ## 背景・制約
 
-- 自前のSupabase DBに蓄積された実価格履歴（`card_cheapest_price_snapshots`）は
-  2026-07-24以降のみで、まだ10日程度しかない。
+- 自前のCloudflare D1に蓄積された実価格履歴（`price_history_archive`）は
+  2026-07-25以降のみで、まだ日が浅い。
 - MTGJSON（`AllPrices`）は直近90日分のローリング履歴のみを配布しており、
   2020年〜のような数年規模の履歴は公式には存在しない。
 - そのため現時点では「本格的なスタッキング＋数年規模のウォークフォワードCV」は行わず、
@@ -20,8 +20,9 @@
 ```bash
 pip install -r ml/requirements.txt
 
-# 1. データ取得（Supabase実データ + MTGJSON過去90日分をマージし、ml/data/にキャッシュ）
-NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... python ml/fetch_data.py
+# 1. データ取得（D1 + Supabase実データ + MTGJSON過去90日分をマージし、ml/data/にキャッシュ）
+NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... \
+CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=... python ml/fetch_data.py
 
 # 2. ベースラインモデルの学習・ウォークフォワード評価
 python ml/train_baseline.py
@@ -29,8 +30,9 @@ python ml/train_baseline.py
 
 ## 構成
 
-- `fetch_data.py` — Supabase（自前の実データ、REST経由）とMTGJSON（`AllIdentifiers`/`AllPrices`、
-  過去90日分の補完用）を取得し、オラクル単位の日次価格系列にマージして`ml/data/`にキャッシュする。
+- `fetch_data.py` — Cloudflare D1（自前の実価格履歴）、Supabase（採用率・静的属性、REST経由）、
+  MTGJSON（`AllIdentifiers`/`AllPrices`、過去90日分の補完用）を取得し、オラクル単位の
+  日次価格系列にマージして`ml/data/`にキャッシュする。
 - `features.py` — 静的属性（レアリティ・タイプ・CMC）・時系列特徴量（リターン・移動平均・
   ボラティリティ）・採用率特徴量（`card_usage_stats`）を組み立てる。
 - `train_baseline.py` — 単一LightGBM（`objective=quantile`）でのウォークフォワード評価。
