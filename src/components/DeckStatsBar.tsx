@@ -86,6 +86,28 @@ export default function DeckStatsBar({ mainboard }: { mainboard: DeckCardDisplay
                 />
               )}
             </div>
+            {/* バーの色比だけだと枚数が薄い色（1〜2枚のタッチ等）は見えづらいため、
+                色ごとの内訳をチップで数値と一緒に出す（ホバー無しで一目で分かるように） */}
+            <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-1">
+              {COLOR_ORDER.filter((c) => colorCounts[c] > 0).map((c) => (
+                <span key={c} className="flex items-center gap-1 text-xs text-neutral-600">
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full border border-neutral-300"
+                    style={{ backgroundColor: COLOR_HEX[c] }}
+                  />
+                  {colorCounts[c]}
+                </span>
+              ))}
+              {colorlessCount > 0 && (
+                <span className="flex items-center gap-1 text-xs text-neutral-600">
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full border border-neutral-300"
+                    style={{ backgroundColor: COLORLESS_HEX }}
+                  />
+                  {colorlessCount}
+                </span>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -95,6 +117,11 @@ export default function DeckStatsBar({ mainboard }: { mainboard: DeckCardDisplay
         <div className="flex h-20 items-end gap-1.5">
           {CURVE_BUCKETS.map((bucket) => (
             <div key={bucket} className="flex flex-1 flex-col items-center gap-1">
+              {/* バーの高さの見た目だけだと枚数が伝わりづらいため、バーの上に枚数を常時表示する
+                  （0枚の帯も高さを揃えるため空文字ではなくスペースで場所だけ確保） */}
+              <span className="text-[10px] leading-none text-neutral-500">
+                {curveCounts[bucket] > 0 ? curveCounts[bucket] : " "}
+              </span>
               <div className="flex h-16 w-full items-end">
                 <div
                   className="w-full rounded-t bg-neutral-400"
