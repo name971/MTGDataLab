@@ -2,7 +2,7 @@ import { supabase } from "./supabase";
 import { getBestCardImages } from "./dbCardPrints";
 import { getRecentPriceHistoryForOracles } from "./priceArchiveDb";
 
-const RANKING_SIZE = 10;
+const RANKING_SIZE = 15; // 表示は5列×3行なので15件
 
 // Pawlicki et al. "Prediction of Price Increase for Magic: The Gathering Cards"（Stanford CS229, 2014）では
 // 価格・採用率・販売量の3日差分特徴のうち、採用率の3日差分（U_D - U_D-3）が単独で最も予測に効いていた
