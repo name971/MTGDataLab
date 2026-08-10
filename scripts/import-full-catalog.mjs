@@ -51,11 +51,16 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   process.exit(1);
 }
 
-const PAGE_SIZE = 1000;
+// anonロールのstatement_timeoutは3秒。全カタログ規模の投入だと1000件バッチはタイムアウトする。
+const PAGE_SIZE = 300;
+// cardsはmana_value生成列（関数計算＋インデックス更新）があり他テーブルより重いため、
+// さらに小さいバッチにしないと3秒を超える。
+const CARDS_PAGE_SIZE = 100;
 
 async function supabaseUpsert(table, rows, conflictColumn) {
-  for (let i = 0; i < rows.length; i += PAGE_SIZE) {
-    const chunk = rows.slice(i, i + PAGE_SIZE);
+  const pageSize = table === "cards" ? CARDS_PAGE_SIZE : PAGE_SIZE;
+  for (let i = 0; i < rows.length; i += pageSize) {
+    const chunk = rows.slice(i, i + pageSize);
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?on_conflict=${conflictColumn}`, {
       method: "POST",
       headers: {
