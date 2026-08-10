@@ -27,66 +27,45 @@ function periodWindow(periodDays: number, endOffsetDays: number): { start: strin
   return { start: isoDate(start), end: isoDate(end) };
 }
 
-interface DeckCardEmbedRow {
-  deck_id: number;
-  decks: { tournaments: { format: string; event_date: string } | null } | null;
+interface UsageCountRow {
+  format: string;
+  window_key: "current" | "prev";
+  deck_count: number;
 }
 
 /**
  * 指定カード（oracle_id）が、各フォーマットで直近periodDays日間に何個のデッキで使われているかを
  * 集計する。カッコ内の増減率は、直前の同じ日数分・非重複のウィンドウとの比較（前期間比）。
  * 例: 7日間なら直前7日間、30日間なら直前30日間、90日間なら直前90日間と比較する。
- * deck_cards.oracle_id → decks → tournaments の外部キーをたどって取得するため、
- * このカードを含むデッキが多いフォーマットでも件数は小さく抑えられる（母数はカード単位）。
+ *
+ * 以前はdeck_cards→decks→tournamentsの埋め込みJOINで該当行を丸ごとページング取得し、
+ * deck_id単位の重複排除・フォーマット/期間ごとの絞り込みをJS側で行っていたが、
+ * 採用数の多いカード（Sol Ring等、90日間で1万行近い）だと複数ページの逐次リクエストが
+ * 発生し数秒〜十数秒かかっていた。集計自体をPostgres側のRPC関数
+ * （card_usage_counts_by_format）に任せ、フォーマット×期間ごとの件数だけを受け取るように
+ * した（転送行数を数万行から数行に削減）。
  */
 export async function getFormatUsageCountsForCard(
   oracleId: string,
   periodDays: number = 7,
 ): Promise<FormatUsageCount[]> {
-  // 絞り込み無しで全期間を取得すると、採用数の多いカード（例: 全期間で1000件超のデッキに
-  // 入っているカード）でSupabase/PostgRESTのデフォルト上限（1000行）に達し、直近分（＝この
-  // 集計に必要な分）が並び順によっては黙って切り捨てられる。今回必要な範囲
-  // （前期間の開始日〜今期間の終了日）だけをサーバー側で絞り込んでから取得する。
-  //
-  // ただし日付で絞り込んでもなお1000件を超えることがある（実際に発生: Chrome Moxは
-  // Commanderだけで直近14日に1000件超採用されており、同じ期間のLegacy分がその陰に
-  // 隠れて丸ごと切り捨てられていた＝Legacyの使用デッキが0件と誤表示される原因だった）。
-  // 日付フィルタだけでは不十分なため、Rangeでページングして全件取得する。
   const currentWindow = periodWindow(periodDays, 0);
   const prevWindow = periodWindow(periodDays, periodDays);
 
-  const PAGE_SIZE = 1000;
-  const data: DeckCardEmbedRow[] = [];
-  for (let offset = 0; ; offset += PAGE_SIZE) {
-    const { data: page, error } = await supabase
-      .from("deck_cards")
-      .select("deck_id, decks!inner(tournaments!inner(format, event_date))")
-      .eq("oracle_id", oracleId)
-      .gte("decks.tournaments.event_date", prevWindow.start)
-      .lte("decks.tournaments.event_date", currentWindow.end)
-      .range(offset, offset + PAGE_SIZE - 1)
-      .returns<DeckCardEmbedRow[]>();
-    if (error) return [];
-    if (!page || page.length === 0) break;
-    data.push(...page);
-    if (page.length < PAGE_SIZE) break;
+  const { data, error } = await supabase.rpc("card_usage_counts_by_format", {
+    p_oracle_id: oracleId,
+    p_period_days: periodDays,
+  });
+  if (error) return [];
+  const usageRows = (data ?? []) as UsageCountRow[];
+
+  const countByKey = new Map<string, number>();
+  for (const row of usageRows) {
+    countByKey.set(`${row.format}|${row.window_key}`, row.deck_count);
   }
+  const countInWindow = (format: string, w: "current" | "prev") => countByKey.get(`${format}|${w}`) ?? 0;
 
-  // 同じデッキがmain/side両方にこのカードを含むと重複するので、deck_id単位で1件に絞る
-  const entryByDeckId = new Map<number, { format: string; eventDate: string }>();
-  for (const row of data) {
-    const tournament = row.decks?.tournaments;
-    if (!tournament) continue;
-    if (!entryByDeckId.has(row.deck_id)) {
-      entryByDeckId.set(row.deck_id, { format: tournament.format, eventDate: tournament.event_date });
-    }
-  }
-  const entries = [...entryByDeckId.values()];
-
-  const countInWindow = (format: string, w: { start: string; end: string }) =>
-    entries.filter((e) => e.format === format && e.eventDate >= w.start && e.eventDate <= w.end).length;
-
-  const formats = [...new Set(entries.map((e) => e.format))];
+  const formats = [...new Set(usageRows.map((r) => r.format))];
   if (formats.length === 0) return [];
 
   // 採用率(%)の分母（そのフォーマットの全デッキ数）は、このカードを含むかどうかに関わらない
@@ -113,10 +92,10 @@ export async function getFormatUsageCountsForCard(
 
   return formats
     .map((format) => {
-      const deckCount = countInWindow(format, currentWindow);
+      const deckCount = countInWindow(format, "current");
       const totalCurrent = totalCountByKey.get(`${format}|current`) ?? 0;
       const totalPrev = totalCountByKey.get(`${format}|prev`) ?? 0;
-      const prevCount = countInWindow(format, prevWindow);
+      const prevCount = countInWindow(format, "prev");
       const rateCurrent = totalCurrent > 0 ? (deckCount / totalCurrent) * 100 : null;
       const ratePrev = totalPrev > 0 ? (prevCount / totalPrev) * 100 : null;
       const changePct =

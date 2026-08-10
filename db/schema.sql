@@ -326,6 +326,11 @@ CREATE TABLE deck_cards (
 
 CREATE INDEX idx_deck_cards_deck ON deck_cards (deck_id);
 CREATE INDEX idx_deck_cards_oracle ON deck_cards (oracle_id);
+-- card_usage_counts_by_format RPC（使用デッキ欄）がoracle_id指定でdeck_idだけ読む集計クエリを
+-- 投げるため、deck_idを含めたカバリングインデックスにしてheap fetchを避ける
+-- （採用数の多いカードだとplain idx_deck_cards_oracleだけではヒープアクセスがボトルネックになり、
+-- ディスクI/Oがコールドだとanonロールのstatement_timeout(3秒)を超えることがあった）。
+CREATE INDEX idx_deck_cards_oracle_deck ON deck_cards (oracle_id) INCLUDE (deck_id);
 -- scripts/import-deck-cards.mjsが未解決分を"oracle_id IS NULL"でフィルタしつつ"ORDER BY id"で
 -- ページングする（並び順不安定によるデータ欠落を防ぐため）。deck_cardsが91万行を超えた頃から
 -- この2条件の組み合わせに対応するインデックスが無く、実質全表スキャンになってタイムアウトする
@@ -602,6 +607,27 @@ AS $$
 $$;
 
 GRANT EXECUTE ON FUNCTION public.get_database_size_bytes() TO anon, authenticated;
+
+-- カード詳細ページ「使用デッキ」欄（src/lib/dbCardUsageByFormat.ts）が使うRPC。
+-- 以前はdeck_cards→decks→tournamentsの埋め込みJOINで該当行を丸ごとページング取得し
+-- JS側で集計していたが、採用数の多いカードだと数千〜1万行規模の逐次ページングが発生し
+-- 表示が数秒〜十数秒かかっていた。フォーマット×期間（current/prev）ごとの件数だけを
+-- Postgres側で集計して返すことで、転送行数を数万行から数行に削減する。
+CREATE OR REPLACE FUNCTION public.card_usage_counts_by_format(p_oracle_id uuid, p_period_days int)
+RETURNS TABLE(format text, window_key text, deck_count bigint)
+LANGUAGE sql STABLE AS $$
+  SELECT
+    t.format,
+    CASE WHEN t.event_date >= (current_date - (p_period_days - 1)) THEN 'current' ELSE 'prev' END AS window_key,
+    COUNT(DISTINCT dc.deck_id) AS deck_count
+  FROM deck_cards dc
+  JOIN decks d ON d.id = dc.deck_id
+  JOIN tournaments t ON t.id = d.tournament_id
+  WHERE dc.oracle_id = p_oracle_id
+    AND t.event_date >= (current_date - (2 * p_period_days - 1))
+    AND t.event_date <= current_date
+  GROUP BY t.format, window_key;
+$$;
 
 -- cards.mana_valueの生成列が使う関数。mana_cost（例:"{2}{W/U}{B}"）中の{...}記号を全て合算する。
 -- X/Y/Zは0、数値記号はその数値、それ以外（色記号・ハイブリッド・Phyrexian等）は1として数える。
