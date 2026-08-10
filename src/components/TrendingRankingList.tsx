@@ -8,7 +8,7 @@ function changeClass(value: number) {
 
 export default function TrendingRankingList({ rows }: { rows: TrendingRankingRow[] }) {
   return (
-    <div className="grid grid-cols-3 gap-3 sm:gap-4 lg:grid-cols-5">
+    <div className="grid grid-cols-3 gap-3 sm:gap-4 lg:grid-cols-8">
       {rows.map((row, index) => (
         <TrendingRankRow key={row.oracleId} row={row} rank={index + 1} />
       ))}
