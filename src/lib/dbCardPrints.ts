@@ -211,6 +211,41 @@ export async function getBestCardImages(oracleIds: string[]): Promise<Map<string
   return result;
 }
 
+/**
+ * getBestCardImagesの初版版。歴代禁止カード等、当時の雰囲気を出すために一番古いプリント
+ * （英語版）の画像を使いたい場合向け。価格は見ず、released_atが最も古い行の
+ * image_uri_normalを採用する（日本語版は当時存在しないことが多いため英語版のみ）。
+ */
+export async function getEarliestCardImages(oracleIds: string[]): Promise<Map<string, string>> {
+  if (oracleIds.length === 0) return new Map();
+
+  const rows: { oracle_id: string; released_at: string | null; image_uri_normal: string | null }[] = [];
+  const PAGE_SIZE = 1000;
+  for (let i = 0; i < oracleIds.length; i += ORACLE_ID_CHUNK) {
+    const chunk = oracleIds.slice(i, i + ORACLE_ID_CHUNK);
+    for (let offset = 0; ; offset += PAGE_SIZE) {
+      const { data: page, error } = await supabase
+        .from("card_prints")
+        .select("oracle_id, released_at, image_uri_normal")
+        .in("oracle_id", chunk)
+        .not("image_uri_normal", "is", null)
+        .order("released_at", { ascending: true })
+        .range(offset, offset + PAGE_SIZE - 1);
+      if (error) break;
+      if (!page || page.length === 0) break;
+      rows.push(...page);
+      if (page.length < PAGE_SIZE) break;
+    }
+  }
+
+  const result = new Map<string, string>();
+  for (const r of rows) {
+    // released_at昇順で取得しているので、oracleIdごとに最初に出てきた行が最古のプリント
+    if (!result.has(r.oracle_id) && r.image_uri_normal) result.set(r.oracle_id, r.image_uri_normal);
+  }
+  return result;
+}
+
 /** プリント別詳細ページ（/cards/[oracleId]/prints/[scryfallId]）用に1件だけ取得する */
 export async function getCardPrintByScryfallId(scryfallId: string): Promise<CardPrint | null> {
   const { data, error } = await supabase

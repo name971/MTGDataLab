@@ -12,33 +12,70 @@ function isFormat(v: string | undefined): v is Format {
   return (FORMATS as readonly string[]).includes(v ?? "");
 }
 
+function buildHref(
+  format: Format,
+  sortDir: "asc" | "desc",
+  fillGaps: boolean,
+  overrides: Partial<{ format: Format; sortDir: "asc" | "desc"; fillGaps: boolean }>,
+): string {
+  const next = { format, sortDir, fillGaps, ...overrides };
+  const params = new URLSearchParams();
+  if (next.format !== "Standard") params.set("format", next.format);
+  if (next.sortDir !== "desc") params.set("sort", next.sortDir);
+  if (next.fillGaps) params.set("fillGaps", "1");
+  const qs = params.toString();
+  return qs ? `/banned-cards?${qs}` : "/banned-cards";
+}
+
 export default async function BannedCardsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ format?: string }>;
+  searchParams: Promise<{ format?: string; sort?: string; fillGaps?: string }>;
 }) {
   const sp = await searchParams;
   const format: Format = isFormat(sp.format) ? sp.format : "Standard";
-  const yearGroups = await getBannedCardsByYear(format);
+  const sortDir: "asc" | "desc" = sp.sort === "asc" ? "asc" : "desc";
+  const fillGaps = sp.fillGaps === "1";
+  const yearGroups = await getBannedCardsByYear(format, { sortDir, fillGaps });
 
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-semibold">歴代禁止カード</h1>
 
-      <div className="flex flex-wrap gap-1.5">
-        {FORMATS.map((f) => (
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-1.5">
+          {FORMATS.map((f) => (
+            <Link
+              key={f}
+              href={buildHref(format, sortDir, fillGaps, { format: f })}
+              className={`rounded-md border px-3 py-1 text-sm ${
+                f === format
+                  ? "border-neutral-500 bg-neutral-100 text-neutral-900"
+                  : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
+              }`}
+            >
+              {f}
+            </Link>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-1.5">
           <Link
-            key={f}
-            href={f === "Standard" ? "/banned-cards" : `/banned-cards?format=${f}`}
+            href={buildHref(format, sortDir, fillGaps, { sortDir: sortDir === "desc" ? "asc" : "desc" })}
+            className="rounded-md border border-neutral-300 px-3 py-1 text-sm text-neutral-500 hover:border-neutral-500"
+          >
+            {sortDir === "desc" ? "古い順に並び替え" : "新しい順に並び替え"}
+          </Link>
+          <Link
+            href={buildHref(format, sortDir, fillGaps, { fillGaps: !fillGaps })}
             className={`rounded-md border px-3 py-1 text-sm ${
-              f === format
+              fillGaps
                 ? "border-neutral-500 bg-neutral-100 text-neutral-900"
                 : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
             }`}
           >
-            {f}
+            禁止が無かった年も表示
           </Link>
-        ))}
+        </div>
       </div>
 
       {yearGroups.length === 0 ? (
@@ -48,7 +85,7 @@ export default async function BannedCardsPage({
           {yearGroups.map(({ year, cards }) => (
             <div key={year} className="flex items-start gap-3 py-2.5">
               <div className="w-14 shrink-0 pt-1 text-sm font-semibold text-neutral-700">{year}</div>
-              <div className="flex flex-1 flex-wrap gap-1.5">
+              <div className="flex min-h-[90px] flex-1 flex-wrap gap-1.5">
                 {cards.map((card) => (
                   <Link
                     key={card.oracleId}

@@ -1,5 +1,5 @@
 import { supabase } from "./supabase";
-import { getBestCardImages } from "./dbCardPrints";
+import { getEarliestCardImages } from "./dbCardPrints";
 import { BANNED_CARDS, type BannedCardEntry } from "./bannedCards";
 import type { Format } from "./formats";
 
@@ -10,11 +10,17 @@ export interface BannedCardWithCard extends BannedCardEntry {
 }
 
 /**
- * 指定フォーマットの歴代禁止カードを、年ごとにグループ化して返す（新しい年が先頭）。
+ * 指定フォーマットの歴代禁止カードを、年ごとにグループ化して返す。
  * カード名からoracle_idを解決できなかったエントリ（DBの図鑑未反映等）は読み飛ばす。
+ * カード画像は当時の雰囲気を出すため、最新プリントではなく初版（英語版）の画像を使う。
+ *
+ * @param sortDir "desc"（新しい年が先頭、デフォルト）| "asc"（古い年が先頭）
+ * @param fillGaps trueの場合、収録データの最小〜最大年の間で禁止が無かった年も
+ *   空のcards配列を持つ行として補完する（「禁止が無かった年」を空白行として強調したい用途）
  */
 export async function getBannedCardsByYear(
   format: Format,
+  { sortDir = "desc", fillGaps = false }: { sortDir?: "asc" | "desc"; fillGaps?: boolean } = {},
 ): Promise<{ year: number; cards: BannedCardWithCard[] }[]> {
   const entries = BANNED_CARDS.filter((e) => e.format === format);
   if (entries.length === 0) return [];
@@ -27,7 +33,7 @@ export async function getBannedCardsByYear(
   const oracleByName = new Map((oracles ?? []).map((o) => [o.name, o]));
 
   const oracleIds = [...oracleByName.values()].map((o) => o.oracle_id);
-  const imageByOracle = await getBestCardImages(oracleIds);
+  const imageByOracle = await getEarliestCardImages(oracleIds);
 
   const cards: BannedCardWithCard[] = [];
   for (const entry of entries) {
@@ -47,7 +53,14 @@ export async function getBannedCardsByYear(
     byYear.get(card.year)!.push(card);
   }
 
-  return [...byYear.entries()]
-    .sort((a, b) => b[0] - a[0])
-    .map(([year, cards]) => ({ year, cards }));
+  if (fillGaps) {
+    const years = [...byYear.keys()];
+    for (let y = Math.min(...years); y <= Math.max(...years); y++) {
+      if (!byYear.has(y)) byYear.set(y, []);
+    }
+  }
+
+  const rows = [...byYear.entries()].map(([year, cards]) => ({ year, cards }));
+  rows.sort((a, b) => (sortDir === "asc" ? a.year - b.year : b.year - a.year));
+  return rows;
 }
