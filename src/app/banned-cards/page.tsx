@@ -83,8 +83,8 @@ export default async function BannedCardsPage({
       ) : (
         <div className="flex flex-col divide-y divide-neutral-100">
           {yearGroups.map(({ year, cards }) => (
-            <div key={year} className="flex items-start gap-3 py-2.5">
-              <div className="w-14 shrink-0 pt-1 text-sm font-semibold text-neutral-700">{year}</div>
+            <div key={year} className="flex items-center gap-3 py-2.5">
+              <div className="w-14 shrink-0 text-sm font-semibold text-neutral-700">{year}</div>
               <div className="flex min-h-[90px] flex-1 flex-wrap gap-1.5">
                 {cards.map((card) => (
                   <Link

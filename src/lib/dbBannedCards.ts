@@ -3,7 +3,7 @@ import { getEarliestCardImages } from "./dbCardPrints";
 import { BANNED_CARDS, type BannedCardEntry } from "./bannedCards";
 import type { Format } from "./formats";
 
-export interface BannedCardWithCard extends BannedCardEntry {
+export interface BannedCardWithCard extends Omit<BannedCardEntry, "imageUrl"> {
   oracleId: string;
   nameJa: string | null;
   imageUrl: string | null;
@@ -43,7 +43,7 @@ export async function getBannedCardsByYear(
       ...entry,
       oracleId: oracle.oracle_id,
       nameJa: oracle.printed_name_ja,
-      imageUrl: imageByOracle.get(oracle.oracle_id) ?? null,
+      imageUrl: entry.imageUrl ?? imageByOracle.get(oracle.oracle_id) ?? null,
     });
   }
 
