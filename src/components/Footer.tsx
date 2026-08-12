@@ -16,6 +16,9 @@ export default function Footer() {
           <Link href="/packs" className="hover:text-neutral-700">
             パックEV
           </Link>
+          <Link href="/banned-cards" className="hover:text-neutral-700">
+            歴代禁止カード
+          </Link>
         </nav>
         <p>
           {SITE_NAME}は、Fan Content
