@@ -34,12 +34,10 @@ function cardTitle(card: BannedCardWithCard): string {
   return `${card.nameJa ?? card.name}${card.month ? ` (${card.year}年${card.month}月${label})` : ""}`;
 }
 
-// カード画像の縦横比（通常のカード比率、既存のリスト表示と同じ64:90）
-const CARD_ASPECT = 64 / 90;
-
-function CardThumb({ card, height }: { card: BannedCardWithCard; height: number }) {
+// カード画像の縦横比（通常のカード比率）。next/imageのwidth/heightは実画像取得用のヒントとして
+// 固定値64x90を渡しつつ、実際の表示サイズはstyleのheight（CSS式もしくは数値px）で決める。
+function CardThumb({ card, heightStyle }: { card: BannedCardWithCard; heightStyle: string }) {
   const borderClass = card.status === "restricted" ? "border-amber-500" : "border-neutral-200";
-  const width = Math.round(height * CARD_ASPECT);
   return (
     <Link
       key={card.oracleId}
@@ -51,20 +49,21 @@ function CardThumb({ card, height }: { card: BannedCardWithCard; height: number 
         <Image
           src={card.imageUrl}
           alt={card.nameJa ?? card.name}
-          width={width}
-          height={height}
+          width={64}
+          height={90}
           className={`rounded-sm border group-hover:border-neutral-500 ${borderClass}`}
+          style={{ height: heightStyle, width: "auto" }}
         />
       ) : (
         <div
           className={`flex items-center justify-center overflow-hidden rounded-sm border bg-neutral-100 text-center text-[8px] text-neutral-400 ${borderClass}`}
-          style={{ width, height }}
+          style={{ height: heightStyle, aspectRatio: "64 / 90" }}
         >
           {card.nameJa ?? card.name}
         </div>
       )}
       {card.status === "restricted" && (
-        <span className="pointer-events-none absolute -top-1 -right-1 rounded-full bg-amber-500 px-1 text-[8px] font-bold leading-tight text-white shadow">
+        <span className="pointer-events-none absolute -top-0.5 -right-0.5 rounded-full bg-amber-500 px-0.5 text-[6px] leading-tight font-bold text-white shadow">
           制限
         </span>
       )}
@@ -72,29 +71,65 @@ function CardThumb({ card, height }: { card: BannedCardWithCard; height: number 
   );
 }
 
-// コンパクト表示（1画面で見る）で使える縦幅の見積もり。実際のビューポート高さはサーバー側の
-// レンダリング時点ではわからないため、ヘッダー・タイトル・操作ボタン・軸ラベル等を差し引いた
-// 概算値を固定で使う（一般的なノートPC〜デスクトップのウィンドウ高さを想定）。
-const COMPACT_AVAILABLE_HEIGHT_PX = 600;
-// これより小さいとカードの絵柄・違いが判別しづらくなる下限の高さ
-const CARD_MIN_HEIGHT_PX = 26;
-const CARD_MAX_HEIGHT_PX = 90; // リスト表示と同じ通常サイズが上限（それ以上に拡大はしない）
-const COLUMN_GAP_PX = 3;
+// リスト表示のカードサイズ（固定）
+const LIST_CARD_HEIGHT_PX = "90px";
+
+// コンパクト表示（1画面で見る）: カード1枚の高さをCSSのdvh単位で計算し、実際のブラウザの
+// 画面高さに応じて自動で決まるようにする（サーバー側でpx数を決め打ちすると実機の画面高さと
+// 合わず、縦を使い切れなかったり逆にはみ出したりしたため）。
+// - ヘッダー・タイトル・操作ボタン・凡例・軸ラベル・列下部のラベル分をHEADER_RESERVE_PXとして
+//   固定px（実測225px+ラベル・余白分）で差し引く。この分はビューポートの高さによらずほぼ
+//   一定なので、vh単位ではなく固定pxにする（vhにすると小さい画面で相対的に少なく確保されすぎて
+//   はみ出してしまっていた）。
+// - 最も枚数が多い列のカードがちょうどこの高さに収まるよう、残り高さを枚数で割る。
+// - clamp()で下限（判別できるギリギリの大きさ）と上限（リスト表示と同じ通常サイズ）を設ける。
+const HEADER_RESERVE_PX = 300;
+const CARD_MIN_HEIGHT_PX = 46;
+const CARD_MAX_HEIGHT_PX = 90;
+const CARD_GAP_PX = 4; // 列内のカード間の隙間（gap-1）。枚数が多い列だと合計が無視できない大きさになる
+
+function compactHeightStyle(cardsPerColumn: number): string {
+  const gapTotalPx = (cardsPerColumn - 1) * CARD_GAP_PX;
+  return `clamp(${CARD_MIN_HEIGHT_PX}px, calc((100dvh - ${HEADER_RESERVE_PX}px - ${gapTotalPx}px) / ${cardsPerColumn}), ${CARD_MAX_HEIGHT_PX}px)`;
+}
+
+// 列分割が必要かどうかを判定する際の「画面の高さ」の目安値（実際のビューポート高さは
+// サーバー側ではわからないため、一般的なノートPCの高さを仮定する）。CSS側の計算式
+// （compactHeightStyle）と同じ定数（HEADER_RESERVE_PX・CARD_GAP_PX）を使って逆算することで、
+// 「下限サイズでギリギリ収まる列あたり枚数」を実際のCSS計算と矛盾しないようにする。
+const ASSUMED_VIEWPORT_HEIGHT_PX = 900;
 
 /**
- * 各年のカードを列に分ける。方針: 折り返し（幅方向に自然に増える）や山札のような
- * 重ね合わせではなく、全体で1つの「1枚あたりの高さ」を共有し、最も枚数が多い年が
- * その高さでちょうど画面に収まるようにする（＝縦幅を使い切る、呼び出し側で計算）。
- * それでも下限サイズで1列に収まらない年だけ、必要最小限の列数に分割する。
+ * 1年のカード枚数が、下限サイズでも1列に収まらない場合だけ、必要最小限の列数に分割する
+ * （折り返しではなく、その年専用に列を増やすだけ）。分割後の「1列あたりの最大枚数」を
+ * 全年で共有し、それをカードサイズの計算に使う（列を分けた年もそうでない年も同じ大きさになる）。
  */
-function splitIntoColumns<T>(items: T[], cardsPerColumn: number): T[][] {
-  const numColumns = Math.max(1, Math.ceil(items.length / cardsPerColumn));
-  const perColumn = Math.ceil(items.length / numColumns);
-  const columns: T[][] = [];
-  for (let i = 0; i < items.length; i += perColumn) {
-    columns.push(items.slice(i, i + perColumn));
+function planCompactColumns(
+  yearGroups: { year: number; cards: BannedCardWithCard[] }[],
+): { columnsByYear: Map<number, BannedCardWithCard[][]>; maxCardsPerColumn: number } {
+  // capacity*(MIN+GAP) = ASSUMED - RESERVE + GAP を解いたもの（compactHeightStyleの式の逆算）
+  const capacityAtMinHeight = Math.max(
+    1,
+    Math.floor(
+      (ASSUMED_VIEWPORT_HEIGHT_PX - HEADER_RESERVE_PX + CARD_GAP_PX) / (CARD_MIN_HEIGHT_PX + CARD_GAP_PX),
+    ),
+  );
+  const columnsByYear = new Map<number, BannedCardWithCard[][]>();
+  let maxCardsPerColumn = 1;
+
+  for (const { year, cards } of yearGroups) {
+    const numColumns = Math.max(1, Math.ceil(cards.length / capacityAtMinHeight));
+    const perColumn = Math.ceil(cards.length / numColumns) || 1;
+    const columns: BannedCardWithCard[][] = [];
+    for (let i = 0; i < cards.length; i += perColumn) {
+      columns.push(cards.slice(i, i + perColumn));
+    }
+    if (columns.length === 0) columns.push([]);
+    columnsByYear.set(year, columns);
+    maxCardsPerColumn = Math.max(maxCardsPerColumn, perColumn);
   }
-  return columns;
+
+  return { columnsByYear, maxCardsPerColumn };
 }
 
 export default async function BannedCardsPage({
@@ -110,22 +145,8 @@ export default async function BannedCardsPage({
   const yearGroups = await getBannedCardsByYear(format, { sortDir, fillGaps });
   const hasRestricted = yearGroups.some((g) => g.cards.some((c) => c.status === "restricted"));
 
-  const maxCount = Math.max(1, ...yearGroups.map((g) => g.cards.length));
-  const capacityAtMinHeight = Math.max(
-    1,
-    Math.floor(COMPACT_AVAILABLE_HEIGHT_PX / (CARD_MIN_HEIGHT_PX + COLUMN_GAP_PX)),
-  );
-  const compactCardHeight =
-    maxCount <= capacityAtMinHeight
-      ? Math.max(
-          CARD_MIN_HEIGHT_PX,
-          Math.min(CARD_MAX_HEIGHT_PX, Math.floor(COMPACT_AVAILABLE_HEIGHT_PX / maxCount) - COLUMN_GAP_PX),
-        )
-      : CARD_MIN_HEIGHT_PX;
-  const compactCardsPerColumn = Math.max(
-    1,
-    Math.floor(COMPACT_AVAILABLE_HEIGHT_PX / (compactCardHeight + COLUMN_GAP_PX)),
-  );
+  const { columnsByYear, maxCardsPerColumn } = planCompactColumns(yearGroups);
+  const compactHeight = compactHeightStyle(maxCardsPerColumn);
 
   return (
     <div className="flex flex-col gap-4">
@@ -191,25 +212,22 @@ export default async function BannedCardsPage({
           className="flex w-screen items-end justify-center gap-3 overflow-x-auto px-4 pb-2"
           style={{ marginLeft: "calc(50% - 50vw)" }}
         >
-          {yearGroups.map(({ year, cards }) => {
-            const columns = splitIntoColumns(cards, compactCardsPerColumn);
-            return (
-              <div key={year} className="flex shrink-0 flex-col items-center gap-1.5">
-                <div className="flex items-end gap-0.5">
-                  {columns.map((col, ci) => (
-                    <div key={ci} className="flex flex-col" style={{ gap: COLUMN_GAP_PX }}>
-                      {col.map((card) => (
-                        <CardThumb key={card.oracleId} card={card} height={compactCardHeight} />
-                      ))}
-                    </div>
-                  ))}
-                </div>
-                <div className="w-16 border-t border-neutral-300 pt-1 text-center text-xs font-medium text-neutral-600">
-                  {year}
-                </div>
+          {yearGroups.map(({ year }) => (
+            <div key={year} className="flex shrink-0 flex-col items-center gap-1.5">
+              <div className="flex items-end gap-0.5">
+                {(columnsByYear.get(year) ?? []).map((col, ci) => (
+                  <div key={ci} className="flex flex-col gap-1">
+                    {col.map((card) => (
+                      <CardThumb key={card.oracleId} card={card} heightStyle={compactHeight} />
+                    ))}
+                  </div>
+                ))}
               </div>
-            );
-          })}
+              <div className="w-16 border-t border-neutral-300 pt-1 text-center text-xs font-medium text-neutral-600">
+                {year}
+              </div>
+            </div>
+          ))}
         </div>
       ) : (
         <div className="flex flex-col divide-y divide-neutral-100">
@@ -218,7 +236,7 @@ export default async function BannedCardsPage({
               <div className="w-14 shrink-0 text-sm font-semibold text-neutral-700">{year}</div>
               <div className="flex min-h-[90px] flex-1 flex-wrap gap-1.5">
                 {cards.map((card) => (
-                  <CardThumb key={card.oracleId} card={card} height={90} />
+                  <CardThumb key={card.oracleId} card={card} heightStyle={LIST_CARD_HEIGHT_PX} />
                 ))}
               </div>
             </div>
