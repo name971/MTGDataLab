@@ -34,8 +34,12 @@ function cardTitle(card: BannedCardWithCard): string {
   return `${card.nameJa ?? card.name}${card.month ? ` (${card.year}年${card.month}月${label})` : ""}`;
 }
 
-function CardThumb({ card }: { card: BannedCardWithCard }) {
+// カード画像の縦横比（通常のカード比率、既存のリスト表示と同じ64:90）
+const CARD_ASPECT = 64 / 90;
+
+function CardThumb({ card, height }: { card: BannedCardWithCard; height: number }) {
   const borderClass = card.status === "restricted" ? "border-amber-500" : "border-neutral-200";
+  const width = Math.round(height * CARD_ASPECT);
   return (
     <Link
       key={card.oracleId}
@@ -47,19 +51,20 @@ function CardThumb({ card }: { card: BannedCardWithCard }) {
         <Image
           src={card.imageUrl}
           alt={card.nameJa ?? card.name}
-          width={64}
-          height={90}
-          className={`rounded-md border-2 group-hover:border-neutral-500 ${borderClass}`}
+          width={width}
+          height={height}
+          className={`rounded-sm border group-hover:border-neutral-500 ${borderClass}`}
         />
       ) : (
         <div
-          className={`flex h-[90px] w-16 items-center justify-center rounded-md border-2 bg-neutral-100 text-center text-[10px] text-neutral-400 ${borderClass}`}
+          className={`flex items-center justify-center overflow-hidden rounded-sm border bg-neutral-100 text-center text-[8px] text-neutral-400 ${borderClass}`}
+          style={{ width, height }}
         >
           {card.nameJa ?? card.name}
         </div>
       )}
       {card.status === "restricted" && (
-        <span className="pointer-events-none absolute -top-1 -right-1 rounded-full bg-amber-500 px-1 text-[9px] font-bold leading-tight text-white shadow">
+        <span className="pointer-events-none absolute -top-1 -right-1 rounded-full bg-amber-500 px-1 text-[8px] font-bold leading-tight text-white shadow">
           制限
         </span>
       )}
@@ -67,9 +72,30 @@ function CardThumb({ card }: { card: BannedCardWithCard }) {
   );
 }
 
-const CARD_HEIGHT_PX = 90;
-const CARD_MIN_VISIBLE_PX = 16; // 重ねても最低限見えて押せる高さ
-const COMPACT_PILE_MAX_HEIGHT_PX = 460; // 1列の目標最大高さ（画面に収まる範囲）
+// コンパクト表示（1画面で見る）で使える縦幅の見積もり。実際のビューポート高さはサーバー側の
+// レンダリング時点ではわからないため、ヘッダー・タイトル・操作ボタン・軸ラベル等を差し引いた
+// 概算値を固定で使う（一般的なノートPC〜デスクトップのウィンドウ高さを想定）。
+const COMPACT_AVAILABLE_HEIGHT_PX = 600;
+// これより小さいとカードの絵柄・違いが判別しづらくなる下限の高さ
+const CARD_MIN_HEIGHT_PX = 26;
+const CARD_MAX_HEIGHT_PX = 90; // リスト表示と同じ通常サイズが上限（それ以上に拡大はしない）
+const COLUMN_GAP_PX = 3;
+
+/**
+ * 各年のカードを列に分ける。方針: 折り返し（幅方向に自然に増える）や山札のような
+ * 重ね合わせではなく、全体で1つの「1枚あたりの高さ」を共有し、最も枚数が多い年が
+ * その高さでちょうど画面に収まるようにする（＝縦幅を使い切る、呼び出し側で計算）。
+ * それでも下限サイズで1列に収まらない年だけ、必要最小限の列数に分割する。
+ */
+function splitIntoColumns<T>(items: T[], cardsPerColumn: number): T[][] {
+  const numColumns = Math.max(1, Math.ceil(items.length / cardsPerColumn));
+  const perColumn = Math.ceil(items.length / numColumns);
+  const columns: T[][] = [];
+  for (let i = 0; i < items.length; i += perColumn) {
+    columns.push(items.slice(i, i + perColumn));
+  }
+  return columns;
+}
 
 export default async function BannedCardsPage({
   searchParams,
@@ -83,6 +109,23 @@ export default async function BannedCardsPage({
   const view: "list" | "compact" = sp.view === "compact" ? "compact" : "list";
   const yearGroups = await getBannedCardsByYear(format, { sortDir, fillGaps });
   const hasRestricted = yearGroups.some((g) => g.cards.some((c) => c.status === "restricted"));
+
+  const maxCount = Math.max(1, ...yearGroups.map((g) => g.cards.length));
+  const capacityAtMinHeight = Math.max(
+    1,
+    Math.floor(COMPACT_AVAILABLE_HEIGHT_PX / (CARD_MIN_HEIGHT_PX + COLUMN_GAP_PX)),
+  );
+  const compactCardHeight =
+    maxCount <= capacityAtMinHeight
+      ? Math.max(
+          CARD_MIN_HEIGHT_PX,
+          Math.min(CARD_MAX_HEIGHT_PX, Math.floor(COMPACT_AVAILABLE_HEIGHT_PX / maxCount) - COLUMN_GAP_PX),
+        )
+      : CARD_MIN_HEIGHT_PX;
+  const compactCardsPerColumn = Math.max(
+    1,
+    Math.floor(COMPACT_AVAILABLE_HEIGHT_PX / (compactCardHeight + COLUMN_GAP_PX)),
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -145,26 +188,19 @@ export default async function BannedCardsPage({
         <p className="text-sm text-neutral-500">{format}の禁止カードデータは準備中です。</p>
       ) : view === "compact" ? (
         <div
-          className="flex w-screen items-end justify-center gap-2 overflow-x-auto px-4 pb-2"
+          className="flex w-screen items-end justify-center gap-3 overflow-x-auto px-4 pb-2"
           style={{ marginLeft: "calc(50% - 50vw)" }}
         >
           {yearGroups.map(({ year, cards }) => {
-            // 1年のカード枚数が多いと縦に伸びすぎて画面に収まらなくなるため、
-            // カードを少しずつ重ねて積み上げる（トランプの山札のような見た目）ことで
-            // 枚数によらず1列の高さをほぼ一定に抑える。枚数が少ない年は重ならない。
-            const overlapStep =
-              cards.length <= 1
-                ? 0
-                : Math.max(
-                    CARD_MIN_VISIBLE_PX,
-                    Math.min(CARD_HEIGHT_PX, (COMPACT_PILE_MAX_HEIGHT_PX - CARD_HEIGHT_PX) / (cards.length - 1)),
-                  );
+            const columns = splitIntoColumns(cards, compactCardsPerColumn);
             return (
               <div key={year} className="flex shrink-0 flex-col items-center gap-1.5">
-                <div className="flex flex-col">
-                  {cards.map((card, i) => (
-                    <div key={card.oracleId} style={{ marginTop: i === 0 ? 0 : overlapStep - CARD_HEIGHT_PX }}>
-                      <CardThumb card={card} />
+                <div className="flex items-end gap-0.5">
+                  {columns.map((col, ci) => (
+                    <div key={ci} className="flex flex-col" style={{ gap: COLUMN_GAP_PX }}>
+                      {col.map((card) => (
+                        <CardThumb key={card.oracleId} card={card} height={compactCardHeight} />
+                      ))}
                     </div>
                   ))}
                 </div>
@@ -182,7 +218,7 @@ export default async function BannedCardsPage({
               <div className="w-14 shrink-0 text-sm font-semibold text-neutral-700">{year}</div>
               <div className="flex min-h-[90px] flex-1 flex-wrap gap-1.5">
                 {cards.map((card) => (
-                  <CardThumb key={card.oracleId} card={card} />
+                  <CardThumb key={card.oracleId} card={card} height={90} />
                 ))}
               </div>
             </div>
