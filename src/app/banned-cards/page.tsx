@@ -67,10 +67,6 @@ function CardThumb({ card }: { card: BannedCardWithCard }) {
   );
 }
 
-// コンパクト表示で1年のカード数が多いと縦に伸びすぎて全体が見づらくなるため、
-// 一定数を超えたら折り返して複数列にする（flex-wrapで自然に列が増える）
-const COMPACT_COLUMN_MAX_HEIGHT_PX = 6 * (90 + 6); // カード6枚分の高さ
-
 export default async function BannedCardsPage({
   searchParams,
 }: {
@@ -150,10 +146,7 @@ export default async function BannedCardsPage({
         >
           {yearGroups.map(({ year, cards }) => (
             <div key={year} className="flex shrink-0 flex-col items-center gap-1.5">
-              <div
-                className="flex flex-col flex-wrap gap-1.5"
-                style={{ maxHeight: COMPACT_COLUMN_MAX_HEIGHT_PX }}
-              >
+              <div className="flex flex-col gap-1.5">
                 {cards.map((card) => (
                   <CardThumb key={card.oracleId} card={card} />
                 ))}
