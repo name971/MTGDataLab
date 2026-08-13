@@ -52,9 +52,14 @@ def build_static_features(static_attrs: pd.DataFrame) -> pd.DataFrame:
     df = static_attrs.copy()
     df["rarity_num"] = df["rarity"].map(RARITY_MAP).fillna(0).astype(int)
     df["cmc"] = df["mana_cost"].map(_parse_cmc)
+    df["is_reserved"] = df["is_reserved"].fillna(False).astype(int)
+    df["is_serialized"] = df["is_serialized"].fillna(False).astype(int)
     for category in TYPE_CATEGORIES:
         df[f"is_{category.lower()}"] = df["type_line"].fillna("").str.contains(category).astype(int)
-    return df[["oracle_id", "rarity_num", "cmc"] + [f"is_{c.lower()}" for c in TYPE_CATEGORIES]]
+    return df[
+        ["oracle_id", "rarity_num", "cmc", "is_reserved", "is_serialized"]
+        + [f"is_{c.lower()}" for c in TYPE_CATEGORIES]
+    ]
 
 
 def build_time_series_features(price_history: pd.DataFrame) -> pd.DataFrame:
@@ -102,6 +107,11 @@ def build_usage_features(usage_stats: pd.DataFrame) -> pd.DataFrame:
     return agg
 
 
+# 候補カードの絞り込み閾値（円）。再録禁止リスト該当・シリアル番号入りはこの価格を問わず候補に含む。
+# 実データ分布（p90≈995円、p95≈2043円、p99≈7574円）から、上位3%程度のラインとして設定した。
+CANDIDATE_PRICE_THRESHOLD_JPY = 3000
+
+
 def build_training_frame() -> pd.DataFrame:
     price_history = pd.read_parquet(DATA_DIR / "price_history.parquet")
     usage_stats = pd.read_parquet(DATA_DIR / "usage_stats.parquet")
@@ -117,9 +127,21 @@ def build_training_frame() -> pd.DataFrame:
     # 採用率データが無い日（フォーマットで使われていないカード）は0扱い
     frame["usage_rate_max"] = frame["usage_rate_max"].fillna(0)
     frame["usage_rate_change"] = frame["usage_rate_change"].fillna(0)
+    frame["is_reserved"] = frame["is_reserved"].fillna(0).astype(int)
+    frame["is_serialized"] = frame["is_serialized"].fillna(0).astype(int)
 
     # 移動平均・ボラティリティが計算できない立ち上がり期間の行は学習から除外する
     frame = frame.dropna(subset=["ma_30d", "volatility_7d"])
+
+    # 候補カード絞り込み: 再録禁止 or シリアル番号入り or 一定額以上の価格（その時点の価格で判定）。
+    # デッキ採用回数は基準に含めない（デッキで使われているカードと重複する上、時代が変わると
+    # ノイズになりやすいため）。
+    is_candidate = (
+        (frame["is_reserved"] == 1)
+        | (frame["is_serialized"] == 1)
+        | (frame["jpy_est"] >= CANDIDATE_PRICE_THRESHOLD_JPY)
+    )
+    frame = frame[is_candidate]
     return frame
 
 
@@ -136,6 +158,8 @@ FEATURE_COLUMNS = [
     "usage_rate_change",
     "rarity_num",
     "cmc",
+    "is_reserved",
+    "is_serialized",
 ] + [f"is_{c.lower()}" for c in TYPE_CATEGORIES]
 
 TARGET_COLUMN = "log_return_7d"

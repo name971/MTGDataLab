@@ -144,17 +144,39 @@ def fetch_supabase_usage_stats() -> pd.DataFrame:
 
 
 def fetch_supabase_static_attrs() -> pd.DataFrame:
-    """card_oracles + cards: レアリティ・タイプ・マナコスト等の静的属性（代表プリント基準）。"""
-    print("Supabase: 静的属性（cards）を取得中...")
-    rows = supabase_get_all(
-        "cards?select=oracle_id,rarity,type_line,mana_cost,lang&lang=eq.en"
+    """card_oracles: 再録禁止・シリアル番号フラグ（デッキ使用実績を問わず全オラクル対象）。
+    cards: レアリティ・タイプ・マナコスト等（デッキ使用実績のある代表英語版のみ、
+    デッキ未使用カードの分はfetch_d1_catalog_static_attrs()側で別途補う）。"""
+    print("Supabase: 静的属性（card_oracles + cards）を取得中...")
+    oracle_rows = supabase_get_all("card_oracles?select=oracle_id,is_reserved,is_serialized")
+    oracle_df = pd.DataFrame(oracle_rows)
+
+    card_rows = supabase_get_all("cards?select=oracle_id,rarity,type_line,mana_cost,lang&lang=eq.en")
+    card_df = pd.DataFrame(card_rows)
+    if not card_df.empty:
+        # 同一oracle_idで複数プリントがある場合は最初の1件のみ採用（英語版のみ絞り込み済み）
+        card_df = card_df.drop_duplicates(subset="oracle_id", keep="first")
+
+    df = oracle_df.merge(card_df, on="oracle_id", how="left") if not oracle_df.empty else card_df
+    print(f"  {len(df)}件のオラクル")
+    return df
+
+
+def fetch_d1_catalog_static_attrs() -> pd.DataFrame:
+    """catalog_oracles（Cloudflare D1）: デッキ未使用のためPostgres cardsには無いオラクルの
+    静的属性・再録禁止/シリアルフラグ。再録禁止リスト該当カードの大半はこちら側にいる
+    （古いカードでデッキにはほぼ使われないため、DB容量対策の移行で先にD1へ移されている）。"""
+    print("D1: catalog_oracles（デッキ未使用カード）を取得中...")
+    rows = d1_query(
+        "SELECT oracle_id, rarity, type_line, mana_cost, is_reserved, is_serialized FROM catalog_oracles",
+        [],
     )
     df = pd.DataFrame(rows)
     if df.empty:
         return df
-    # 同一oracle_idで複数プリントがある場合は最初の1件のみ採用（英語版のみ絞り込み済み）
-    df = df.drop_duplicates(subset="oracle_id", keep="first")
-    print(f"  {len(df)}件のオラクル")
+    df["is_reserved"] = df["is_reserved"].astype(bool)
+    df["is_serialized"] = df["is_serialized"].astype(bool)
+    print(f"  {len(df)}件")
     return df
 
 
@@ -298,7 +320,11 @@ def main() -> None:
 
     combined.to_parquet(DATA_DIR / "price_history.parquet", index=False)
     fetch_supabase_usage_stats().to_parquet(DATA_DIR / "usage_stats.parquet", index=False)
-    fetch_supabase_static_attrs().to_parquet(DATA_DIR / "static_attrs.parquet", index=False)
+
+    static_attrs = pd.concat(
+        [fetch_supabase_static_attrs(), fetch_d1_catalog_static_attrs()], ignore_index=True
+    ).drop_duplicates(subset="oracle_id", keep="first")
+    static_attrs.to_parquet(DATA_DIR / "static_attrs.parquet", index=False)
     print(f"\n{DATA_DIR} にキャッシュ保存しました。")
 
 
