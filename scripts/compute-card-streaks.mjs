@@ -12,17 +12,17 @@
  * 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... node scripts/compute-card-streaks.mjs
  */
 
-import { execFileSync } from "node:child_process";
-
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const D1_DATABASE_NAME = process.env.D1_DATABASE_NAME ?? "jp-mtgstocks-archive";
+const D1_DATABASE_ID = process.env.D1_DATABASE_ID ?? "a3f8dcb4-80d1-4dba-81dd-9ecd900e7623";
+const CLOUDFLARE_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
+const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error("NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY を設定してください");
   process.exit(1);
 }
-if (!process.env.CLOUDFLARE_API_TOKEN || !process.env.CLOUDFLARE_ACCOUNT_ID) {
+if (!CLOUDFLARE_API_TOKEN || !CLOUDFLARE_ACCOUNT_ID) {
   console.error("CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID を設定してください（価格履歴の取得元がD1のため）");
   process.exit(1);
 }
@@ -30,15 +30,22 @@ if (!process.env.CLOUDFLARE_API_TOKEN || !process.env.CLOUDFLARE_ACCOUNT_ID) {
 // 日次価格履歴はcard_cheapest_price_snapshots（Supabase）ではなくD1
 // （price_history_archive、scripts/compute-cheapest-price-snapshots.mjsが日次で書き込む）
 // 側にしかない（DB容量超過対応の再設計でSupabase側は「今の価格」1行キャッシュのみになった）。
-function d1QueryViaCli(sql) {
-  const out = execFileSync(
-    "npx",
-    ["wrangler", "d1", "execute", D1_DATABASE_NAME, "--remote", "--json", `--command="${sql}"`],
-    { shell: true, encoding: "utf-8", maxBuffer: 1024 * 1024 * 100 },
+// `wrangler d1 execute`をサブプロセスで呼ぶ方式だと、90日分のMTGJSONバックフィル後は
+// 結果セットが数百万行規模になり、Windowsでは子プロセスの標準出力パイプが溢れて
+// ENOBUFSでクラッシュした（実際に発生）。D1のHTTP APIを直接叩けばNode側のfetchが
+// レスポンスをストリームで受けるためこの制約を受けない。
+async function d1QueryViaCli(sql) {
+  const res = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}/query`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${CLOUDFLARE_API_TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ sql }),
+    },
   );
-  const jsonStart = out.indexOf("[");
-  const body = JSON.parse(out.slice(jsonStart));
-  return body[0]?.results ?? [];
+  const body = await res.json();
+  if (!res.ok || !body.success) throw new Error(`D1クエリ失敗: ${res.status} ${JSON.stringify(body.errors ?? body)}`);
+  return body.result[0]?.results ?? [];
 }
 
 const STREAK_LOOKBACK_DAYS = 60;
@@ -127,7 +134,7 @@ async function main() {
   const rows = [];
 
   // ── 価格（フォーマット非依存、price_history_archiveは全プリント横断の最安値） ──
-  const priceRows = d1QueryViaCli(
+  const priceRows = await d1QueryViaCli(
     `SELECT oracle_id, date, jpy_est FROM price_history_archive WHERE date >= '${sinceStr}' AND jpy_est IS NOT NULL ORDER BY oracle_id ASC, date ASC`,
   );
   const priceByOracle = new Map();
