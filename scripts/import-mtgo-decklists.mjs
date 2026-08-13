@@ -111,15 +111,19 @@ function sleep(ms) {
 const FETCH_INTERVAL_MS = 400;
 
 async function fetchDecklistData(path) {
-  const res = await fetch(`https://www.mtgo.com${path}`, { headers: FETCH_HEADERS });
-  if (!res.ok) return null;
-  const html = await res.text();
-  const marker = "window.MTGO.decklists.data = ";
-  const markerIdx = html.indexOf(marker);
-  if (markerIdx === -1) return null;
-  const jsonText = extractJsonObject(html, markerIdx + marker.length);
-  if (!jsonText) return null;
   try {
+    // 接続タイムアウト等のネットワーク例外もここで拾う。素通しすると1件の失敗で
+    // main()全体がクラッシュし、GitHub Actions側はcontinue-on-error:trueで
+    // ジョブが「success」表示になるため、残りのイベントが丸ごと未処理のまま
+    // 誰にも気づかれず消える事故が実際に起きた。
+    const res = await fetch(`https://www.mtgo.com${path}`, { headers: FETCH_HEADERS });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const marker = "window.MTGO.decklists.data = ";
+    const markerIdx = html.indexOf(marker);
+    if (markerIdx === -1) return null;
+    const jsonText = extractJsonObject(html, markerIdx + marker.length);
+    if (!jsonText) return null;
     return JSON.parse(jsonText);
   } catch {
     return null;
@@ -217,7 +221,11 @@ async function main() {
       [
         {
           source: "mtgo",
-          source_event_id: rawData.site_name,
+          // rawData.site_nameは信用しない: 同じイベントを再取得すると、mtgo.com側が
+          // 時々日付の異なる壊れた値（例: "standard-league-2019-09-12..."）を返すことが
+          // 実際に確認された（重複トーナメント発生の実例）。一覧ページのURLパス自体は
+          // 安定しているため、こちらをキーにする。
+          source_event_id: path.replace(/^\/decklist\//, ""),
           format: FORMAT,
           event_name: data.eventName,
           event_date: data.eventDate,

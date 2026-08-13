@@ -68,6 +68,30 @@ async function main() {
     return null;
   });
 
+  // Standardで特定フォーマットだけ数日分の取り込みが丸ごと抜け落ち、GitHub Actionsの
+  // continue-on-error:trueでジョブが「success」表示のまま誰も気づけなかった事故が実際に
+  // 起きたため追加。Commanderはmtgo.comでカバーされずTopDeck.gg（未来日程の事前登録イベントも
+  // 混じる）のみが頼りで、この鮮度チェックが意味を持たないため対象外にする。
+  await check("トーナメント取り込みの鮮度（フォーマット別）", async () => {
+    const rows = await supabaseGet("tournaments?select=format,event_date&order=event_date.desc");
+    const latestByFormat = new Map();
+    for (const r of rows) {
+      if (!latestByFormat.has(r.format)) latestByFormat.set(r.format, r.event_date);
+    }
+    const STALE_THRESHOLD_DAYS = 3;
+    const checkedFormats = ["Standard", "Modern", "Pioneer", "Legacy", "Vintage"];
+    const stale = [];
+    for (const format of checkedFormats) {
+      const latest = latestByFormat.get(format);
+      const daysStale = latest
+        ? Math.floor((Date.now() - new Date(`${latest}T00:00:00Z`).getTime()) / 86400000)
+        : Infinity;
+      if (daysStale > STALE_THRESHOLD_DAYS) stale.push(`${format}(最新${latest ?? "無し"})`);
+    }
+    if (stale.length > 0) return `${stale.join(", ")}が${STALE_THRESHOLD_DAYS}日以上更新無し`;
+    return null;
+  });
+
   await check("デッキのアーキタイプ分類率（直近7日）", async () => {
     const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
     const rows = await supabaseGet(
