@@ -138,7 +138,10 @@ export default async function BannedCardsPage({
       {yearGroups.length === 0 ? (
         <p className="text-sm text-neutral-500">{format}の禁止カードデータは準備中です。</p>
       ) : view === "compact" ? (
-        <div className="flex items-end gap-2 overflow-x-auto pb-2">
+        <div
+          className="flex w-screen items-end gap-2 overflow-x-auto px-4 pb-2"
+          style={{ marginLeft: "calc(50% - 50vw)" }}
+        >
           {yearGroups.map(({ year, cards }) => (
             <div key={year} className="flex shrink-0 flex-col items-center gap-1.5">
               <div className="flex flex-col gap-1.5">

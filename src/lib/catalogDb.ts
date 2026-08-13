@@ -36,13 +36,19 @@ async function getCatalogDb() {
 
 /** oracle_idを直接指定して1件引く（カード詳細ページのフォールバック用） */
 export async function getCatalogOracleById(oracleId: string): Promise<CatalogOracleRow | null> {
-  const db = await getCatalogDb();
-  if (!db) return null;
-  const row = await db
-    .prepare("SELECT oracle_id, name, printed_name_ja, oracle_text FROM catalog_oracles WHERE oracle_id = ?1")
-    .bind(oracleId)
-    .first<CatalogOracleRow>();
-  return row ?? null;
+  try {
+    const db = await getCatalogDb();
+    if (!db) return null;
+    const row = await db
+      .prepare("SELECT oracle_id, name, printed_name_ja, oracle_text FROM catalog_oracles WHERE oracle_id = ?1")
+      .bind(oracleId)
+      .first<CatalogOracleRow>();
+    return row ?? null;
+  } catch {
+    // ローカル開発のD1レプリカにcatalog_oraclesが無い等、クエリ自体が失敗した場合も
+    // カタログは補助的なフォールバックなので握りつぶして「見つからなかった」扱いにする
+    return null;
+  }
 }
 
 /** oracle_idの一括解決（歴代禁止カードページ等、複数まとめて引きたい場合用） */
@@ -51,22 +57,26 @@ export async function getCatalogOraclesByIds(
 ): Promise<Map<string, CatalogOracleRow>> {
   const result = new Map<string, CatalogOracleRow>();
   if (oracleIds.length === 0) return result;
-  const db = await getCatalogDb();
-  if (!db) return result;
+  try {
+    const db = await getCatalogDb();
+    if (!db) return result;
 
-  const CHUNK = 90; // D1のバインド変数上限(100)対策
-  for (let i = 0; i < oracleIds.length; i += CHUNK) {
-    const chunk = oracleIds.slice(i, i + CHUNK);
-    const placeholders = chunk.map((_, j) => `?${j + 1}`).join(",");
-    const res = await db
-      .prepare(
-        `SELECT oracle_id, name, printed_name_ja, oracle_text FROM catalog_oracles WHERE oracle_id IN (${placeholders})`,
-      )
-      .bind(...chunk)
-      .all<CatalogOracleRow>();
-    for (const row of res.results ?? []) result.set(row.oracle_id, row);
+    const CHUNK = 90; // D1のバインド変数上限(100)対策
+    for (let i = 0; i < oracleIds.length; i += CHUNK) {
+      const chunk = oracleIds.slice(i, i + CHUNK);
+      const placeholders = chunk.map((_, j) => `?${j + 1}`).join(",");
+      const res = await db
+        .prepare(
+          `SELECT oracle_id, name, printed_name_ja, oracle_text FROM catalog_oracles WHERE oracle_id IN (${placeholders})`,
+        )
+        .bind(...chunk)
+        .all<CatalogOracleRow>();
+      for (const row of res.results ?? []) result.set(row.oracle_id, row);
+    }
+    return result;
+  } catch {
+    return result;
   }
-  return result;
 }
 
 /**
@@ -78,22 +88,26 @@ export async function getCatalogOraclesByNames(
 ): Promise<Map<string, CatalogOracleRow>> {
   const result = new Map<string, CatalogOracleRow>();
   if (names.length === 0) return result;
-  const db = await getCatalogDb();
-  if (!db) return result;
+  try {
+    const db = await getCatalogDb();
+    if (!db) return result;
 
-  const CHUNK = 90;
-  for (let i = 0; i < names.length; i += CHUNK) {
-    const chunk = names.slice(i, i + CHUNK);
-    const placeholders = chunk.map((_, j) => `?${j + 1}`).join(",");
-    const res = await db
-      .prepare(
-        `SELECT oracle_id, name, printed_name_ja, oracle_text FROM catalog_oracles WHERE name IN (${placeholders})`,
-      )
-      .bind(...chunk)
-      .all<CatalogOracleRow>();
-    for (const row of res.results ?? []) result.set(row.name, row);
+    const CHUNK = 90;
+    for (let i = 0; i < names.length; i += CHUNK) {
+      const chunk = names.slice(i, i + CHUNK);
+      const placeholders = chunk.map((_, j) => `?${j + 1}`).join(",");
+      const res = await db
+        .prepare(
+          `SELECT oracle_id, name, printed_name_ja, oracle_text FROM catalog_oracles WHERE name IN (${placeholders})`,
+        )
+        .bind(...chunk)
+        .all<CatalogOracleRow>();
+      for (const row of res.results ?? []) result.set(row.name, row);
+    }
+    return result;
+  } catch {
+    return result;
   }
-  return result;
 }
 
 export interface CatalogSearchResult {
@@ -105,24 +119,28 @@ export interface CatalogSearchResult {
 
 /** 検索バーのフォールバック用。カード名の英語/日本語名の部分一致で検索する。 */
 export async function searchCatalogOraclesByName(query: string, limit = 10): Promise<CatalogSearchResult[]> {
-  const db = await getCatalogDb();
-  if (!db) return [];
-  const like = `%${query}%`;
-  const res = await db
-    .prepare(
-      "SELECT oracle_id, name, printed_name_ja, representative_image_uri FROM catalog_oracles WHERE name LIKE ?1 OR printed_name_ja LIKE ?1 LIMIT ?2",
-    )
-    .bind(like, limit)
-    .all<{
-      oracle_id: string;
-      name: string;
-      printed_name_ja: string | null;
-      representative_image_uri: string | null;
-    }>();
-  return (res.results ?? []).map((r) => ({
-    oracleId: r.oracle_id,
-    nameEn: r.name,
-    nameJa: r.printed_name_ja,
-    imageUrl: r.representative_image_uri,
-  }));
+  try {
+    const db = await getCatalogDb();
+    if (!db) return [];
+    const like = `%${query}%`;
+    const res = await db
+      .prepare(
+        "SELECT oracle_id, name, printed_name_ja, representative_image_uri FROM catalog_oracles WHERE name LIKE ?1 OR printed_name_ja LIKE ?1 LIMIT ?2",
+      )
+      .bind(like, limit)
+      .all<{
+        oracle_id: string;
+        name: string;
+        printed_name_ja: string | null;
+        representative_image_uri: string | null;
+      }>();
+    return (res.results ?? []).map((r) => ({
+      oracleId: r.oracle_id,
+      nameEn: r.name,
+      nameJa: r.printed_name_ja,
+      imageUrl: r.representative_image_uri,
+    }));
+  } catch {
+    return [];
+  }
 }
