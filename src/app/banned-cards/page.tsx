@@ -35,6 +35,7 @@ function cardTitle(card: BannedCardWithCard): string {
 }
 
 function CardThumb({ card }: { card: BannedCardWithCard }) {
+  const borderClass = card.status === "restricted" ? "border-amber-500" : "border-neutral-200";
   return (
     <Link
       key={card.oracleId}
@@ -48,22 +49,27 @@ function CardThumb({ card }: { card: BannedCardWithCard }) {
           alt={card.nameJa ?? card.name}
           width={64}
           height={90}
-          className={`rounded-md border-2 group-hover:border-neutral-500 ${
-            card.status === "restricted" ? "border-yellow-400" : "border-neutral-200"
-          }`}
+          className={`rounded-md border-2 group-hover:border-neutral-500 ${borderClass}`}
         />
       ) : (
         <div
-          className={`flex h-[90px] w-16 items-center justify-center rounded-md border-2 bg-neutral-100 text-center text-[10px] text-neutral-400 ${
-            card.status === "restricted" ? "border-yellow-400" : "border-neutral-200"
-          }`}
+          className={`flex h-[90px] w-16 items-center justify-center rounded-md border-2 bg-neutral-100 text-center text-[10px] text-neutral-400 ${borderClass}`}
         >
           {card.nameJa ?? card.name}
         </div>
       )}
+      {card.status === "restricted" && (
+        <span className="pointer-events-none absolute -top-1 -right-1 rounded-full bg-amber-500 px-1 text-[9px] font-bold leading-tight text-white shadow">
+          制限
+        </span>
+      )}
     </Link>
   );
 }
+
+// コンパクト表示で1年のカード数が多いと縦に伸びすぎて全体が見づらくなるため、
+// 一定数を超えたら折り返して複数列にする（flex-wrapで自然に列が増える）
+const COMPACT_COLUMN_MAX_HEIGHT_PX = 6 * (90 + 6); // カード6枚分の高さ
 
 export default async function BannedCardsPage({
   searchParams,
@@ -130,8 +136,8 @@ export default async function BannedCardsPage({
 
       {hasRestricted && (
         <div className="flex items-center gap-1.5 text-xs text-neutral-500">
-          <span className="inline-block h-3 w-3 rounded-sm border-2 border-yellow-400" />
-          制限（1枚まで）。黄枠以外は禁止（0枚）。
+          <span className="inline-block h-3 w-3 rounded-full bg-amber-500" />
+          制限（1枚まで）。それ以外は禁止（0枚）。
         </div>
       )}
 
@@ -139,12 +145,15 @@ export default async function BannedCardsPage({
         <p className="text-sm text-neutral-500">{format}の禁止カードデータは準備中です。</p>
       ) : view === "compact" ? (
         <div
-          className="flex w-screen items-end gap-2 overflow-x-auto px-4 pb-2"
+          className="flex w-screen items-end justify-center gap-2 overflow-x-auto px-4 pb-2"
           style={{ marginLeft: "calc(50% - 50vw)" }}
         >
           {yearGroups.map(({ year, cards }) => (
             <div key={year} className="flex shrink-0 flex-col items-center gap-1.5">
-              <div className="flex flex-col gap-1.5">
+              <div
+                className="flex flex-col flex-wrap gap-1.5"
+                style={{ maxHeight: COMPACT_COLUMN_MAX_HEIGHT_PX }}
+              >
                 {cards.map((card) => (
                   <CardThumb key={card.oracleId} card={card} />
                 ))}
