@@ -20,6 +20,7 @@ import { getFormatUsageCountsForCard } from "@/lib/dbCardUsageByFormat";
 import type { PricePoint } from "@/lib/dbPriceHistory";
 import { getCheapestPriceHistory, getLatestCheapestPrice } from "@/lib/dbCheapestPrice";
 import { getOtherPrintsForCard, getBestCardImage, getIconUrlBySetCodes } from "@/lib/dbCardPrints";
+import { getCatalogOracleById } from "@/lib/catalogDb";
 import { getLatestPricesForPrints } from "@/lib/dbCardPrintPrices";
 import { translateTypeLine } from "@/lib/typeGlossary";
 import CardHero from "@/components/CardHero";
@@ -124,8 +125,14 @@ async function resolveCardFromDbDetail(dbResult: DbCardDetail): Promise<Resolved
 /** 実トーナメントデータ由来のカード（サンプルの22枚と違いスラグを持たない）をoracle_id直指定で解決する */
 async function resolveCardByOracleId(oracleId: string): Promise<ResolvedCard | null> {
   const dbResult = await getCardDetailByOracleId(oracleId);
-  if (!dbResult) return null;
-  return resolveCardFromDbDetail(dbResult);
+  if (dbResult) return resolveCardFromDbDetail(dbResult);
+
+  // デッキ未使用のため図鑑カタログ（D1）側に移ったカード。D1にはoracle_id→カード名の
+  // 対応だけ持たせてあるので、名前が分かればあとは既存のScryfallライブ取得フォールバック
+  // （resolveCard）にそのまま乗せられる。
+  const catalogOracle = await getCatalogOracleById(oracleId);
+  if (!catalogOracle) return null;
+  return resolveCard(catalogOracle.name);
 }
 
 async function resolveCard(searchName: string): Promise<ResolvedCard | null> {

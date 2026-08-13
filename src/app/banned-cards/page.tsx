@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { FORMATS, type Format } from "@/lib/formats";
-import { getBannedCardsByYear } from "@/lib/dbBannedCards";
+import { getBannedCardsByYear, type BannedCardWithCard } from "@/lib/dbBannedCards";
 
 export const metadata = { title: "歴代禁止カード - MTG DataLab" };
 
@@ -16,27 +16,67 @@ function buildHref(
   format: Format,
   sortDir: "asc" | "desc",
   fillGaps: boolean,
-  overrides: Partial<{ format: Format; sortDir: "asc" | "desc"; fillGaps: boolean }>,
+  view: "list" | "compact",
+  overrides: Partial<{ format: Format; sortDir: "asc" | "desc"; fillGaps: boolean; view: "list" | "compact" }>,
 ): string {
-  const next = { format, sortDir, fillGaps, ...overrides };
+  const next = { format, sortDir, fillGaps, view, ...overrides };
   const params = new URLSearchParams();
   if (next.format !== "Standard") params.set("format", next.format);
   if (next.sortDir !== "desc") params.set("sort", next.sortDir);
   if (next.fillGaps) params.set("fillGaps", "1");
+  if (next.view !== "list") params.set("view", next.view);
   const qs = params.toString();
   return qs ? `/banned-cards?${qs}` : "/banned-cards";
+}
+
+function cardTitle(card: BannedCardWithCard): string {
+  const label = card.status === "restricted" ? "制限" : "禁止";
+  return `${card.nameJa ?? card.name}${card.month ? ` (${card.year}年${card.month}月${label})` : ""}`;
+}
+
+function CardThumb({ card }: { card: BannedCardWithCard }) {
+  return (
+    <Link
+      key={card.oracleId}
+      href={`/cards/${card.oracleId}`}
+      className="group relative block shrink-0"
+      title={cardTitle(card)}
+    >
+      {card.imageUrl ? (
+        <Image
+          src={card.imageUrl}
+          alt={card.nameJa ?? card.name}
+          width={64}
+          height={90}
+          className={`rounded-md border-2 group-hover:border-neutral-500 ${
+            card.status === "restricted" ? "border-yellow-400" : "border-neutral-200"
+          }`}
+        />
+      ) : (
+        <div
+          className={`flex h-[90px] w-16 items-center justify-center rounded-md border-2 bg-neutral-100 text-center text-[10px] text-neutral-400 ${
+            card.status === "restricted" ? "border-yellow-400" : "border-neutral-200"
+          }`}
+        >
+          {card.nameJa ?? card.name}
+        </div>
+      )}
+    </Link>
+  );
 }
 
 export default async function BannedCardsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ format?: string; sort?: string; fillGaps?: string }>;
+  searchParams: Promise<{ format?: string; sort?: string; fillGaps?: string; view?: string }>;
 }) {
   const sp = await searchParams;
   const format: Format = isFormat(sp.format) ? sp.format : "Standard";
   const sortDir: "asc" | "desc" = sp.sort === "asc" ? "asc" : "desc";
   const fillGaps = sp.fillGaps === "1";
+  const view: "list" | "compact" = sp.view === "compact" ? "compact" : "list";
   const yearGroups = await getBannedCardsByYear(format, { sortDir, fillGaps });
+  const hasRestricted = yearGroups.some((g) => g.cards.some((c) => c.status === "restricted"));
 
   return (
     <div className="flex flex-col gap-4">
@@ -47,7 +87,7 @@ export default async function BannedCardsPage({
           {FORMATS.map((f) => (
             <Link
               key={f}
-              href={buildHref(format, sortDir, fillGaps, { format: f })}
+              href={buildHref(format, sortDir, fillGaps, view, { format: f })}
               className={`rounded-md border px-3 py-1 text-sm ${
                 f === format
                   ? "border-neutral-500 bg-neutral-100 text-neutral-900"
@@ -60,13 +100,23 @@ export default async function BannedCardsPage({
         </div>
         <div className="flex flex-wrap gap-1.5">
           <Link
-            href={buildHref(format, sortDir, fillGaps, { sortDir: sortDir === "desc" ? "asc" : "desc" })}
+            href={buildHref(format, sortDir, fillGaps, view, { view: view === "compact" ? "list" : "compact" })}
+            className={`rounded-md border px-3 py-1 text-sm ${
+              view === "compact"
+                ? "border-neutral-500 bg-neutral-100 text-neutral-900"
+                : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
+            }`}
+          >
+            {view === "compact" ? "リスト表示" : "1画面で見る"}
+          </Link>
+          <Link
+            href={buildHref(format, sortDir, fillGaps, view, { sortDir: sortDir === "desc" ? "asc" : "desc" })}
             className="rounded-md border border-neutral-300 px-3 py-1 text-sm text-neutral-500 hover:border-neutral-500"
           >
             {sortDir === "desc" ? "古い順に並び替え" : "新しい順に並び替え"}
           </Link>
           <Link
-            href={buildHref(format, sortDir, fillGaps, { fillGaps: !fillGaps })}
+            href={buildHref(format, sortDir, fillGaps, view, { fillGaps: !fillGaps })}
             className={`rounded-md border px-3 py-1 text-sm ${
               fillGaps
                 ? "border-neutral-500 bg-neutral-100 text-neutral-900"
@@ -78,8 +128,30 @@ export default async function BannedCardsPage({
         </div>
       </div>
 
+      {hasRestricted && (
+        <div className="flex items-center gap-1.5 text-xs text-neutral-500">
+          <span className="inline-block h-3 w-3 rounded-sm border-2 border-yellow-400" />
+          制限（1枚まで）。黄枠以外は禁止（0枚）。
+        </div>
+      )}
+
       {yearGroups.length === 0 ? (
         <p className="text-sm text-neutral-500">{format}の禁止カードデータは準備中です。</p>
+      ) : view === "compact" ? (
+        <div className="flex items-end gap-2 overflow-x-auto pb-2">
+          {yearGroups.map(({ year, cards }) => (
+            <div key={year} className="flex shrink-0 flex-col items-center gap-1.5">
+              <div className="flex flex-col gap-1.5">
+                {cards.map((card) => (
+                  <CardThumb key={card.oracleId} card={card} />
+                ))}
+              </div>
+              <div className="w-16 border-t border-neutral-300 pt-1 text-center text-xs font-medium text-neutral-600">
+                {year}
+              </div>
+            </div>
+          ))}
+        </div>
       ) : (
         <div className="flex flex-col divide-y divide-neutral-100">
           {yearGroups.map(({ year, cards }) => (
@@ -87,26 +159,7 @@ export default async function BannedCardsPage({
               <div className="w-14 shrink-0 text-sm font-semibold text-neutral-700">{year}</div>
               <div className="flex min-h-[90px] flex-1 flex-wrap gap-1.5">
                 {cards.map((card) => (
-                  <Link
-                    key={card.oracleId}
-                    href={`/cards/${card.oracleId}`}
-                    className="group relative shrink-0"
-                    title={`${card.nameJa ?? card.name}${card.month ? ` (${card.year}年${card.month}月禁止)` : ""}`}
-                  >
-                    {card.imageUrl ? (
-                      <Image
-                        src={card.imageUrl}
-                        alt={card.nameJa ?? card.name}
-                        width={64}
-                        height={90}
-                        className="rounded-md border border-neutral-200 group-hover:border-neutral-500"
-                      />
-                    ) : (
-                      <div className="flex h-[90px] w-16 items-center justify-center rounded-md border border-neutral-200 bg-neutral-100 text-center text-[10px] text-neutral-400">
-                        {card.nameJa ?? card.name}
-                      </div>
-                    )}
-                  </Link>
+                  <CardThumb key={card.oracleId} card={card} />
                 ))}
               </div>
             </div>

@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { getEarliestCardImages } from "./dbCardPrints";
+import { getCatalogOraclesByNames } from "./catalogDb";
 import { BANNED_CARDS, type BannedCardEntry } from "./bannedCards";
 import type { Format } from "./formats";
 
@@ -31,6 +32,15 @@ export async function getBannedCardsByYear(
     .select("oracle_id, name, printed_name_ja")
     .in("name", names);
   const oracleByName = new Map((oracles ?? []).map((o) => [o.name, o]));
+
+  // デッキ未使用のためPostgresから削除され、D1（カタログ専用）に移ったカードのフォールバック
+  const missingNames = names.filter((n) => !oracleByName.has(n));
+  if (missingNames.length > 0) {
+    const catalogOracles = await getCatalogOraclesByNames(missingNames);
+    for (const [name, row] of catalogOracles) {
+      oracleByName.set(name, { oracle_id: row.oracle_id, name: row.name, printed_name_ja: row.printed_name_ja });
+    }
+  }
 
   const oracleIds = [...oracleByName.values()].map((o) => o.oracle_id);
   const imageByOracle = await getEarliestCardImages(oracleIds);

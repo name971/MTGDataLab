@@ -1,6 +1,7 @@
 import { supabase } from "./supabase";
 import { getBestCardImages } from "./dbCardPrints";
 import { meetsMinQueryLength } from "./searchQuery";
+import { searchCatalogOraclesByName } from "./catalogDb";
 
 export interface SearchCardResult {
   oracleId: string;
@@ -17,10 +18,23 @@ export async function searchCardsInDb(query: string): Promise<SearchCardResult[]
   const trimmed = query.trim();
   if (!meetsMinQueryLength(trimmed)) return [];
 
-  const { data: oracles, error } = await supabase.rpc("search_cards", { query: trimmed });
-  if (error || !oracles || oracles.length === 0) return [];
+  const { data, error } = await supabase.rpc("search_cards", { query: trimmed });
+  const oracles: { oracle_id: string; name: string; printed_name_ja: string | null }[] =
+    error || !data ? [] : data;
 
-  const oracleIds = oracles.map((o: { oracle_id: string }) => o.oracle_id);
+  // デッキ未使用のため図鑑カタログ（D1）側に移ったカードも検索対象に含める
+  // （Postgres側のヒットに無い名前だけ追加、重複防止）
+  const seenOracleIds = new Set(oracles.map((o) => o.oracle_id));
+  const catalogHits = await searchCatalogOraclesByName(trimmed, 10);
+  for (const hit of catalogHits) {
+    if (seenOracleIds.has(hit.oracleId)) continue;
+    seenOracleIds.add(hit.oracleId);
+    oracles.push({ oracle_id: hit.oracleId, name: hit.nameEn, printed_name_ja: hit.nameJa });
+  }
+
+  if (oracles.length === 0) return [];
+
+  const oracleIds = oracles.map((o) => o.oracle_id);
   const [{ data: cards }, bestImageByOracle] = await Promise.all([
     supabase.from("cards").select("oracle_id, lang, image_uri_art_crop").in("oracle_id", oracleIds),
     getBestCardImages(oracleIds),
@@ -37,6 +51,11 @@ export async function searchCardsInDb(query: string): Promise<SearchCardResult[]
   }
   for (const [oracleId, normalUrl] of bestImageByOracle) {
     imageByOracleId.set(oracleId, normalUrl.replace("/normal/", "/art_crop/"));
+  }
+  for (const hit of catalogHits) {
+    if (hit.imageUrl && !imageByOracleId.has(hit.oracleId)) {
+      imageByOracleId.set(hit.oracleId, hit.imageUrl.replace("/normal/", "/art_crop/"));
+    }
   }
 
   return oracles.map((o: { oracle_id: string; name: string; printed_name_ja: string | null }) => ({
