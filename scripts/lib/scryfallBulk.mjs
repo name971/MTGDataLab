@@ -176,6 +176,7 @@ function slimCard(card) {
     digital: card.digital,
     border_color: card.border_color,
     promo_types: card.promo_types,
+    reserved: card.reserved,
     is_showcase: card.frame_effects?.includes("showcase") ?? false,
     image_uris: card.image_uris
       ? { normal: card.image_uris.normal, art_crop: card.image_uris.art_crop }

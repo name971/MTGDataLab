@@ -150,6 +150,8 @@ async function main() {
       name: frontFaceName(enCard),
       printed_name_ja: printedNameJa,
       oracle_text: combinedOracleText(enCard),
+      is_reserved: enCard.reserved ?? false,
+      is_serialized: enCard.promo_types?.includes("serialized") ?? false,
     });
     cardRows.push(toCardRow(enCard, oracleId));
     if (jaCard) cardRows.push(toCardRow(jaCard, oracleId));

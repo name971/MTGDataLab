@@ -145,6 +145,11 @@ async function main() {
       name: frontFaceName(enCard),
       printed_name_ja: printedNameJa,
       oracle_text: combinedOracleText(enCard),
+      // 代表プリント1件だけの判定（reservedは全プリント共通なので正確、is_serializedは
+      // 別プリントがシリアル版のケースを見落としうる近似値。厳密な集約は
+      // scripts/backfill-reserved-serialized.mjs側で定期的に行う）
+      is_reserved: enCard.reserved ?? false,
+      is_serialized: enCard.promo_types?.includes("serialized") ?? false,
     });
     cardRows.push(toCardRow(enCard, enCard.oracle_id));
     if (jaCard) cardRows.push(toCardRow(jaCard, enCard.oracle_id));
