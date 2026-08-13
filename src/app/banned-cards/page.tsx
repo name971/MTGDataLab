@@ -40,7 +40,7 @@ function CardThumb({ card }: { card: BannedCardWithCard }) {
     <Link
       key={card.oracleId}
       href={`/cards/${card.oracleId}`}
-      className="group relative block shrink-0"
+      className="group relative block shrink-0 hover:z-20"
       title={cardTitle(card)}
     >
       {card.imageUrl ? (
@@ -66,6 +66,10 @@ function CardThumb({ card }: { card: BannedCardWithCard }) {
     </Link>
   );
 }
+
+const CARD_HEIGHT_PX = 90;
+const CARD_MIN_VISIBLE_PX = 16; // 重ねても最低限見えて押せる高さ
+const COMPACT_PILE_MAX_HEIGHT_PX = 460; // 1列の目標最大高さ（画面に収まる範囲）
 
 export default async function BannedCardsPage({
   searchParams,
@@ -144,18 +148,32 @@ export default async function BannedCardsPage({
           className="flex w-screen items-end justify-center gap-2 overflow-x-auto px-4 pb-2"
           style={{ marginLeft: "calc(50% - 50vw)" }}
         >
-          {yearGroups.map(({ year, cards }) => (
-            <div key={year} className="flex shrink-0 flex-col items-center gap-1.5">
-              <div className="flex flex-col gap-1.5">
-                {cards.map((card) => (
-                  <CardThumb key={card.oracleId} card={card} />
-                ))}
+          {yearGroups.map(({ year, cards }) => {
+            // 1年のカード枚数が多いと縦に伸びすぎて画面に収まらなくなるため、
+            // カードを少しずつ重ねて積み上げる（トランプの山札のような見た目）ことで
+            // 枚数によらず1列の高さをほぼ一定に抑える。枚数が少ない年は重ならない。
+            const overlapStep =
+              cards.length <= 1
+                ? 0
+                : Math.max(
+                    CARD_MIN_VISIBLE_PX,
+                    Math.min(CARD_HEIGHT_PX, (COMPACT_PILE_MAX_HEIGHT_PX - CARD_HEIGHT_PX) / (cards.length - 1)),
+                  );
+            return (
+              <div key={year} className="flex shrink-0 flex-col items-center gap-1.5">
+                <div className="flex flex-col">
+                  {cards.map((card, i) => (
+                    <div key={card.oracleId} style={{ marginTop: i === 0 ? 0 : overlapStep - CARD_HEIGHT_PX }}>
+                      <CardThumb card={card} />
+                    </div>
+                  ))}
+                </div>
+                <div className="w-16 border-t border-neutral-300 pt-1 text-center text-xs font-medium text-neutral-600">
+                  {year}
+                </div>
               </div>
-              <div className="w-16 border-t border-neutral-300 pt-1 text-center text-xs font-medium text-neutral-600">
-                {year}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <div className="flex flex-col divide-y divide-neutral-100">
