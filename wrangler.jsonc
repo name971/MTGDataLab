@@ -17,12 +17,21 @@
       "database_id": "a3f8dcb4-80d1-4dba-81dd-9ecd900e7623"
     }
   ],
-  // ISR(ページキャッシュ)の永続ストア。R2はクレカ登録が必要なため見送り、無料枠のみで使える
-  // KVを使う（open-next.config.ts参照。Supabase egress対策）。
+  // ISR(ページキャッシュ)の永続ストア。無料枠のみで使えるKVを使う
+  // （open-next.config.ts参照。Supabase egress対策）。
   "kv_namespaces": [
     {
       "binding": "NEXT_INC_CACHE_KV",
       "id": "0512dda9d33647c9863bd336c44cf592"
+    }
+  ],
+  // デッキ未使用カードを含む全カードの長期価格履歴（TCGCSV由来、月次NDJSON.gz、
+  // ml/fetch_tcgcsv_history.py・src/lib/priceArchiveR2.ts参照）。リクエスト課金なので
+  // D1の行数課金より全カード分の履歴保存に向く。
+  "r2_buckets": [
+    {
+      "binding": "PRICE_ARCHIVE_R2",
+      "bucket_name": "jp-mtgstocks-price-archive"
     }
   ]
 }

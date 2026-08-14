@@ -23,12 +23,22 @@ jobs:
       # D1（価格履歴のアーカイブ先）に直接書き込むようになったため必要（DB容量超過対応の再設計）。
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # ml/fetch_tcgcsv_history.py / snapshot_catalog_prices_daily.pyがR2（全カード長期価格履歴、
+      # デッキ未使用カード含む）へ読み書きするために必要。
+      R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       # ランナー同梱のnpmはlockfileVersion 3のoptionalDependencies同期チェックが
       # 甘く、実際には存在するのに"missing from lock file"と誤検知することがあるため、
@@ -38,6 +48,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Install Python dependencies
+        run: pip install -r ml/requirements.txt
 
       # card_price_snapshots（代表プリント単体の日次価格）はgetPriceHistoryForCard/
       # getLatestPriceSnapshotの参照元をcard_cheapest_price_snapshots（全プリント横断の最安値）に
@@ -54,6 +67,13 @@ jobs:
 
       - name: Compute cheapest-print-price snapshots
         run: node scripts/compute-cheapest-price-snapshots.mjs
+
+      # デッキ未使用カードを含む全カードの当日分価格をTCGCSV経由でR2へ追記する
+      # （ml/fetch_tcgcsv_history.py参照。D1は直近のみ・行数課金のため対象外にしていたカードも
+      # リクエスト課金のR2になら全部載せられる）。他ステップの成否に関わらず進める。
+      - name: Snapshot all-card prices to R2 (TCGCSV)
+        continue-on-error: true
+        run: python ml/snapshot_catalog_prices_daily.py
 
       # パックEV: パック単品の実勢価格（TCGCSV）はレート制限を気にせず取得できる別ソースなので
       # 他ステップの成否に関わらず進める。片方が失敗してもEVページ側でフォールバックする。

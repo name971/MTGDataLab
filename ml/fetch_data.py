@@ -5,29 +5,36 @@
   1. Cloudflare D1（自前の実データ、HTTP API経由）
      - price_history_archive: オラクル単位・日付単位の最安値（USD/JPY）。
        scripts/compute-cheapest-price-snapshots.mjsが日次で書き込む本番の日次履歴
-       （DB容量対策でPostgres card_cheapest_price_snapshotsから移行済み、最も信頼できる）。
-  2. Supabase（自前の実データ、REST経由）
+       （2026-07-25以降、最も信頼できる）。
+  2. Cloudflare R2（自前の長期履歴、ml/fetch_tcgcsv_history.py / snapshot_catalog_prices_daily.py
+     参照）
+     - price-history/*.ndjson.gz: TCGCSV由来の全カード・オラクル単位価格履歴（2024-02〜）。
+       D1の実データより古い日付だけを補完に使う（実データと重複する日付は実データ側を優先）。
+       以前はMTGJSONの直近90日ローリング分をその都度ダウンロードして補完していたが、
+       自前でR2に長期履歴を持つようになったため不要になった。
+  3. Supabase（自前の実データ、REST経由）
      - card_usage_stats: フォーマット別・日付別の採用率
      - card_oracles / cards: 静的属性（レアリティ・タイプ・マナコスト）
-  3. MTGJSON（AllIdentifiers / AllPrices）
-     - 直近90日分のTCGplayer価格。実データより古い日付だけを補完に使う
-       （実データと重複する日付は実データ側を優先）。
 
 本番のPostgres DB（無料枠500MB）には一切書き込まない。取得結果はml/data/配下に
 Parquetでキャッシュするのみ（再実行時の高速化・オフライン作業用）。
 
 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-      CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=... python ml/fetch_data.py
+      CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=... \
+      R2_BUCKET_NAME=... R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=... R2_ENDPOINT_URL=... \
+      python ml/fetch_data.py
 """
 
 from __future__ import annotations
 
+import gzip
 import io
 import json
 import os
 import zipfile
 from pathlib import Path
 
+import boto3
 import pandas as pd
 import requests
 
@@ -42,8 +49,9 @@ CLOUDFLARE_ACCOUNT_ID = os.environ.get("CLOUDFLARE_ACCOUNT_ID")
 # wrangler.jsonc の d1_databases[].database_id と同じ（jp-mtgstocks-archive）
 D1_DATABASE_ID = "a3f8dcb4-80d1-4dba-81dd-9ecd900e7623"
 
+# ml/fetch_tcgcsv_history.pyがtcgplayerProductId→scryfallId対応の解決に使う
+# （キャッシュが無い環境向けの自動ダウンロードフォールバック）
 MTGJSON_IDENTIFIERS_URL = "https://mtgjson.com/api/v5/AllIdentifiers.json.zip"
-MTGJSON_PRICES_URL = "https://mtgjson.com/api/v5/AllPrices.json.zip"
 
 PAGE_SIZE = 1000
 
@@ -207,107 +215,58 @@ def _download_and_cache_zip(url: str, cache_name: str) -> dict:
     return data
 
 
-def fetch_mtgjson_scryfall_id_map() -> dict[str, str]:
-    """MTGJSON独自uuid -> ScryfallのscryfallIdの対応表を作る
-    （AllPricesのキーはMTGJSON独自uuidで、我々のDBはscryfall_id基準のため変換が必要）。"""
-    print("MTGJSON: AllIdentifiers を取得中...")
-    data = _download_and_cache_zip(MTGJSON_IDENTIFIERS_URL, "AllIdentifiers.json")
-    uuid_to_scryfall: dict[str, str] = {}
-    for uuid, card in data.get("data", {}).items():
-        scryfall_id = (card.get("identifiers") or {}).get("scryfallId")
-        if scryfall_id:
-            uuid_to_scryfall[uuid] = scryfall_id
-    print(f"  {len(uuid_to_scryfall)}件のuuid→scryfallId対応")
-    return uuid_to_scryfall
-
-
-def fetch_mtgjson_price_history(uuid_to_scryfall: dict[str, str]) -> pd.DataFrame:
-    """MTGJSON AllPrices（直近90日ローリング）から、paper/tcgplayer/retail/normalのUSD価格を
-    プリント単位（scryfall_id）の日次系列として取り出す。Foilは今回のv1では見送り
-    （通常価格だけでもまず十分な学習データ量を確保する）。"""
-    print("MTGJSON: AllPrices を取得中...")
-    data = _download_and_cache_zip(MTGJSON_PRICES_URL, "AllPrices.json")
-    records = []
-    for uuid, price_obj in data.get("data", {}).items():
-        scryfall_id = uuid_to_scryfall.get(uuid)
-        if not scryfall_id:
-            continue
-        normal = (
-            (price_obj.get("paper") or {})
-            .get("tcgplayer", {})
-            .get("retail", {})
-            .get("normal")
-        )
-        if not normal:
-            continue
-        for date_str, usd in normal.items():
-            if usd is None:
-                continue
-            records.append({"scryfall_id": scryfall_id, "date": date_str, "usd": float(usd)})
-    df = pd.DataFrame(records)
-    if df.empty:
-        return df
-    df["date"] = pd.to_datetime(df["date"])
-    print(f"  {len(df)}行（{df['scryfall_id'].nunique()}プリント分）")
-    return df
-
-
-def fetch_supabase_print_to_oracle() -> pd.DataFrame:
-    """card_prints: scryfall_id -> oracle_id の対応（MTGJSON価格をオラクル単位に集約するため）。
-    トーナメント使用不可プリント（金縁・銀縁等）はcompute-cheapest-price-snapshots.mjsと同じ
-    方針で除外する。"""
-    print("Supabase: card_prints（scryfall_id→oracle_id対応）を取得中...")
-    rows = supabase_get_all(
-        "card_prints?select=scryfall_id,oracle_id&not_tournament_legal=eq.false"
+def r2_client():
+    return boto3.client(
+        "s3",
+        endpoint_url=os.environ["R2_ENDPOINT_URL"],
+        aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
+        aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
+        region_name="auto",
     )
-    return pd.DataFrame(rows)
 
 
-def build_mtgjson_oracle_price_history(
-    mtgjson_prices: pd.DataFrame, print_to_oracle: pd.DataFrame, exchange_rates: pd.DataFrame
-) -> pd.DataFrame:
-    """MTGJSONのプリント単位USD価格を、compute-cheapest-price-snapshots.mjsと同じロジック
-    （オラクル×日付ごとの最安値）でオラクル単位に集約し、JPYに換算する。"""
-    if mtgjson_prices.empty or print_to_oracle.empty:
+def fetch_r2_price_history() -> pd.DataFrame:
+    """R2（price-history/*.ndjson.gz、ml/fetch_tcgcsv_history.py参照）: 全カードのオラクル単位
+    価格履歴（2024-02〜、既にJPY換算済み）。D1の実データ期間（2026-07-25〜）より前を補う。
+    Parquetでなくgzip圧縮NDJSONにしている理由はfetch_tcgcsv_history.pyのsync_month_to_r2
+    docstring参照（Cloudflare Workers側のCPU時間制限の都合）。"""
+    print("R2: price-history（長期履歴）を取得中...")
+    s3 = r2_client()
+    bucket = os.environ["R2_BUCKET_NAME"]
+    records = []
+    paginator = s3.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=bucket, Prefix="price-history/"):
+        for obj in page.get("Contents", []):
+            if not obj["Key"].endswith(".ndjson.gz"):
+                continue
+            body = s3.get_object(Bucket=bucket, Key=obj["Key"])["Body"].read()
+            with gzip.GzipFile(fileobj=io.BytesIO(body)) as gz:
+                records.extend(json.loads(line) for line in gz if line.strip())
+    if not records:
         return pd.DataFrame(columns=["oracle_id", "date", "jpy_est"])
-
-    merged = mtgjson_prices.merge(print_to_oracle, on="scryfall_id", how="inner")
-    cheapest = merged.groupby(["oracle_id", "date"], as_index=False)["usd"].min()
-
-    rates = exchange_rates.set_index("date")["usd_to_jpy"].sort_index()
-    # その日以前で一番近い日のレートを使う（src/lib/dbCardPrintPrices.tsと同じフォールバック）
-    cheapest = cheapest.sort_values("date")
-    cheapest["rate"] = cheapest["date"].map(lambda d: rates.asof(d))
-    cheapest = cheapest.dropna(subset=["rate"])
-    cheapest["jpy_est"] = (cheapest["usd"] * cheapest["rate"]).round(2)
-    return cheapest[["oracle_id", "date", "jpy_est"]]
+    df = pd.DataFrame(records)
+    df["date"] = pd.to_datetime(df["date"])
+    df["jpy_est"] = df["jpy_est"].astype(float)
+    print(f"  {len(df)}行（{df['date'].min().date()}〜{df['date'].max().date()}）")
+    return df
 
 
 def main() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     own_history = fetch_own_price_history()
-    exchange_rates = fetch_supabase_exchange_rates()
-    print_to_oracle = fetch_supabase_print_to_oracle()
+    r2_history = fetch_r2_price_history()
 
-    uuid_to_scryfall = fetch_mtgjson_scryfall_id_map()
-    mtgjson_prices = fetch_mtgjson_price_history(uuid_to_scryfall)
-    mtgjson_oracle_history = build_mtgjson_oracle_price_history(
-        mtgjson_prices, print_to_oracle, exchange_rates
-    )
-
-    # 実データ（own_history）にある日付はMTGJSON側より優先し、無い日付だけMTGJSONで補完する
+    # 実データ（own_history、D1）にある日付はR2側より優先し、無い日付だけR2で補完する
     # （収集タイミングの違いによる二重計上・誤差混入を避けるため）。
-    if not own_history.empty:
+    if not own_history.empty and not r2_history.empty:
         own_keys = set(zip(own_history["oracle_id"], own_history["date"]))
-        mtgjson_oracle_history = mtgjson_oracle_history[
-            ~mtgjson_oracle_history.apply(
-                lambda r: (r["oracle_id"], r["date"]) in own_keys, axis=1
-            )
+        r2_history = r2_history[
+            ~r2_history.apply(lambda r: (r["oracle_id"], r["date"]) in own_keys, axis=1)
         ]
 
     combined = pd.concat(
-        [own_history[["oracle_id", "date", "jpy_est"]], mtgjson_oracle_history],
+        [own_history[["oracle_id", "date", "jpy_est"]], r2_history[["oracle_id", "date", "jpy_est"]]],
         ignore_index=True,
     ).drop_duplicates(subset=["oracle_id", "date"])
     combined = combined.sort_values(["oracle_id", "date"])

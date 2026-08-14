@@ -1,6 +1,7 @@
 import { supabase } from "./supabase";
 import type { PricePoint } from "./dbPriceHistory";
 import { getArchivedPrintPriceHistoryUsd } from "./priceArchiveDb";
+import { getR2LatestPricesForPrints, getR2PrintPriceHistory } from "./priceArchiveR2";
 
 /**
  * card_print_prices（プリント単位、日付をJSONBに追記していく方式、db/schema.sql参照）から
@@ -31,6 +32,13 @@ export async function getPrintPriceHistory(
   const usdByDate: Record<string, number> = {};
   for (const p of archived) usdByDate[p.date] = p.usd;
   Object.assign(usdByDate, recentUsdByDate); // 重複日付はSupabase（直近）側を優先
+
+  // Postgres・D1どちらにも無ければ、デッキ未使用カード等でR2（長期履歴、TCGCSV由来、
+  // Normal版のみ）にしか価格が無い可能性があるので試す
+  if (Object.keys(usdByDate).length === 0 && finish === "normal") {
+    const r2Points = await getR2PrintPriceHistory(scryfallId);
+    for (const p of r2Points) usdByDate[p.date] = p.usd;
+  }
 
   const dates = Object.keys(usdByDate).sort();
   if (dates.length === 0) return [];
@@ -92,8 +100,6 @@ export async function getLatestPricesForPrints(scryfallIds: string[]): Promise<L
     }),
   );
   const data = pages.flat();
-  if (data.length === 0) return { normal: new Map(), foil: new Map() };
-
   // 全プリント・通常/Foil双方で使われている日付だけ集めて、レートの問い合わせを1回で済ませる
   const latestNormalByPrint = new Map<string, { date: string; usd: number }>();
   const latestFoilByPrint = new Map<string, { date: string; usd: number }>();
@@ -108,6 +114,17 @@ export async function getLatestPricesForPrints(scryfallIds: string[]): Promise<L
       neededDates.add(row.date);
     }
   }
+
+  // デッキ未使用カード等、Postgresに価格が無いプリントはR2（長期履歴、Normal版のみ）で補う
+  const missingIds = scryfallIds.filter((id) => !latestNormalByPrint.has(id));
+  if (missingIds.length > 0) {
+    const r2Prices = await getR2LatestPricesForPrints(missingIds);
+    for (const [scryfallId, { date, usd }] of r2Prices) {
+      latestNormalByPrint.set(scryfallId, { date, usd });
+      neededDates.add(date);
+    }
+  }
+
   if (neededDates.size === 0) return { normal: new Map(), foil: new Map() };
 
   // 最新日（今日）分のレートがまだ取り込まれていないタイミングがある（為替レート取得と
