@@ -23,24 +23,12 @@ jobs:
       # D1（価格履歴のアーカイブ先）に直接書き込むようになったため必要（DB容量超過対応の再設計）。
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      # ml/snapshot_catalog_prices_daily.py（デッキ未使用カード含む全カードの価格をR2へ）用
-      R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
-      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-      R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install Python dependencies (ml/)
-        run: pip install -r ml/requirements.txt
 
       # ランナー同梱のnpmはlockfileVersion 3のoptionalDependencies同期チェックが
       # 甘く、実際には存在するのに"missing from lock file"と誤検知することがあるため、
@@ -66,13 +54,6 @@ jobs:
 
       - name: Compute cheapest-print-price snapshots
         run: node scripts/compute-cheapest-price-snapshots.mjs
-
-      # デッキ未使用カード（含む全カード）の価格をR2へ日次追記する。D1と違い書き込み行数の
-      # 上限を気にしなくて良いためこちらに寄せている（ml/snapshot_catalog_prices_daily.py参照）。
-      # TCGCSV（外部サイト）依存で個別に失敗しうるためcontinue-on-error。
-      - name: Snapshot all-card prices to R2 (TCGCSV)
-        continue-on-error: true
-        run: python ml/snapshot_catalog_prices_daily.py
 
       # パックEV: パック単品の実勢価格（TCGCSV）はレート制限を気にせず取得できる別ソースなので
       # 他ステップの成否に関わらず進める。片方が失敗してもEVページ側でフォールバックする。
