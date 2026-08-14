@@ -264,6 +264,7 @@ export const BANNED_CARDS: BannedCardEntry[] = [
   { name: "Arcum's Astrolabe", format: "Legacy", year: 2021, month: 2, imageUrl: "https://cards.scryfall.io/normal/front/c/2/c2462fdf-a594-47d0-8e10-b55901e350d9.jpg?1783933075" },
   { name: "Dreadhorde Arcanist", format: "Legacy", year: 2021, month: 2, imageUrl: "https://cards.scryfall.io/normal/front/f/d/fd97b3cf-924e-4f77-bb82-0bf19592389f.jpg?1783933429" },
   { name: "Oko, Thief of Crowns", format: "Legacy", year: 2021, month: 2, imageUrl: "https://cards.scryfall.io/normal/front/3/4/3462a3d0-5552-49fa-9eb7-100960c55891.jpg?1783932594" },
+  { name: "Ragavan, Nimble Pilferer", format: "Legacy", year: 2022, month: 1, imageUrl: "https://cards.scryfall.io/normal/front/a/9/a9738cda-adb1-47fb-9f4c-ecd930228c4d.jpg?1783926839" },
   { name: "Expressive Iteration", format: "Legacy", year: 2023, month: 3, imageUrl: "https://cards.scryfall.io/normal/front/3/1/31b770cc-09e7-4c0b-b2a4-462ab4f7200d.jpg?1783927314" },
   { name: "White Plume Adventurer", format: "Legacy", year: 2023, month: 3, imageUrl: "https://cards.scryfall.io/normal/front/b/2/b256ddc8-8b12-434c-a610-1a872e948f2f.jpg?1783922800" },
   { name: "Grief", format: "Legacy", year: 2024, month: 8, imageUrl: "https://cards.scryfall.io/normal/front/e/6/e6befbc4-1320-4f26-bd9f-b1814fedda10.jpg?1783926861" },
