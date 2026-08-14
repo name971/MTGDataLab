@@ -129,10 +129,14 @@ async function resolveCardByOracleId(oracleId: string): Promise<ResolvedCard | n
 
   // デッキ未使用のため図鑑カタログ（D1）側に移ったカード。D1にはoracle_id→カード名の
   // 対応だけ持たせてあるので、名前が分かればあとは既存のScryfallライブ取得フォールバック
-  // （resolveCard）にそのまま乗せられる。
+  // （resolveCard）にそのまま乗せられる。ただしresolveCardは「DBに一切記録の無い未知の
+  // カード」向けの設計でoracleId: nullを返すため、実際には分かっているoracleIdで
+  // 上書きする（これが無いと後続の採用デッキ・価格推移・全プリント一覧が軒並み
+  // 「oracleId無し」扱いでスキップされてしまう）。
   const catalogOracle = await getCatalogOracleById(oracleId);
   if (!catalogOracle) return null;
-  return resolveCard(catalogOracle.name);
+  const resolved = await resolveCard(catalogOracle.name);
+  return resolved ? { ...resolved, oracleId } : null;
 }
 
 async function resolveCard(searchName: string): Promise<ResolvedCard | null> {
