@@ -1,51 +1,38 @@
 /**
  * card_print_prices（Supabase、プリント単位・JSONB追記式）のうち、ARCHIVE_CUTOFF_DAYSより
- * 古い日付キーをCloudflare D1（jp-mtgstocks-archive、print_price_history_archiveテーブル）
- * へ移し、Supabase側のJSONBからは古いキーを取り除く。
+ * 古い日付キーをCloudflare R2（print-price-history、月次NDJSON.gz、
+ * scripts/lib/r2PriceArchive.mjs）へ移し、Supabase側のJSONBからは古いキーを取り除く。
+ * 以前はCloudflare D1に書いていたが、D1無料枠の日次読み書き行数上限に達したため、
+ * リクエスト数課金のR2へ移行した。
  *
- * card_cheapest_price_snapshots（オラクル単位、scripts/archive-old-price-snapshots.mjs）
- * より対象件数が多く（プリント単位で約9.5万件）、同じ「毎日追記」設計のため約3倍のペースで
- * Supabase無料枠（500MB）を圧迫する。行ごと消せるcard_cheapest_price_snapshotsと違い、
- * こちらは1プリント1行のJSONBに日付キーが追記されていく構造なので、行削除ではなく
+ * プリント単位で約9.5万件、同じ「毎日追記」設計のためSupabase無料枠（500MB）を圧迫する。
+ * 1プリント1行のJSONBに日付キーが追記されていく構造なので、行削除ではなく
  * 「JSONBから古いキーだけ取り除いてPATCHし直す」方式になる。
  *
  * getLatestPricesForPrints（src/lib/dbCardPrintPrices.ts、「その他のプリント」欄の価格表示・
  * 代表画像選定）は各プリントの最新日の値しか見ないため、古い日付を取り除いても影響しない。
  * 個別プリントの価格推移グラフ（getPrintPriceHistory）だけが全履歴を必要とするため、
- * そちらはD1アーカイブと結合して表示する（同ファイル参照）。
+ * そちらはR2アーカイブと結合して表示する（同ファイル参照）。
  *
- * 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... node scripts/archive-old-print-prices.mjs
+ * 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... \
+ *      R2_BUCKET_NAME=... R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=... R2_ENDPOINT_URL=... \
+ *      node scripts/archive-old-print-prices.mjs
  */
 
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { mergePrintPriceRows } from "./lib/r2PriceArchive.mjs";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const D1_DATABASE_NAME = process.env.D1_DATABASE_NAME ?? "jp-mtgstocks-archive";
-const D1_DATABASE_ID = process.env.D1_DATABASE_ID ?? "a3f8dcb4-80d1-4dba-81dd-9ecd900e7623";
-const CLOUDFLARE_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
-const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error("NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY を設定してください");
   process.exit(1);
 }
-if (!CLOUDFLARE_ACCOUNT_ID || !CLOUDFLARE_API_TOKEN) {
-  console.error("CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN を設定してください（検証クエリ用）");
-  process.exit(1);
-}
 
-// card_cheapest_price_snapshotsのアーカイブ閾値（scripts/archive-old-price-snapshots.mjs）と
-// 揃える。compute-cheapest-price-snapshots.mjsはcard_print_pricesの現存する範囲だけを
-// 見て毎回計算し直す設計なので、両方とも同じ60日（streak計算が必要とする範囲）に揃えて
-// 間引いても計算の土台は壊れない（この2つのアーカイブは週次ワークフローで独立に動くため、
-// 実行順序を気にする必要もない）。
+// streak計算（scripts/compute-card-streaks.mjs）が必要とする直近60日はSupabase側に
+// 残しておく必要があるため、それより古い分だけをこのカットオフで吸い出す。
 const ARCHIVE_CUTOFF_DAYS = 60;
 const PAGE_SIZE = 1000;
-const SQL_BATCH_SIZE = 150; // 1行あたりusd/usd_foil2列×バインド変数、SQLite上限対策で保守的に
 
 async function supabaseGetAll(path) {
   const rows = [];
@@ -85,79 +72,6 @@ async function supabasePatch(path, body) {
     } catch (err) {
       if (attempt === 3) throw err;
     }
-  }
-}
-
-function sqlLiteral(value) {
-  if (value === null || value === undefined) return "NULL";
-  if (typeof value === "number") return String(value);
-  return `'${String(value).replace(/'/g, "''")}'`;
-}
-
-function d1ExecuteFile(sql) {
-  const dir = mkdtempSync(join(tmpdir(), "d1-archive-"));
-  const filePath = join(dir, "batch.sql");
-  writeFileSync(filePath, sql, "utf-8");
-  try {
-    // INSERT ... ON CONFLICT DO UPDATEなので同じファイルの再実行は安全（べき等）。
-    // Cloudflare側のアップロードが稀に一時的なネットワークエラーで失敗するため、
-    // 数回までは待ってリトライする。
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        execFileSync(
-          "npx",
-          ["wrangler", "d1", "execute", D1_DATABASE_NAME, "--remote", `--file=${filePath}`],
-          { stdio: "inherit", shell: true },
-        );
-        return;
-      } catch (err) {
-        if (attempt === 3) throw err;
-        console.error(`  ...D1書き込み失敗（試行${attempt}）、5秒後にリトライします`);
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000);
-      }
-    }
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-// 検証用のCOUNTクエリはHTTP API経由だと書き込み(wrangler CLI)とは別のD1レプリカを読む
-// ことがあり、直後に叩くと反映前の古い件数を返す（実際に書き込み後に何度リトライしても
-// 実件数を下回ったまま安定するケースを確認済み）。そのため書き込みと同じ経路である
-// wrangler CLIの--commandで検証する。ただし"<"はWindowsのcmd.exe（shell:true経由）に
-// リダイレクト記号として解釈されるため、SQL側で"<"を使わない書き方に置き換える。
-function d1QueryViaCli(sql) {
-  const out = execFileSync(
-    "npx",
-    ["wrangler", "d1", "execute", D1_DATABASE_NAME, "--remote", "--json", `--command="${sql}"`],
-    { shell: true, encoding: "utf-8", maxBuffer: 1024 * 1024 * 10 },
-  );
-  const jsonStart = out.indexOf("[");
-  const body = JSON.parse(out.slice(jsonStart));
-  return body[0]?.results ?? [];
-}
-
-// wranglerのサブプロセス起動オーバーヘッドを抑えるため、複数のINSERT文を1ファイルにまとめて
-// 実行回数を絞る（scripts/snapshot-print-prices.mjsと同じ理由）。
-const STATEMENTS_PER_FILE = 50;
-
-function insertArchiveRows(rows) {
-  const statements = [];
-  for (let i = 0; i < rows.length; i += SQL_BATCH_SIZE) {
-    const chunk = rows.slice(i, i + SQL_BATCH_SIZE);
-    const values = chunk
-      .map((r) => `(${sqlLiteral(r.scryfall_id)}, ${sqlLiteral(r.date)}, ${sqlLiteral(r.usd)}, ${sqlLiteral(r.usd_foil)})`)
-      .join(",\n  ");
-    statements.push(
-      `INSERT INTO print_price_history_archive (scryfall_id, date, usd, usd_foil) VALUES\n  ${values}\nON CONFLICT (scryfall_id, date) DO UPDATE SET usd=excluded.usd, usd_foil=excluded.usd_foil;`,
-    );
-  }
-  for (let i = 0; i < statements.length; i += STATEMENTS_PER_FILE) {
-    const fileStatements = statements.slice(i, i + STATEMENTS_PER_FILE);
-    d1ExecuteFile(fileStatements.join("\n"));
-    console.log(
-      `  ...D1書き込み ${Math.min(i + STATEMENTS_PER_FILE, statements.length)}/${statements.length}バッチ`,
-    );
   }
 }
 
@@ -201,26 +115,10 @@ async function main() {
     return;
   }
 
-  console.log("D1へ書き込み中...");
-  insertArchiveRows(archiveRows);
-
-  // D1側に書き込めた件数を検証してからでないとSupabase側のJSONBは削らない。
-  let archivedCount = 0;
-  for (let attempt = 1; attempt <= 5; attempt++) {
-    const rows = d1QueryViaCli(
-      `SELECT COUNT(*) AS c FROM print_price_history_archive WHERE NOT (date >= '${cutoffStr}')`,
-    );
-    archivedCount = rows[0]?.c ?? 0;
-    console.log(`D1側の確認(試行${attempt}): date < ${cutoffStr} の行数 = ${archivedCount}`);
-    if (archivedCount >= archiveRows.length) break;
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3000);
-  }
-  if (archivedCount < archiveRows.length) {
-    throw new Error(
-      `D1への書き込み件数(${archivedCount})が想定件数(${archiveRows.length})を下回っています。` +
-        "Supabase側のJSONB更新は行わず中断します。",
-    );
-  }
+  // R2のPutObjectは書き込み後すぐ読める強い一貫性があるため（D1のレプリカ遅延と違い）、
+  // mergePrintPriceRowsが例外を投げずに完了すれば、そのままSupabase側の削除に進んでよい。
+  console.log("R2（print-price-history）へ書き込み中...");
+  await mergePrintPriceRows(archiveRows);
 
   console.log("Supabase側のJSONBから古い日付キーを削除中...");
   const PATCH_CONCURRENCY = 8;
@@ -238,7 +136,7 @@ async function main() {
   }
 
   console.log(
-    `\n完了: ${archiveRows.length}件（${trimmedRows.length}プリント分）をD1へアーカイブし、Supabase側のJSONBを間引きました。`,
+    `\n完了: ${archiveRows.length}件（${trimmedRows.length}プリント分）をR2へアーカイブし、Supabase側のJSONBを間引きました。`,
   );
 }
 

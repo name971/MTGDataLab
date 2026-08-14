@@ -12,6 +12,7 @@
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1110.0",
     "@supabase/supabase-js": "^2.110.2",
     "next": "16.2.11",
     "react": "19.2.4",

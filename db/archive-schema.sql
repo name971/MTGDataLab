@@ -1,10 +1,16 @@
 -- ────────────────────────────────────────────────────────────
--- 価格履歴アーカイブ用DB（Cloudflare D1、SQLite）
+-- 【廃止済み・参考用】価格履歴アーカイブ用DB（Cloudflare D1、SQLite）
+--
+-- D1無料枠の日次読み書き行数上限（読み取り500万行/日、書き込み10万行/日）に達したため、
+-- リクエスト数課金のCloudflare R2（カード単位NDJSON.gz、scripts/lib/r2PriceArchive.mjs・
+-- src/lib/priceArchiveR2.ts参照）へ全面移行した。このスキーマ・テーブルはもう
+-- 書き込まれない（既存データは残っているが、参照もしていない）。
+--
+-- 以下は移行前の設計メモ:
 -- Supabase無料枠（Postgres 500MB）超過対策。直近60日程度はSupabaseの
 -- card_cheapest_price_snapshotsに置いたまま、それより古い行はこちらに移し、
--- Supabase側からは削除する（scripts/archive-old-price-snapshots.mjs）。
--- カード詳細ページの価格推移グラフ「全期間」表示は、直近をSupabase・
--- それ以前をこちらから取得して結合する（src/lib/dbCheapestPrice.ts）。
+-- Supabase側からは削除する。カード詳細ページの価格推移グラフ「全期間」表示は、
+-- 直近をSupabase・それ以前をこちらから取得して結合する（src/lib/dbCheapestPrice.ts）。
 -- ────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS price_history_archive (

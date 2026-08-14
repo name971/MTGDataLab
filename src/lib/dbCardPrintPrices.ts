@@ -1,16 +1,18 @@
 import { supabase } from "./supabase";
 import type { PricePoint } from "./dbPriceHistory";
 import { getArchivedPrintPriceHistoryUsd } from "./priceArchiveDb";
-import { getR2LatestPricesForPrints, getR2PrintPriceHistory } from "./priceArchiveR2";
+import { getR2LatestPricesForPrints } from "./priceArchiveR2";
 
 /**
  * card_print_prices（プリント単位、日付をJSONBに追記していく方式、db/schema.sql参照）から
  * 特定プリントの価格推移を取得する。USDのみ保存されているため、各日付のexchange_ratesで
  * その日時点のレートに変換する（過去の日付にも今日のレートを一律適用すると誤差が出るため）。
  *
- * Supabase無料枠対策で、90日より古い日付キーはD1（print_price_history_archive、
+ * Supabase無料枠対策で、90日より古い日付キーはR2（カード単位NDJSON.gz、
  * scripts/archive-old-print-prices.mjs）へ移してSupabase側のJSONBからは間引いている。
- * そのため直近（Supabase）とアーカイブ（D1）の両方から取得して結合する。
+ * そのため直近（Supabase）とアーカイブ（R2、getArchivedPrintPriceHistoryUsd）の両方から
+ * 取得して結合する。R2側はTCGCSVバックフィル（2024-02〜）とデッキ未使用カードの価格も
+ * 含むため、Postgresに無いプリントでもこちらだけで全期間表示できる。
  */
 export async function getPrintPriceHistory(
   scryfallId: string,
@@ -32,13 +34,6 @@ export async function getPrintPriceHistory(
   const usdByDate: Record<string, number> = {};
   for (const p of archived) usdByDate[p.date] = p.usd;
   Object.assign(usdByDate, recentUsdByDate); // 重複日付はSupabase（直近）側を優先
-
-  // Postgres・D1どちらにも無ければ、デッキ未使用カード等でR2（長期履歴、TCGCSV由来、
-  // Normal版のみ）にしか価格が無い可能性があるので試す
-  if (Object.keys(usdByDate).length === 0 && finish === "normal") {
-    const r2Points = await getR2PrintPriceHistory(scryfallId);
-    for (const p of r2Points) usdByDate[p.date] = p.usd;
-  }
 
   const dates = Object.keys(usdByDate).sort();
   if (dates.length === 0) return [];
@@ -115,9 +110,14 @@ export async function getLatestPricesForPrints(scryfallIds: string[]): Promise<L
     }
   }
 
-  // デッキ未使用カード等、Postgresに価格が無いプリントはR2（長期履歴、Normal版のみ）で補う
+  // デッキ未使用カード等、Postgresに価格が無いプリントはR2（長期履歴、Normal版のみ）で補う。
+  // R2側は1件ごとに個別GetObjectするため、カード詳細ページ（数件規模）では有効だが、
+  // ランキング/トレンド等「多数のカードの全プリント」をまとめて問い合わせる場面で欠損が
+  // 多いと数百件規模のリクエストが発生し、レイテンシが跳ね上がる（実際に発生した）。
+  // そのため欠損件数が少ない（＝おそらく1〜数枚のカード詳細ページ相当）場合だけ試す。
   const missingIds = scryfallIds.filter((id) => !latestNormalByPrint.has(id));
-  if (missingIds.length > 0) {
+  const R2_FALLBACK_MAX_MISSING = 30;
+  if (missingIds.length > 0 && missingIds.length <= R2_FALLBACK_MAX_MISSING) {
     const r2Prices = await getR2LatestPricesForPrints(missingIds);
     for (const [scryfallId, { date, usd }] of r2Prices) {
       latestNormalByPrint.set(scryfallId, { date, usd });

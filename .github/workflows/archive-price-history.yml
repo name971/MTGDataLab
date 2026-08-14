@@ -1,9 +1,12 @@
-name: Archive old price history to D1 (weekly)
+name: Archive old price history to R2 (weekly)
 
-# card_cheapest_price_snapshots（Supabase）が無期限に増え続けてSupabase無料枠500MBを
-# 圧迫する問題への対応。60日より古い行をCloudflare D1（jp-mtgstocks-archive、無料枠5GB）へ
-# 移し、Supabase側から削除する（scripts/archive-old-price-snapshots.mjs、
-# db/archive-schema.sql参照）。日次では変化が小さいため週次で十分。
+# card_print_prices（Supabase、プリント単位JSONB）が無期限に増え続けてSupabase無料枠500MBを
+# 圧迫する問題への対応。60日より古い日付キーをCloudflare R2（jp-mtgstocks-price-archive、
+# scripts/lib/r2PriceArchive.mjs）へ移し、Supabase側から削除する
+# （scripts/archive-old-print-prices.mjs）。日次では変化が小さいため週次で十分。
+#
+# card_cheapest_price_snapshots（オラクル単位）は既に日次の新規書き込みが無くなり常に空の
+# ため、そちらのアーカイブ（旧scripts/archive-old-price-snapshots.mjs）は廃止した。
 on:
   schedule:
     - cron: "0 5 * * 1" # 毎週月曜 14:00 JST（daily-data-pipelineの後）
@@ -16,8 +19,10 @@ jobs:
     env:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -34,8 +39,5 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Archive old price snapshots to D1
-        run: node scripts/archive-old-price-snapshots.mjs
-
-      - name: Archive old print prices to D1
+      - name: Archive old print prices to R2
         run: node scripts/archive-old-print-prices.mjs

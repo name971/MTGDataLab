@@ -3,26 +3,26 @@
  * 2箇所に書き込む:
  *   1. card_print_current_prices（Postgres）: 「今の価格」だけを1プリント1行で持つキャッシュ。
  *      毎日上書きするだけなのでプリント数に比例するだけで、日数が経っても増えない。
- *   2. print_price_history_archive（Cloudflare D1）: 日次の価格履歴そのもの。前日と同じ値なら
- *      書かない差分方式（サンプル調査で実際に変化する日は3〜4割程度だった）。
+ *   2. print-price-history（Cloudflare R2、月次NDJSON.gz、scripts/lib/r2PriceArchive.mjs）:
+ *      日次の価格履歴そのもの。前日と同じ値なら書かない差分方式（サンプル調査で実際に
+ *      変化する日は3〜4割程度だった）。以前はCloudflare D1に書いていたが、D1無料枠の
+ *      日次読み書き行数上限に達したため、リクエスト数課金のR2へ移行した。
  *
  * 以前はcard_print_prices（Postgres、プリント単位JSONB追記式）に書いていたが、無期限に
  * 増え続けてSupabase無料枠（500MB）を圧迫し続けていた（DB容量超過対応、db/schema.sql参照）。
  * 新規の書き込みはもう行わない。既存の古い行はscripts/archive-old-print-prices.mjsが
- * 60日経過後にD1へ吸い出して削除するため、時間経過とともに空になっていく。
+ * 60日経過後にR2へ吸い出して削除するため、時間経過とともに空になっていく。
  *
- * 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... node scripts/snapshot-print-prices.mjs
+ * 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... \
+ *      R2_BUCKET_NAME=... R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=... R2_ENDPOINT_URL=... \
+ *      node scripts/snapshot-print-prices.mjs
  */
 
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { ensureBulkData, loadIndex, findPriceById } from "./lib/scryfallBulk.mjs";
+import { mergePrintPriceRows } from "./lib/r2PriceArchive.mjs";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const D1_DATABASE_NAME = process.env.D1_DATABASE_NAME ?? "jp-mtgstocks-archive";
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error("NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY を設定してください");
@@ -30,7 +30,6 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 }
 
 const PAGE_SIZE = 1000;
-const SQL_BATCH_SIZE = 150; // 1回のINSERT文に含める行数（SQLiteのバインド変数上限対策）
 
 async function supabaseGet(path) {
   const rows = [];
@@ -66,54 +65,6 @@ async function supabaseUpsert(table, rows, conflictColumn) {
       body: JSON.stringify(chunk),
     });
     if (!res.ok) throw new Error(`${table} upsert failed: ${res.status} ${await res.text()}`);
-  }
-}
-
-function sqlLiteral(value) {
-  if (value === null || value === undefined) return "NULL";
-  if (typeof value === "number") return String(value);
-  return `'${String(value).replace(/'/g, "''")}'`;
-}
-
-function d1ExecuteFile(sql) {
-  const dir = mkdtempSync(join(tmpdir(), "d1-snapshot-"));
-  const filePath = join(dir, "batch.sql");
-  writeFileSync(filePath, sql, "utf-8");
-  try {
-    execFileSync(
-      "npx",
-      ["wrangler", "d1", "execute", D1_DATABASE_NAME, "--remote", `--file=${filePath}`],
-      { stdio: "inherit", shell: true },
-    );
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-// `wrangler d1 execute`はサブプロセス起動のオーバーヘッドが大きいため、INSERT文1つごとに
-// 毎回呼び出すと（9万行規模だと数百回起動になり）非現実的に遅くなる。1回の--fileで
-// 複数のINSERT文をまとめて実行できるため、STATEMENTS_PER_FILE個ずつSQLファイルにまとめてから
-// 実行回数を絞る（wrangler呼び出し自体は数十回程度に収める）。
-const STATEMENTS_PER_FILE = 50;
-
-function insertArchiveRows(rows) {
-  const statements = [];
-  for (let i = 0; i < rows.length; i += SQL_BATCH_SIZE) {
-    const chunk = rows.slice(i, i + SQL_BATCH_SIZE);
-    const values = chunk
-      .map((r) => `(${sqlLiteral(r.scryfall_id)}, ${sqlLiteral(r.date)}, ${sqlLiteral(r.usd)}, ${sqlLiteral(r.usd_foil)})`)
-      .join(",\n  ");
-    statements.push(
-      `INSERT INTO print_price_history_archive (scryfall_id, date, usd, usd_foil) VALUES\n  ${values}\nON CONFLICT (scryfall_id, date) DO UPDATE SET usd=excluded.usd, usd_foil=excluded.usd_foil;`,
-    );
-  }
-
-  for (let i = 0; i < statements.length; i += STATEMENTS_PER_FILE) {
-    const fileStatements = statements.slice(i, i + STATEMENTS_PER_FILE);
-    d1ExecuteFile(fileStatements.join("\n"));
-    console.log(
-      `  ...D1書き込み ${Math.min(i + STATEMENTS_PER_FILE, statements.length)}/${statements.length}バッチ`,
-    );
   }
 }
 
@@ -157,13 +108,13 @@ async function main() {
   }
   console.log(`価格あり: ${priced}件（うちFoil ${foilPriced}件）、うち変化あり: ${archiveRows.length}件`);
 
-  console.log("D1（print_price_history_archive）へ差分を書き込み中...");
-  if (archiveRows.length > 0) insertArchiveRows(archiveRows);
+  console.log("R2（print-price-history）へ差分を書き込み中...");
+  if (archiveRows.length > 0) await mergePrintPriceRows(archiveRows);
 
   console.log("Postgres（card_print_current_prices）を更新中...");
   await supabaseUpsert("card_print_current_prices", cacheRows, "scryfall_id");
 
-  console.log(`\n完了: 現在価格キャッシュ${cacheRows.length}件更新、D1へ${archiveRows.length}件書き込み`);
+  console.log(`\n完了: 現在価格キャッシュ${cacheRows.length}件更新、R2へ${archiveRows.length}件書き込み`);
 }
 
 main().catch((err) => {

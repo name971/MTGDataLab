@@ -3,7 +3,7 @@ import type { Format } from "./formats";
 import type { RankingRow } from "./sampleRankingData";
 import { colorsFromManaCost } from "./manaColors";
 import { getBestCardImages } from "./dbCardPrints";
-import { getRecentPriceHistoryForOracles } from "./priceArchiveDb";
+import { getR2RecentPriceChanges } from "./priceArchiveR2";
 
 // 色フィルタで絞り込んでも表示件数が残るよう、表示用（20件）より広めに候補を取得する
 const TOP_N = 100;
@@ -86,22 +86,12 @@ export async function getCardRankingFromDb(
   if (topOracleIds.length === 0) return [];
 
   // card_cheapest_price_snapshots（Supabase）は日次の新規書き込みが無くなり常に空のため、
-  // 価格変化率の元データはD1（price_history_archive）から取る。3日前との比較に十分な
-  // マージンを持たせて直近10日分を取得する（D1のバインド変数上限に備えチャンクする）。
-  const sinceDate = new Date();
-  sinceDate.setUTCDate(sinceDate.getUTCDate() - 10);
-  const sinceDateStr = sinceDate.toISOString().slice(0, 10);
-  const ORACLE_CHUNK = 50;
-  const oracleChunks: string[][] = [];
-  for (let i = 0; i < topOracleIds.length; i += ORACLE_CHUNK) {
-    oracleChunks.push(topOracleIds.slice(i, i + ORACLE_CHUNK));
-  }
-  const priceRowChunks = await Promise.all(
-    oracleChunks.map((chunk) => getRecentPriceHistoryForOracles(chunk, sinceDateStr)),
-  );
-  const priceRows = priceRowChunks
-    .flat()
-    .map((r) => ({ oracle_id: r.oracleId, jpy_est: r.jpy, date: r.date }));
+  // 3日前比の変化率は事前計算済みキャッシュ（R2、price-changes/latest.ndjson.gz、
+  // scripts/compute-cheapest-price-snapshots.mjsが日次で計算）から取る。全オラクル分が
+  // 1ファイルにまとまっているため、オラクルごとに個別リクエストする必要が無い
+  // （以前はオラクル単位で個別GetObjectしていて、100件規模だとラウンドトリップが
+  // 積み重なり数秒〜十数秒かかっていた）。
+  const recentChanges = await getR2RecentPriceChanges();
 
   const [{ data: oracles }, { data: cardRows }, bestImageByOracle, { data: currentPriceRows }] = await Promise.all([
     supabase.from("card_oracles").select("oracle_id, name, printed_name_ja").in("oracle_id", topOracleIds),
@@ -137,35 +127,6 @@ export async function getCardRankingFromDb(
   for (const p of currentPriceRows ?? []) {
     if (p.jpy_est !== null) priceByOracle.set(p.oracle_id, Number(p.jpy_est));
   }
-  let latestDate: string | null = null;
-  for (const p of priceRows) {
-    if (latestDate === null || p.date > latestDate) latestDate = p.date;
-  }
-
-  // 3日前「ちょうど」の日付と厳密一致でしか比較しないと、その日だけ日次バッチが
-  // 動いていない（実際に2026-07-28分が丸ごと欠けていたことがあった）だけで対象カード
-  // 全件が変化なし(0%)になってしまう。3日前以前で一番近い日のスナップショットを使う
-  // （priceRowsは既に全期間分取得済みなので追加クエリ不要）。
-  const priceChangeByOracle = new Map<string, number>();
-  if (latestDate) {
-    const pastDate = new Date(`${latestDate}T00:00:00Z`);
-    pastDate.setUTCDate(pastDate.getUTCDate() - 3);
-    const pastDateStr = pastDate.toISOString().slice(0, 10);
-    const pastPriceByOracle = new Map<string, { date: string; price: number }>();
-    for (const p of priceRows ?? []) {
-      if (p.jpy_est === null || p.date > pastDateStr) continue;
-      const existing = pastPriceByOracle.get(p.oracle_id);
-      if (!existing || p.date > existing.date) {
-        pastPriceByOracle.set(p.oracle_id, { date: p.date, price: Number(p.jpy_est) });
-      }
-    }
-    for (const [oracleId, price] of priceByOracle) {
-      const past = pastPriceByOracle.get(oracleId);
-      if (past != null && past.price !== 0) {
-        priceChangeByOracle.set(oracleId, Math.round(((price - past.price) / past.price) * 10000) / 100);
-      }
-    }
-  }
 
   const rows = topOracleIds
     .map((oracleId) => {
@@ -180,7 +141,7 @@ export async function getCardRankingFromDb(
         nameEn: oracle.name,
         artCropUrl,
         priceJpy,
-        priceChangePct: priceChangeByOracle.get(oracleId) ?? 0,
+        priceChangePct: recentChanges.get(oracleId)?.priceChange3dPct ?? 0,
         usageRatePct: latestUsageByOracle.get(oracleId) ?? 0,
         colors: colorsFromManaCost(manaCostByOracle.get(oracleId)),
       } satisfies RankingRow;

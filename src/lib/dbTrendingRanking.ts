@@ -1,6 +1,6 @@
 import { supabase } from "./supabase";
 import { getBestCardImages } from "./dbCardPrints";
-import { getRecentPriceHistoryForOracles } from "./priceArchiveDb";
+import { getR2RecentPriceChanges } from "./priceArchiveR2";
 
 const RANKING_SIZE = 15; // 表示は5列×3行なので15件
 
@@ -162,33 +162,28 @@ export async function getTrendingRankingFromDb(): Promise<TrendingRankingRow[]> 
   const lookbackDates = TREND_CHECK_LOOKBACK_DAYS.map((d) => addDays(pivotDate, -d));
   const allDates = [pivotDate, ...lookbackDates];
 
-  // card_cheapest_price_snapshots（Supabase）は日次の新規書き込みが無くなり常に空のため、
-  // 価格系列はD1（price_history_archive）から取る（必要な日付だけ後でMapから拾う）。
-  const earliestNeededDate = allDates.reduce((min, d) => (d < min ? d : min), allDates[0]);
-  const ORACLE_CHUNK = 50;
-  const chunks: string[][] = [];
-  for (let i = 0; i < candidateOracleIds.length; i += ORACLE_CHUNK) {
-    chunks.push(candidateOracleIds.slice(i, i + ORACLE_CHUNK));
-  }
-  // D1へのチャンク問い合わせとcard_usage_statsは互いに依存しないため並列実行する
-  // （直列だとチャンク数分そのまま待ち時間が積み上がっていた）。
-  const [priceSeriesChunks, { data: usageSeriesRows }] = await Promise.all([
-    Promise.all(chunks.map((chunk) => getRecentPriceHistoryForOracles(chunk, earliestNeededDate))),
+  // 価格系列はR2の事前計算済みキャッシュ（price-changes/latest.ndjson.gz、
+  // scripts/compute-cheapest-price-snapshots.mjsが直近7日分を含めて日次で書き込む）から
+  // 1回のGetObjectで取る。以前はオラクルごとに個別ファイルを読んでいて、候補件数（100件規模）
+  // だけラウンドトリップが積み重なり数秒かかっていた。
+  const [recentChanges, { data: usageSeriesRows }] = await Promise.all([
+    getR2RecentPriceChanges(),
     supabase
       .from("card_usage_stats")
       .select("oracle_id, format, usage_rate, calculated_at")
       .in("oracle_id", candidateOracleIds)
       .in("calculated_at", allDates),
   ]);
-  const priceSeriesRows = priceSeriesChunks
-    .flat()
-    .map((r) => ({ oracle_id: r.oracleId, jpy_est: r.jpy, date: r.date }));
 
   const priceSeriesByOracle = new Map<string, Map<string, number>>();
-  for (const r of priceSeriesRows) {
-    if (!allDates.includes(r.date)) continue;
-    if (!priceSeriesByOracle.has(r.oracle_id)) priceSeriesByOracle.set(r.oracle_id, new Map());
-    priceSeriesByOracle.get(r.oracle_id)!.set(r.date, Number(r.jpy_est));
+  for (const oracleId of candidateOracleIds) {
+    const series = recentChanges.get(oracleId)?.recentSeries;
+    if (!series) continue;
+    const map = new Map<string, number>();
+    for (const p of series) {
+      if (allDates.includes(p.date)) map.set(p.date, p.jpy);
+    }
+    if (map.size > 0) priceSeriesByOracle.set(oracleId, map);
   }
   const usageSeriesByOracleFormat = new Map<string, Map<string, number>>();
   for (const r of usageSeriesRows ?? []) {

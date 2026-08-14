@@ -7,50 +7,51 @@
  * 取引量（volume）は無料データソースが無いため対象外（docs/spec.md 2章）。
  * category は 'price' | 'usage' の2種のみ、各フォーマットごとに変化幅の大きい順に保存する。
  *
- * 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... node scripts/compute-trending-scores.mjs
+ * 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... \
+ *      R2_BUCKET_NAME=... R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=... R2_ENDPOINT_URL=... \
+ *      node scripts/compute-trending-scores.mjs
  */
 
-import { execFileSync } from "node:child_process";
+import { monthsBetween, readOraclePriceMonths } from "./lib/r2PriceArchive.mjs";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const D1_DATABASE_NAME = process.env.D1_DATABASE_NAME ?? "jp-mtgstocks-archive";
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error("NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY を設定してください");
   process.exit(1);
 }
-if (!process.env.CLOUDFLARE_API_TOKEN || !process.env.CLOUDFLARE_ACCOUNT_ID) {
-  console.error("CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID を設定してください（価格履歴の取得元がD1のため）");
-  process.exit(1);
-}
 
-// 日次価格履歴はcard_cheapest_price_snapshots（Supabase）ではなくD1
-// （price_history_archive、scripts/compute-cheapest-price-snapshots.mjsが日次で書き込む）
-// 側にしかない（DB容量超過対応の再設計でSupabase側は「今の価格」1行キャッシュのみになった）。
-function d1QueryViaCli(sql) {
-  const out = execFileSync(
-    "npx",
-    ["wrangler", "d1", "execute", D1_DATABASE_NAME, "--remote", "--json", `--command="${sql}"`],
-    { shell: true, encoding: "utf-8", maxBuffer: 1024 * 1024 * 100 },
-  );
-  const jsonStart = out.indexOf("[");
-  const body = JSON.parse(out.slice(jsonStart));
-  return body[0]?.results ?? [];
+// 日次価格履歴はcard_cheapest_price_snapshots（Supabase）ではなくR2
+// （price-history、月次NDJSON.gz、scripts/compute-cheapest-price-snapshots.mjsが日次で
+// 書き込む）側にしかない（DB容量超過対応の再設計でSupabase側は「今の価格」1行キャッシュ
+// のみになった）。今回必要な日付（今日・3日前・前日）はどれも当月か前月に収まるため、
+// 前月〜今月の2ヶ月分だけ読み込んでメモリ上でフィルタする。
+let cachedPriceRowsPromise = null;
+function loadRecentOraclePriceRows() {
+  if (!cachedPriceRowsPromise) {
+    const today = new Date();
+    const lastMonth = new Date(today);
+    lastMonth.setUTCMonth(lastMonth.getUTCMonth() - 1);
+    const months = monthsBetween(isoDate(lastMonth), isoDate(today));
+    cachedPriceRowsPromise = readOraclePriceMonths(months);
+  }
+  return cachedPriceRowsPromise;
 }
 
 async function findLatestD1DateAtOrBefore(targetDate) {
-  const rows = d1QueryViaCli(
-    `SELECT MAX(date) AS d FROM price_history_archive WHERE date <= '${targetDate}'`,
-  );
-  return rows[0]?.d ?? null;
+  const rows = await loadRecentOraclePriceRows();
+  let latest = null;
+  for (const r of rows) {
+    if (r.date <= targetDate && (!latest || r.date > latest)) latest = r.date;
+  }
+  return latest;
 }
 
 async function getD1PricesForDate(date) {
   if (!date) return [];
-  return d1QueryViaCli(
-    `SELECT oracle_id, jpy_est FROM price_history_archive WHERE date = '${date}' AND jpy_est IS NOT NULL`,
-  );
+  const rows = await loadRecentOraclePriceRows();
+  return rows.filter((r) => r.date === date && r.jpy_est != null);
 }
 
 const LOOKBACK_DAYS = 3;

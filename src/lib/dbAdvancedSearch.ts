@@ -2,6 +2,7 @@ import { supabase } from "./supabase";
 import { colorsFromManaCost } from "./manaColors";
 import { getJpyPricesByOracleIds } from "./cardData";
 import { getRecentPriceHistoryForOracles } from "./priceArchiveDb";
+import { getR2RecentPriceChanges } from "./priceArchiveR2";
 import type { Format } from "./formats";
 import { formatSlug } from "./formats";
 import { TYPE_GLOSSARY_JA_TO_EN } from "./typeGlossary";
@@ -423,26 +424,35 @@ export async function advancedSearchCards(
   }
   if (withPrice.length === 0) return { results: [], totalCount: 0, capped: false };
 
-  // 価格変化率はD1（price_history_archive）の履歴が必要で、全件に対してやると重いため、
-  // ここまでで絞り込んだ候補（最大でもCANDIDATE_CAP件）に対してだけ計算する。
+  // 価格変化率は候補（最大でもCANDIDATE_CAP件）に対してだけ計算する。
   // dbCardRanking.tsの3日変化率計算と同じ「直近日と、指定日数前以前で一番近い日」の比較方式。
   let withChange = withPrice.map((r) => ({ ...r, priceChangePct: null as number | null }));
   if (filters.priceChangeMin !== undefined || filters.priceChangeMax !== undefined) {
     const periodDays = filters.priceChangePeriodDays ?? 7;
-    const sinceDate = new Date();
-    sinceDate.setUTCDate(sinceDate.getUTCDate() - (periodDays + 7)); // 比較対象日+マージン
-    const sinceDateStr = sinceDate.toISOString().slice(0, 10);
-
     const changeOracleIds = withPrice.map((r) => r.card.oracle_id);
-    const chunks: string[][] = [];
-    for (let i = 0; i < changeOracleIds.length; i += 50) chunks.push(changeOracleIds.slice(i, i + 50));
-    const priceRowChunks = await Promise.all(chunks.map((chunk) => getRecentPriceHistoryForOracles(chunk, sinceDateStr)));
-    const priceRows = priceRowChunks.flat();
-
     const rowsByOracle = new Map<string, { date: string; jpy: number }[]>();
-    for (const r of priceRows) {
-      if (!rowsByOracle.has(r.oracleId)) rowsByOracle.set(r.oracleId, []);
-      rowsByOracle.get(r.oracleId)!.push({ date: r.date, jpy: r.jpy });
+
+    // 7日前比（UIのデフォルト・最頻値）はR2の事前計算済みキャッシュ（price-changes/latest.ndjson.gz、
+    // 直近7日分の系列を含む）が1回のGetObjectでカバーできるので、そちらを使う。
+    // 30日・90日はキャッシュの範囲外なので、従来通りオラクルごとに個別取得する
+    // （オプトインの絞り込み機能で頻度も低いため、体感速度より実装の単純さを優先する）。
+    if (periodDays === 7) {
+      const recentChanges = await getR2RecentPriceChanges();
+      for (const oracleId of changeOracleIds) {
+        const series = recentChanges.get(oracleId)?.recentSeries;
+        if (series && series.length > 0) rowsByOracle.set(oracleId, series.map((p) => ({ date: p.date, jpy: p.jpy })));
+      }
+    } else {
+      const sinceDate = new Date();
+      sinceDate.setUTCDate(sinceDate.getUTCDate() - (periodDays + 7)); // 比較対象日+マージン
+      const sinceDateStr = sinceDate.toISOString().slice(0, 10);
+      const chunks: string[][] = [];
+      for (let i = 0; i < changeOracleIds.length; i += 50) chunks.push(changeOracleIds.slice(i, i + 50));
+      const priceRowChunks = await Promise.all(chunks.map((chunk) => getRecentPriceHistoryForOracles(chunk, sinceDateStr)));
+      for (const r of priceRowChunks.flat()) {
+        if (!rowsByOracle.has(r.oracleId)) rowsByOracle.set(r.oracleId, []);
+        rowsByOracle.get(r.oracleId)!.push({ date: r.date, jpy: r.jpy });
+      }
     }
 
     withChange = withPrice.map((r) => {

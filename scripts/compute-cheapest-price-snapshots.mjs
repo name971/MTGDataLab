@@ -4,24 +4,23 @@
  * 最安値」を計算し、2箇所に書き込む:
  *   1. card_current_prices（Postgres）: 「今の価格」だけを1オラクル1行で持つキャッシュ。
  *      カード詳細ページのメイン価格等、頻繁に読まれる箇所はここを見る。
- *   2. price_history_archive（Cloudflare D1）: 今日分を1日ぶんだけ追記する日次履歴
- *      （価格推移グラフ用）。
+ *   2. price-history（Cloudflare R2、月次NDJSON.gz、scripts/lib/r2PriceArchive.mjs）: 今日分を
+ *      1日ぶんだけ追記する日次履歴（価格推移グラフ用）。以前はCloudflare D1に書いていたが、
+ *      D1無料枠の日次読み書き行数上限に達したため、リクエスト数課金のR2へ移行した。
  *
  * 以前はcard_print_prices（Postgres、プリント単位JSONB全履歴）を毎回丸ごとスキャンして
  * 過去に遡って全期間を再計算する設計だったが、card_print_current_prices自体が既に
  * 「各プリントの最新価格」を保持しているため、その必要が無くなった（DB容量超過対応）。
  *
- * 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... node scripts/compute-cheapest-price-snapshots.mjs
+ * 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... \
+ *      R2_BUCKET_NAME=... R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=... R2_ENDPOINT_URL=... \
+ *      node scripts/compute-cheapest-price-snapshots.mjs
  */
 
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { mergeOraclePriceRows, monthsBetween, readOraclePriceMonths, writeRecentPriceChanges } from "./lib/r2PriceArchive.mjs";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const D1_DATABASE_NAME = process.env.D1_DATABASE_NAME ?? "jp-mtgstocks-archive";
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error("NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY を設定してください");
@@ -29,7 +28,6 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 }
 
 const PAGE_SIZE = 1000;
-const SQL_BATCH_SIZE = 150;
 
 async function supabaseGet(path) {
   const rows = [];
@@ -65,55 +63,6 @@ async function supabaseUpsert(table, rows, conflictColumn) {
       body: JSON.stringify(chunk),
     });
     if (!res.ok) throw new Error(`${table} upsert failed: ${res.status} ${await res.text()}`);
-  }
-}
-
-function sqlLiteral(value) {
-  if (value === null || value === undefined) return "NULL";
-  if (typeof value === "number") return String(value);
-  return `'${String(value).replace(/'/g, "''")}'`;
-}
-
-function d1ExecuteFile(sql) {
-  const dir = mkdtempSync(join(tmpdir(), "d1-cheapest-"));
-  const filePath = join(dir, "batch.sql");
-  writeFileSync(filePath, sql, "utf-8");
-  try {
-    execFileSync(
-      "npx",
-      ["wrangler", "d1", "execute", D1_DATABASE_NAME, "--remote", `--file=${filePath}`],
-      { stdio: "inherit", shell: true },
-    );
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-// wranglerのサブプロセス起動オーバーヘッドを抑えるため、複数のINSERT文を1ファイルにまとめて
-// 実行回数を絞る（scripts/snapshot-print-prices.mjsと同じ理由）。
-const STATEMENTS_PER_FILE = 50;
-
-function insertArchiveRows(rows) {
-  const statements = [];
-  for (let i = 0; i < rows.length; i += SQL_BATCH_SIZE) {
-    const chunk = rows.slice(i, i + SQL_BATCH_SIZE);
-    const values = chunk
-      .map(
-        (r) =>
-          `(${sqlLiteral(r.oracle_id)}, ${sqlLiteral(r.date)}, ${sqlLiteral(r.jpy_est)}, ${sqlLiteral(r.jpy_est_foil)}, ${sqlLiteral(r.scryfall_id)}, ${sqlLiteral(r.scryfall_id_foil)})`,
-      )
-      .join(",\n  ");
-    statements.push(
-      `INSERT INTO price_history_archive (oracle_id, date, jpy_est, jpy_est_foil, scryfall_id, scryfall_id_foil) VALUES\n  ${values}\nON CONFLICT (oracle_id, date) DO UPDATE SET jpy_est=excluded.jpy_est, jpy_est_foil=excluded.jpy_est_foil, scryfall_id=excluded.scryfall_id, scryfall_id_foil=excluded.scryfall_id_foil;`,
-    );
-  }
-
-  for (let i = 0; i < statements.length; i += STATEMENTS_PER_FILE) {
-    const fileStatements = statements.slice(i, i + STATEMENTS_PER_FILE);
-    d1ExecuteFile(fileStatements.join("\n"));
-    console.log(
-      `  ...D1書き込み ${Math.min(i + STATEMENTS_PER_FILE, statements.length)}/${statements.length}バッチ`,
-    );
   }
 }
 
@@ -182,13 +131,76 @@ async function main() {
 
   console.log(`${cacheRows.length}件（オラクル単位）の最安値を計算完了`);
 
+  // R2書き込み（GET+PUTで1オラクルあたり2リクエスト）は無料枠（Class A書き込み100万件/月）に
+  // 対して全件（2〜3万件）を毎日書くと直撃するため、プリント側（snapshot-print-prices.mjs）と
+  // 同様に前日から値が変わったオラクルだけを対象にする（差分書き込み）。
+  console.log("前日分の現在価格キャッシュ（card_current_prices）を取得中...");
+  const prevCurrentRows = await supabaseGet("card_current_prices?select=oracle_id,jpy_est,jpy_est_foil");
+  const prevByOracle = new Map(prevCurrentRows.map((r) => [r.oracle_id, { jpy_est: r.jpy_est, jpy_est_foil: r.jpy_est_foil }]));
+  const changedArchiveRows = archiveRows.filter((r) => {
+    const prev = prevByOracle.get(r.oracle_id);
+    return !prev || r.jpy_est !== prev.jpy_est || r.jpy_est_foil !== prev.jpy_est_foil;
+  });
+  console.log(`  前日比で変化あり: ${changedArchiveRows.length}/${archiveRows.length}件`);
+
   console.log("Postgres（card_current_prices）を更新中...");
   await supabaseUpsert("card_current_prices", cacheRows, "oracle_id");
 
-  console.log("D1（price_history_archive）へ今日分を書き込み中...");
-  insertArchiveRows(archiveRows);
+  console.log("R2（price-history）へ今日分の差分を書き込み中...");
+  if (changedArchiveRows.length > 0) await mergeOraclePriceRows(changedArchiveRows);
 
-  console.log(`\n完了: 現在価格キャッシュ${cacheRows.length}件更新、D1へ今日分${archiveRows.length}件書き込み`);
+  // ランキング/トレンドページ用に、全オラクル分の「直近の価格系列＋3日前比の変化率」を
+  // 1ファイルにまとめて書いておく（src/lib/dbCardRanking.ts等が、オラクルごとに個別ファイルを
+  // 読む代わりにこれを1回のGetObjectで読むことで、100件規模でもラウンドトリップが1回で済む
+  // ようにする）。トレンドページ（src/lib/dbTrendingRanking.ts）が直近1/3/6日の推移一致を
+  // 見るため、3日前比の数値だけでなく直近7日分の系列も含める。
+  console.log("直近7日分の価格履歴を読み込んで変化率・系列を計算中...");
+  const RECENT_SERIES_DAYS = 7;
+  const pastDate = new Date(`${today}T00:00:00Z`);
+  pastDate.setUTCDate(pastDate.getUTCDate() - RECENT_SERIES_DAYS);
+  const seriesStartStr = pastDate.toISOString().slice(0, 10);
+  const pctPastDate = new Date(`${today}T00:00:00Z`);
+  pctPastDate.setUTCDate(pctPastDate.getUTCDate() - 3);
+  const pctPastDateStr = pctPastDate.toISOString().slice(0, 10);
+  const recentMonths = monthsBetween(seriesStartStr, today);
+  const recentRows = await readOraclePriceMonths(recentMonths);
+  const seriesByOracle = new Map();
+  for (const r of recentRows) {
+    if (r.jpy_est == null || r.date < seriesStartStr || r.date > today) continue;
+    if (!seriesByOracle.has(r.oracle_id)) seriesByOracle.set(r.oracle_id, []);
+    seriesByOracle.get(r.oracle_id).push({ date: r.date, jpy: Number(r.jpy_est) });
+  }
+  const pastPriceByOracle = new Map();
+  for (const [oracleId, series] of seriesByOracle) {
+    let best = null;
+    for (const p of series) {
+      if (p.date > pctPastDateStr) continue;
+      if (!best || p.date > best.date) best = p;
+    }
+    if (best) pastPriceByOracle.set(oracleId, best);
+  }
+  const priceChangeRows = archiveRows
+    .filter((r) => r.jpy_est != null)
+    .map((r) => {
+      const past = pastPriceByOracle.get(r.oracle_id);
+      const priceChange3dPct =
+        past && past.jpy !== 0 ? Math.round(((r.jpy_est - past.jpy) / past.jpy) * 10000) / 100 : null;
+      const series = [...(seriesByOracle.get(r.oracle_id) ?? [])].sort((a, b) => a.date.localeCompare(b.date));
+      return {
+        oracle_id: r.oracle_id,
+        date: r.date,
+        jpy_est: r.jpy_est,
+        jpy_est_foil: r.jpy_est_foil,
+        scryfall_id: r.scryfall_id,
+        scryfall_id_foil: r.scryfall_id_foil,
+        price_change_3d_pct: priceChange3dPct,
+        recent_series: series,
+      };
+    });
+  await writeRecentPriceChanges(priceChangeRows);
+  console.log(`  R2（price-changes/latest.ndjson.gz）へ書き込み: ${priceChangeRows.length}件`);
+
+  console.log(`\n完了: 現在価格キャッシュ${cacheRows.length}件更新、R2へ差分${changedArchiveRows.length}件書き込み`);
 }
 
 main().catch((err) => {

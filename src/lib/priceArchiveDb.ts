@@ -1,110 +1,69 @@
 import type { PricePoint } from "./dbPriceHistory";
 import { supabase } from "./supabase";
+import {
+  getR2ArchivedPriceHistory,
+  getR2PrintPriceHistory,
+  getR2RecentPriceHistoryForOracles,
+} from "./priceArchiveR2";
 
 /**
- * 価格履歴アーカイブ用D1（Cloudflare、jp-mtgstocks-archive、wrangler.jsonc参照）から
- * オラクル単位の過去価格を取得する。Supabase無料枠対策で、90日より古い
- * card_cheapest_price_snapshots（Supabase）はD1側へ移してある
- * （scripts/archive-old-price-snapshots.mjs）。
+ * 価格履歴アーカイブ（Cloudflare R2、カード単位NDJSON.gz、src/lib/priceArchiveR2.ts参照）から
+ * オラクル単位の過去価格を取得する。Supabase無料枠対策で、90日より古いcard_cheapest_price_snapshots
+ * 相当のデータはこちら（scripts/compute-cheapest-price-snapshots.mjsが日次で書き込む）から取る。
+ * 以前はCloudflare D1（price_history_archive）を読んでいたが、D1無料枠の日次読み書き行数上限
+ * に達したため、リクエスト数課金のR2へ全面移行した。
  *
- * D1が使えない環境（テスト・ビルド時等、getCloudflareContextが例外を投げる場合）では
- * 空配列を返す。D1側にまだ何もアーカイブされていない・接続できない場合でも、
- * 価格推移グラフ自体はSupabase側の直近データだけで問題なく表示できるため、
- * ここでのエラーは握りつぶして良い（呼び出し側src/lib/dbCheapestPrice.ts参照）。
+ * R2が使えない環境（テスト・ビルド時等）では空配列を返す。アーカイブは補助的なデータなので、
+ * ここでのエラーは握りつぶしてよい（呼び出し側src/lib/dbCheapestPrice.ts参照）。
  */
 export async function getArchivedPriceHistory(
   oracleId: string,
   finish: "normal" | "foil" = "normal",
 ): Promise<PricePoint[]> {
-  try {
-    // 静的解析でCloudflare依存を検出されないよう動的importにする
-    // （next buildがCloudflare Workers以外の環境も含めて型解決するため）。
-    const { getCloudflareContext } = await import("@opennextjs/cloudflare");
-    const { env } = await getCloudflareContext({ async: true });
-    // getCloudflareContext()の戻り値の型（CloudflareEnv、@opennextjs/cloudflare側の内部定義）は
-    // カスタムバインディング（PRICE_ARCHIVE_DB）を含まないため、wrangler.jsonc/wrangler types
-    // で生成したグローバルEnv型（worker-configuration.d.ts）にキャストする。
-    const db = (env as unknown as Env).PRICE_ARCHIVE_DB;
-    if (!db) return [];
+  const rows = await getR2ArchivedPriceHistory(oracleId, finish);
+  if (rows.length === 0) return [];
 
-    const priceColumn = finish === "foil" ? "jpy_est_foil" : "jpy_est";
-    const scryfallColumn = finish === "foil" ? "scryfall_id_foil" : "scryfall_id";
-    const result = await db
-      .prepare(
-        `SELECT date, ${priceColumn} AS price, ${scryfallColumn} AS scryfall_id FROM price_history_archive WHERE oracle_id = ?1 AND ${priceColumn} IS NOT NULL ORDER BY date ASC`,
-      )
-      .bind(oracleId)
-      .all<{ date: string; price: number; scryfall_id: string | null }>();
-
-    const rows = result.results ?? [];
-    // 各日の最安値がどのセットだったかは、旧アーカイブ分（scryfall_id列追加前）にはNULLしか
-    // 無いことがある。その場合はセットアイコン無しで表示側がフォールバックする。
-    const scryfallIds = [...new Set(rows.map((r) => r.scryfall_id).filter((id): id is string => id !== null))];
-    const setCodeByScryfallId = new Map<string, string>();
-    const setNameByScryfallId = new Map<string, string>();
-    if (scryfallIds.length > 0) {
-      const { data: printRows } = await supabase
-        .from("card_prints")
-        .select("scryfall_id, set_code, sets(set_name)")
-        .in("scryfall_id", scryfallIds)
-        .returns<{ scryfall_id: string; set_code: string; sets: { set_name: string } | null }[]>();
-      for (const p of printRows ?? []) {
-        setCodeByScryfallId.set(p.scryfall_id, p.set_code);
-        setNameByScryfallId.set(p.scryfall_id, p.sets?.set_name ?? p.set_code);
-      }
+  // 各日の最安値がどのセットだったかは、旧アーカイブ分にはNULLしか無いことがある。
+  // その場合はセットアイコン無しで表示側がフォールバックする。
+  const scryfallIds = [...new Set(rows.map((r) => r.scryfallId).filter((id): id is string => id !== null))];
+  const setCodeByScryfallId = new Map<string, string>();
+  const setNameByScryfallId = new Map<string, string>();
+  if (scryfallIds.length > 0) {
+    const { data: printRows } = await supabase
+      .from("card_prints")
+      .select("scryfall_id, set_code, sets(set_name)")
+      .in("scryfall_id", scryfallIds)
+      .returns<{ scryfall_id: string; set_code: string; sets: { set_name: string } | null }[]>();
+    for (const p of printRows ?? []) {
+      setCodeByScryfallId.set(p.scryfall_id, p.set_code);
+      setNameByScryfallId.set(p.scryfall_id, p.sets?.set_name ?? p.set_code);
     }
-
-    return rows.map((row) => ({
-      date: row.date,
-      jpy: Number(row.price),
-      setCode: row.scryfall_id ? setCodeByScryfallId.get(row.scryfall_id) : undefined,
-      setName: row.scryfall_id ? setNameByScryfallId.get(row.scryfall_id) : undefined,
-    }));
-  } catch {
-    // getCloudflareContext()はWorkersランタイム外（一部のビルド・テスト環境）で例外を投げる。
-    // アーカイブは補助的なデータなので、失敗しても直近データの表示は妨げない。
-    return [];
   }
+
+  return rows.map((row) => ({
+    date: row.date,
+    jpy: row.price,
+    setCode: row.scryfallId ? setCodeByScryfallId.get(row.scryfallId) : undefined,
+    setName: row.scryfallId ? setNameByScryfallId.get(row.scryfallId) : undefined,
+  }));
 }
 
 /**
- * price_history_archiveから、複数オラクル分・指定日以降の価格系列を一括取得する。
- * card_cheapest_price_snapshots（Supabase）は日次の新規書き込みが無くなり常に空のため、
- * カードランキングの価格変化率（src/lib/dbCardRanking.ts）はこちら（D1）を見る必要がある。
- * D1のバインド変数上限に備え、oracleIdsは呼び出し側でチャンク済みである前提（1回あたり50件目安）。
+ * 複数オラクル分・指定日以降の価格系列を一括取得する。card_cheapest_price_snapshots
+ * （Supabase）は日次の新規書き込みが無くなり常に空のため、カードランキングの価格変化率
+ * （src/lib/dbCardRanking.ts）はこちら（R2）を見る必要がある。オラクルごとに並列で
+ * GetObjectするため、呼び出し側で並列リクエスト数を適度に抑える意味でoracleIdsを
+ * チャンクしてもらう想定（1回あたり50件目安）。
  */
 export async function getRecentPriceHistoryForOracles(
   oracleIds: string[],
   sinceDate: string,
 ): Promise<{ oracleId: string; date: string; jpy: number }[]> {
-  if (oracleIds.length === 0) return [];
-  try {
-    const { getCloudflareContext } = await import("@opennextjs/cloudflare");
-    const { env } = await getCloudflareContext({ async: true });
-    const db = (env as unknown as Env).PRICE_ARCHIVE_DB;
-    if (!db) return [];
-
-    const placeholders = oracleIds.map((_, i) => `?${i + 2}`).join(",");
-    const result = await db
-      .prepare(
-        `SELECT oracle_id, date, jpy_est FROM price_history_archive WHERE date >= ?1 AND jpy_est IS NOT NULL AND oracle_id IN (${placeholders}) ORDER BY date ASC`,
-      )
-      .bind(sinceDate, ...oracleIds)
-      .all<{ oracle_id: string; date: string; jpy_est: number }>();
-
-    return (result.results ?? []).map((row) => ({
-      oracleId: row.oracle_id,
-      date: row.date,
-      jpy: Number(row.jpy_est),
-    }));
-  } catch {
-    return [];
-  }
+  return getR2RecentPriceHistoryForOracles(oracleIds, sinceDate);
 }
 
 /**
- * print_price_history_archive（scripts/archive-old-print-prices.mjs）から、特定プリント
- * （scryfall_id単位）の過去USD価格を取得する。個別プリントの価格推移グラフ用
+ * プリント単位（scryfall_id単位）の過去USD価格を取得する。個別プリントの価格推移グラフ用
  * （src/lib/dbCardPrintPrices.ts、getPrintPriceHistory）。JPY換算は呼び出し側で行う
  * （日付ごとのexchange_ratesが必要なため）。
  */
@@ -112,25 +71,5 @@ export async function getArchivedPrintPriceHistoryUsd(
   scryfallId: string,
   finish: "normal" | "foil" = "normal",
 ): Promise<{ date: string; usd: number }[]> {
-  try {
-    const { getCloudflareContext } = await import("@opennextjs/cloudflare");
-    const { env } = await getCloudflareContext({ async: true });
-    const db = (env as unknown as Env).PRICE_ARCHIVE_DB;
-    if (!db) return [];
-
-    const column = finish === "foil" ? "usd_foil" : "usd";
-    const result = await db
-      .prepare(
-        `SELECT date, ${column} AS price FROM print_price_history_archive WHERE scryfall_id = ?1 AND ${column} IS NOT NULL ORDER BY date ASC`,
-      )
-      .bind(scryfallId)
-      .all<{ date: string; price: number }>();
-
-    return (result.results ?? []).map((row: { date: string; price: number }) => ({
-      date: row.date,
-      usd: Number(row.price),
-    }));
-  } catch {
-    return [];
-  }
+  return getR2PrintPriceHistory(scryfallId, finish);
 }
