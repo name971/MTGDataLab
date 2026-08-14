@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { getLatestPricesForPrints } from "./dbCardPrintPrices";
+import { getCatalogPrintsByOracleId } from "./catalogDb";
 
 export interface CardPrint {
   scryfallId: string;
@@ -100,8 +101,23 @@ export async function getOtherPrintsForCard(
       .eq("oracle_id", oracleId),
   ]);
   if (error) return { prints: [], totalCount: count ?? 0 };
+  if ((count ?? 0) > 0) return { prints: (data ?? []).map(toCardPrint), totalCount: count ?? 0 };
 
-  return { prints: (data ?? []).map(toCardPrint), totalCount: count ?? 0 };
+  // Postgres（デッキ実績のあるカード用）に1件も無ければ、デッキ未使用カタログ（D1）を試す
+  const catalog = await getCatalogPrintsByOracleId(oracleId, offset, limit);
+  return {
+    prints: catalog.prints.map((p) => ({
+      scryfallId: p.scryfall_id,
+      setCode: p.set_code,
+      setName: p.set_name,
+      collectorNumber: p.collector_number,
+      releasedAt: p.released_at,
+      imageUrl: p.image_uri_normal_ja ?? p.image_uri_normal,
+      notTournamentLegal: p.not_tournament_legal === 1,
+      rarity: p.rarity,
+    })),
+    totalCount: catalog.totalCount,
+  };
 }
 
 /**

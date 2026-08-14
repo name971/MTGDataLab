@@ -21,7 +21,13 @@
  * 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... node scripts/rebuild-card-prints.mjs
  */
 
-import { ensureBulkData, forEachJsonArrayObject, DATA_FILE, NON_TOURNAMENT_SET_TYPES } from "./lib/scryfallBulk.mjs";
+import {
+  ensureBulkData,
+  forEachJsonArrayObject,
+  DATA_FILE,
+  NON_TOURNAMENT_SET_TYPES,
+  resolveOracleId,
+} from "./lib/scryfallBulk.mjs";
 
 // 金縁(World Championship Decks等)は、オラクルとしては合法でもこの物理プリント自体は
 // どのフォーマットでも使用不可（Scryfallのlegalitiesには反映されない）。実際に確認したところ
@@ -108,9 +114,10 @@ async function main() {
   await forEachJsonArrayObject(DATA_FILE, (raw) => {
     scanned++;
     if (raw.digital) return; // Arena/MTGO専用プリントは対象外（購入・価格追跡の対象にならないため）
-    if (!raw.oracle_id || !knownOracleIds.has(raw.oracle_id)) return;
+    const oracleId = resolveOracleId(raw);
+    if (!oracleId || !knownOracleIds.has(oracleId)) return;
 
-    const key = `${raw.oracle_id}|${raw.set}|${raw.collector_number}`;
+    const key = `${oracleId}|${raw.set}|${raw.collector_number}`;
 
     if (raw.lang === "ja") {
       const face = raw.card_faces?.[0];
@@ -127,10 +134,11 @@ async function main() {
   const prints = [...byPrintKey.values()].map((raw) => {
     const face = raw.card_faces?.[0];
     const imageUris = raw.image_uris ?? face?.image_uris ?? null;
-    const key = `${raw.oracle_id}|${raw.set}|${raw.collector_number}`;
+    const oracleId = resolveOracleId(raw);
+    const key = `${oracleId}|${raw.set}|${raw.collector_number}`;
     return {
       scryfall_id: raw.id,
-      oracle_id: raw.oracle_id,
+      oracle_id: oracleId,
       set_code: raw.set,
       collector_number: raw.collector_number,
       released_at: raw.released_at ?? null,

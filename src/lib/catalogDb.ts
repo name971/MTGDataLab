@@ -110,6 +110,48 @@ export async function getCatalogOraclesByNames(
   }
 }
 
+export interface CatalogPrintRow {
+  scryfall_id: string;
+  set_code: string;
+  set_name: string;
+  collector_number: string;
+  released_at: string | null;
+  image_uri_normal: string | null;
+  image_uri_normal_ja: string | null;
+  rarity: string | null;
+  not_tournament_legal: number;
+}
+
+/**
+ * デッキ未使用カードの「その他のプリント」欄用（scripts/rebuild-catalog-prints.mjsが
+ * Scryfallバルクデータから事前生成）。Postgres側のcard_printsに1件も無いオラクルの
+ * フォールバックとしてのみ使う（src/lib/dbCardPrints.ts参照）。価格追跡対象外のため
+ * 価格順ソートは提供しない（発売日順のみ）。
+ */
+export async function getCatalogPrintsByOracleId(
+  oracleId: string,
+  offset = 0,
+  limit = 100,
+): Promise<{ prints: CatalogPrintRow[]; totalCount: number }> {
+  try {
+    const db = await getCatalogDb();
+    if (!db) return { prints: [], totalCount: 0 };
+
+    const [rowsRes, countRes] = await Promise.all([
+      db
+        .prepare(
+          "SELECT scryfall_id, set_code, set_name, collector_number, released_at, image_uri_normal, image_uri_normal_ja, rarity, not_tournament_legal FROM catalog_prints WHERE oracle_id = ?1 ORDER BY released_at DESC LIMIT ?2 OFFSET ?3",
+        )
+        .bind(oracleId, limit, offset)
+        .all<CatalogPrintRow>(),
+      db.prepare("SELECT COUNT(*) as n FROM catalog_prints WHERE oracle_id = ?1").bind(oracleId).first<{ n: number }>(),
+    ]);
+    return { prints: rowsRes.results ?? [], totalCount: countRes?.n ?? 0 };
+  } catch {
+    return { prints: [], totalCount: 0 };
+  }
+}
+
 export interface CatalogSearchResult {
   oracleId: string;
   nameEn: string;

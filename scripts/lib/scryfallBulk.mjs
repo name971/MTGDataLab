@@ -186,6 +186,16 @@ function slimCard(card) {
   };
 }
 
+/**
+ * reversible_card（例: Secret Lair Dropの両面ポスター型ボーナス品）等の特殊レイアウトは
+ * トップレベルのoracle_idを持たない（表裏で共有するoracle_idはcard_faces側にある）。
+ * これを素通しすると「全プリント一覧」（card_prints）からそのプリントが丸ごと欠落する
+ * （代表プリントに選ぶかどうかとは別の問題）。
+ */
+export function resolveOracleId(raw) {
+  return raw.oracle_id ?? raw.card_faces?.[0]?.oracle_id ?? null;
+}
+
 let indexCache = null;
 
 // トーナメントで使用できない特殊プロダクト（記念グッズ・トークン・アートカード・Un-set等）。

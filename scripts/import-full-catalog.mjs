@@ -26,6 +26,7 @@ import {
   combinedOracleText,
   toCardRow,
   NON_TOURNAMENT_SET_TYPES,
+  resolveOracleId,
 } from "./lib/scryfallBulk.mjs";
 
 // 金縁(World Championship Decks等)は、オラクルとしては合法でもこの物理プリント自体は
@@ -94,7 +95,6 @@ async function main() {
     scanned++;
     if (raw.digital) return;
     if (raw.lang !== "en" && raw.lang !== "ja") return;
-    if (!raw.oracle_id) return;
     // アートカード(art_series)・トークン(token)・記念グッズ(memorabilia)・ミニゲーム(minigame)は
     // ルールテキストを持つ本物のカードではなく、同名の実カードとは別oracle_idで存在するため、
     // 取り込むと検索・ランキングに「同名の別カード」としてノイズが混入する（例: Brainstormの
@@ -102,12 +102,22 @@ async function main() {
     // funnyだけは除外しない: Unfinity以降は同じset内に普通に使用可能なカードが混在するため。
     if (raw.set_type !== "funny" && NON_TOURNAMENT_SET_TYPES.has(raw.set_type)) return;
 
-    const printKeyAll = `${raw.oracle_id}|${raw.set}|${raw.collector_number}`;
+    // reversible_card（例: Secret Lair Dropの両面ポスター型ボーナス品）等はトップレベルの
+    // oracle_idを持たないため、resolveOracleId()でcard_faces側から補う。ここで解決した値は
+    // 「全プリント一覧」（allPrintsByKey→card_prints）にだけ使い、下の代表プリント選定
+    // （bestEnByOracle等）は従来通りraw.oracle_idの有無で判定する（この手の特殊プリントを
+    // 代表プリントに選びたくないため、意図的に区別する）。
+    const resolvedOracleId = resolveOracleId(raw);
+    if (!resolvedOracleId) return;
+
+    const printKeyAll = `${resolvedOracleId}|${raw.set}|${raw.collector_number}`;
     const currentPrint = allPrintsByKey.get(printKeyAll);
     if (!(currentPrint && (currentPrint.lang === "en" || raw.lang === "ja"))) {
       allPrintsByKey.set(printKeyAll, raw);
       setsByCode.set(raw.set, raw.set_name);
     }
+
+    if (!raw.oracle_id) return; // 代表プリント選定の対象外（reversible_card等）
 
     if (raw.lang === "en") {
       const current = bestEnByOracle.get(raw.oracle_id);
@@ -162,7 +172,7 @@ async function main() {
     const imageUris = raw.image_uris ?? face?.image_uris ?? null;
     printRows.push({
       scryfall_id: raw.id,
-      oracle_id: raw.oracle_id,
+      oracle_id: resolveOracleId(raw),
       set_code: raw.set,
       collector_number: raw.collector_number,
       released_at: raw.released_at ?? null,
