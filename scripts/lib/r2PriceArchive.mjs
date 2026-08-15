@@ -240,6 +240,16 @@ export async function writeRecentPriceChanges(rows) {
   await writeNdjsonGz(R2_RECENT_CHANGES_KEY, rows);
 }
 
+/**
+ * writeRecentPriceChangesが書いた内容を読み戻す。1回のGetObjectで全オラクル分の
+ * 「今日の価格＋直近7日分の系列」が手に入るため、compute-card-streaks.mjsの連続上昇日数
+ * 計算はこれを使う（60日分を月次ファイルからスキャンする方式から移行、
+ * scripts/compute-card-streaks.mjsのコメント参照）。
+ */
+export async function readRecentPriceChanges() {
+  return readNdjsonGz(R2_RECENT_CHANGES_KEY);
+}
+
 /** "YYYY-MM-DD"同士の間の"YYYY-MM"一覧（両端月を含む）を古い順に返す。 */
 export function monthsBetween(sinceStr, untilStr) {
   const months = [];

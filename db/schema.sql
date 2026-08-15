@@ -425,6 +425,13 @@ CREATE TABLE card_streaks (
   -- streak開始直前の値→当日の値の累積変化量。priceは%、usageはpt（採用率の単位に合わせる。
   -- どちらも「率のパーセント」ではなく実際の単位そのままなので同着比較にそのまま使える）
   change_value    NUMERIC(8, 2) NOT NULL,
+  -- streak開始直前（baseline）の生の値。前日分のこの列を読んで当日分に引き継ぐことで、
+  -- 「直近N日分を毎回スキャンして配列の隣接要素同士を比較する」方式（過去に採用していたが、
+  -- 日付が1日でも欠けると隣接比較がずれて誤集計になる・データソースの品質が過去に遡って
+  -- 変わると再集計するまで古い値を引きずる、という弱点があった）をやめ、
+  -- compute-trending-scores.mjsと同じ「前日比プラスなら+1日・そうでなければリセット」の
+  -- 前日引き継ぎ方式に統一するために追加した（scripts/compute-card-streaks.mjs参照）。
+  baseline_value  NUMERIC(12, 2),
   PRIMARY KEY (oracle_id, category, format, calculated_date)
 );
 
