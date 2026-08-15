@@ -184,18 +184,46 @@ async function mergeCardFiles(prefix, rows, idColumn, concurrency = 16) {
   return byId.size;
 }
 
+// mergeOracle/PrintPriceRowsを1プロセス内で何度も呼ぶと、呼び出し回数分だけほぼ全カードの
+// ファイルへGET+PUTが繰り返される（1回にまとめれば済むはずの書き込みが、ループの回数倍だけ
+// 無駄になる）。実際に2026-08-15だけで2回、「月ごと・ページごとにこの関数を呼ぶ」設計ミスで
+// 数時間分の処理時間を無駄にした（docs/incident-log.md参照）。「気をつける」だけでは
+// 同じミスを繰り返したため、呼び出し回数を実行時に数え、閾値を超えたら例外を投げて
+// 即座に気づけるようにする（「全月分をメモリに溜めてから最後に1回だけ呼ぶ」が正しい使い方）。
+let mergeCallCount = 0;
+const MERGE_CALL_WARN_THRESHOLD = 3;
+function guardAgainstRepeatedMergeCalls(fnName) {
+  mergeCallCount++;
+  if (mergeCallCount === MERGE_CALL_WARN_THRESHOLD) {
+    throw new Error(
+      `${fnName}が同一プロセス内で${MERGE_CALL_WARN_THRESHOLD}回呼ばれました。ループ（月ごと・` +
+        `ページごと等）の中でこの関数を呼んでいませんか？ 1回の呼び出しでほぼ全カードの` +
+        `ファイルにGET+PUTが発生するため、複数回呼ぶとその回数倍だけ時間を無駄にします。` +
+        `全データをためてから最後に1回だけ呼んでください（docs/incident-log.md参照）。` +
+        `意図的に複数回呼ぶ必要がある場合のみ、この閾値を見直してください。`,
+    );
+  }
+}
+
 /**
  * オラクル単位の価格行を、月次ファイル＋カード単位ファイルの両方へマージ書き込みする。
  * 行の日付が複数月にまたがっていてもよい（月ごとにグルーピングしてから書き込む）。
+ * 呼び出し元は、複数月・複数ページにまたがるデータを全部集めてから1回だけ呼ぶこと
+ * （ループの中で呼ばない）。
  */
 export async function mergeOraclePriceRows(rows) {
+  guardAgainstRepeatedMergeCalls("mergeOraclePriceRows");
   await mergeRowsGroupedByMonth(R2_PRICE_PREFIX, rows, "oracle_id");
   const cardCount = await mergeCardFiles(R2_ORACLE_CARD_PREFIX, rows, "oracle_id");
   console.log(`  R2（${R2_ORACLE_CARD_PREFIX}）へカード単位で書き込み: ${cardCount}件`);
 }
 
-/** プリント単位の価格行を、月次ファイル＋カード単位ファイルの両方へマージ書き込みする。 */
+/**
+ * プリント単位の価格行を、月次ファイル＋カード単位ファイルの両方へマージ書き込みする。
+ * mergeOraclePriceRowsと同様、ループの中で呼ばず全データをためてから1回だけ呼ぶこと。
+ */
 export async function mergePrintPriceRows(rows) {
+  guardAgainstRepeatedMergeCalls("mergePrintPriceRows");
   await mergeRowsGroupedByMonth(R2_PRINT_PRICE_PREFIX, rows, "scryfall_id");
   const cardCount = await mergeCardFiles(R2_PRINT_CARD_PREFIX, rows, "scryfall_id");
   console.log(`  R2（${R2_PRINT_CARD_PREFIX}）へカード単位で書き込み: ${cardCount}件`);
