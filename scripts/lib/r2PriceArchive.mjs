@@ -126,22 +126,46 @@ async function mergeMonthFile(prefix, month, newRows, idColumn) {
   return merged.length;
 }
 
-/** 限られた同時実行数でPromiseを返す関数の配列を処理する（R2への大量リクエスト用）。 */
+/**
+ * 限られた同時実行数でPromiseを返す関数の配列を処理する（R2への大量リクエスト用）。
+ * R2側の一時的なエラー（5xx等、AWS SDKの内部リトライを使い切っても失敗することがある）で
+ * 1件失敗しても、数万件規模の処理全体を巻き込んで止めない。失敗した項目はログに出すだけで
+ * 継続し、呼び出し元には失敗件数を返す（0件なら全件成功）。
+ */
 async function runWithConcurrency(items, concurrency, fn) {
   const queue = [...items];
+  let failed = 0;
   async function worker() {
     for (let item = queue.shift(); item !== undefined; item = queue.shift()) {
-      await fn(item);
+      try {
+        await fn(item);
+      } catch (err) {
+        failed++;
+        console.error(`  ...1件失敗（続行）: ${err?.message ?? err}`);
+      }
     }
   }
   await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
+  return failed;
 }
 
-/** カード単位ファイルへ1枚分のnewRowsをマージして書き戻す（日付重複は新しい値で上書き）。 */
+/**
+ * カード単位ファイルへ1枚分のnewRowsをマージして書き戻す（日付重複は新しい値で上書き）。
+ * newRowsの内容が既存データと完全に同じ（前日と値が変わっていない等）場合はPUTしない。
+ * scripts/snapshot-catalog-prices.mjsのように「変化の有無をチェックせず毎日全件渡す」
+ * 呼び出し元でも、実際に変化した分だけがR2への書き込み（Class A、無料枠100万件/月）を
+ * 消費するようにするため（GET自体は読み取り無料枠10,000,000件/月に対して余裕がある）。
+ */
 async function mergeCardFile(prefix, cardId, newRows) {
   const existing = await readNdjsonGz(`${prefix}/${cardId}.ndjson.gz`);
   const byDate = new Map(existing.map((r) => [r.date, r]));
-  for (const r of newRows) byDate.set(r.date, r);
+  let changed = existing.length === 0;
+  for (const r of newRows) {
+    const prev = byDate.get(r.date);
+    if (!prev || JSON.stringify(prev) !== JSON.stringify(r)) changed = true;
+    byDate.set(r.date, r);
+  }
+  if (!changed) return;
   const merged = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
   await writeNdjsonGz(`${prefix}/${cardId}.ndjson.gz`, merged);
 }
@@ -153,9 +177,10 @@ async function mergeCardFiles(prefix, rows, idColumn, concurrency = 16) {
     if (!byId.has(r[idColumn])) byId.set(r[idColumn], []);
     byId.get(r[idColumn]).push(r);
   }
-  await runWithConcurrency([...byId.entries()], concurrency, ([cardId, cardRows]) =>
+  const failed = await runWithConcurrency([...byId.entries()], concurrency, ([cardId, cardRows]) =>
     mergeCardFile(prefix, cardId, cardRows),
   );
+  if (failed > 0) console.error(`  ${prefix}: ${failed}/${byId.size}件が失敗しました（続行済み）`);
   return byId.size;
 }
 

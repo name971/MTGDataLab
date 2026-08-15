@@ -131,23 +131,19 @@ async function main() {
 
   console.log(`${cacheRows.length}件（オラクル単位）の最安値を計算完了`);
 
-  // R2書き込み（GET+PUTで1オラクルあたり2リクエスト）は無料枠（Class A書き込み100万件/月）に
-  // 対して全件（2〜3万件）を毎日書くと直撃するため、プリント側（snapshot-print-prices.mjs）と
-  // 同様に前日から値が変わったオラクルだけを対象にする（差分書き込み）。
-  console.log("前日分の現在価格キャッシュ（card_current_prices）を取得中...");
-  const prevCurrentRows = await supabaseGet("card_current_prices?select=oracle_id,jpy_est,jpy_est_foil");
-  const prevByOracle = new Map(prevCurrentRows.map((r) => [r.oracle_id, { jpy_est: r.jpy_est, jpy_est_foil: r.jpy_est_foil }]));
-  const changedArchiveRows = archiveRows.filter((r) => {
-    const prev = prevByOracle.get(r.oracle_id);
-    return !prev || r.jpy_est !== prev.jpy_est || r.jpy_est_foil !== prev.jpy_est_foil;
-  });
-  console.log(`  前日比で変化あり: ${changedArchiveRows.length}/${archiveRows.length}件`);
-
   console.log("Postgres（card_current_prices）を更新中...");
   await supabaseUpsert("card_current_prices", cacheRows, "oracle_id");
 
-  console.log("R2（price-history）へ今日分の差分を書き込み中...");
-  if (changedArchiveRows.length > 0) await mergeOraclePriceRows(changedArchiveRows);
+  // R2書き込み（GET+PUTで1オラクルあたり2リクエスト）は無料枠（Class A書き込み100万件/月）に
+  // 対して全件（2〜3万件）を毎日書くと直撃するため、前日から値が変わったオラクルだけPUTしたい。
+  // ただし「変化の有無」はcard_current_prices（Supabase、日次以外の理由でも上書きされうる
+  // 「今の価格」キャッシュ）ではなく、R2自体に既に書かれている値と比較しないと壊れる
+  // （card_current_prices側が先に今日の値へ更新されてしまうと、以降R2へは一度も今日の日付が
+  // 書き込まれないまま「変化なし」と誤判定される事故が実際に発生した）。
+  // そのため全件を渡し、R2側の比較・スキップ判定（scripts/lib/r2PriceArchive.mjsの
+  // mergeCardFile）に委ねる。
+  console.log("R2（price-history）へ今日分を書き込み中（変化が無いカードはR2側でスキップ）...");
+  await mergeOraclePriceRows(archiveRows);
 
   // ランキング/トレンドページ用に、全オラクル分の「直近の価格系列＋3日前比の変化率」を
   // 1ファイルにまとめて書いておく（src/lib/dbCardRanking.ts等が、オラクルごとに個別ファイルを
@@ -200,7 +196,7 @@ async function main() {
   await writeRecentPriceChanges(priceChangeRows);
   console.log(`  R2（price-changes/latest.ndjson.gz）へ書き込み: ${priceChangeRows.length}件`);
 
-  console.log(`\n完了: 現在価格キャッシュ${cacheRows.length}件更新、R2へ差分${changedArchiveRows.length}件書き込み`);
+  console.log(`\n完了: 現在価格キャッシュ${cacheRows.length}件更新、R2へ${archiveRows.length}件処理（変化分のみ実書き込み）`);
 }
 
 main().catch((err) => {

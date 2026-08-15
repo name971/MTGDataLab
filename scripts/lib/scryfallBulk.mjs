@@ -238,6 +238,35 @@ export function isBetterRepresentative(candidate, current) {
  * ヒープが枯渇する。そのため各キー（scryfall_id自体は別として、カード名・oracle_id）に
  * つき「今のところ一番良い1件」だけをその場で置き換えながら保持し、配列を作らない。
  */
+let priceIndexCache = null;
+
+/**
+ * 価格（priceById）だけが必要な呼び出し元向けの軽量版。loadIndex()は名前マッチング用の
+ * 3つのMap（byExactNameEn/byLooseNameEn/byOracleIdJa）も全カード分構築するが、これは
+ * 正規化・tier比較・slimCard生成を毎カード行う重い処理で、価格スナップショット系
+ * （snapshot-print-prices.mjs・snapshot-catalog-prices.mjs、日次で毎回全カードを舐める）は
+ * この結果を一切使わないため無駄になっていた。
+ */
+export async function buildPriceIndex() {
+  if (priceIndexCache) return priceIndexCache;
+
+  const priceById = new Map();
+  await forEachJsonArrayObject(DATA_FILE, (raw) => {
+    if (raw.lang !== "en" && raw.lang !== "ja") return;
+    priceById.set(raw.id, {
+      oracle_id: raw.oracle_id,
+      lang: raw.lang,
+      usd: raw.prices?.usd ?? null,
+      eur: raw.prices?.eur ?? null,
+      usd_foil: raw.prices?.usd_foil ?? null,
+      set_type: raw.set_type,
+    });
+  });
+
+  priceIndexCache = { priceById };
+  return priceIndexCache;
+}
+
 export async function loadIndex() {
   if (indexCache) return indexCache;
 

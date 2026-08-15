@@ -18,7 +18,7 @@
  *      node scripts/snapshot-print-prices.mjs
  */
 
-import { ensureBulkData, loadIndex, findPriceById } from "./lib/scryfallBulk.mjs";
+import { ensureBulkData, buildPriceIndex, findPriceById } from "./lib/scryfallBulk.mjs";
 import { mergePrintPriceRows } from "./lib/r2PriceArchive.mjs";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -72,21 +72,13 @@ async function main() {
   const today = new Date().toISOString().slice(0, 10);
 
   await ensureBulkData();
-  const index = await loadIndex();
+  const index = await buildPriceIndex();
 
   const prints = await supabaseGet("card_prints?select=scryfall_id,oracle_id&order=scryfall_id.asc");
   console.log(`対象プリント: ${prints.length}件`);
 
-  console.log("現在価格キャッシュ（card_print_current_prices）を取得中...");
-  const currentRows = await supabaseGet(
-    "card_print_current_prices?select=scryfall_id,usd,usd_foil&order=scryfall_id.asc",
-  );
-  const currentByScryfallId = new Map(
-    currentRows.map((r) => [r.scryfall_id, { usd: r.usd, usd_foil: r.usd_foil }]),
-  );
-
   const cacheRows = [];
-  const archiveRows = []; // 前日と値が変わったプリントだけ
+  const archiveRows = [];
   let priced = 0;
   let foilPriced = 0;
   for (const p of prints) {
@@ -99,22 +91,24 @@ async function main() {
     if (usdFoil !== null) foilPriced++;
 
     cacheRows.push({ scryfall_id: p.scryfall_id, oracle_id: p.oracle_id, date: today, usd, usd_foil: usdFoil });
-
-    const prev = currentByScryfallId.get(p.scryfall_id);
-    const changed = !prev || usd !== prev.usd || usdFoil !== prev.usd_foil;
-    if (changed) {
-      archiveRows.push({ scryfall_id: p.scryfall_id, date: today, usd, usd_foil: usdFoil });
-    }
+    archiveRows.push({ scryfall_id: p.scryfall_id, date: today, usd, usd_foil: usdFoil });
   }
-  console.log(`価格あり: ${priced}件（うちFoil ${foilPriced}件）、うち変化あり: ${archiveRows.length}件`);
+  console.log(`価格あり: ${priced}件（うちFoil ${foilPriced}件）`);
 
-  console.log("R2（print-price-history）へ差分を書き込み中...");
+  // 「前日と変わったか」はcard_print_current_prices（Supabase、日次以外の理由でも更新されうる
+  // 「今の価格」キャッシュ）と比較せず、全件をR2へ渡してR2側の比較・スキップ判定
+  // （scripts/lib/r2PriceArchive.mjsのmergeCardFile）に委ねる。Supabase側と比較する方式だと、
+  // 何らかの理由でcard_print_current_pricesだけ先に今日の値へ更新されてしまった場合
+  // （同日に複数回実行した、処理が部分的に失敗した等）、R2へは一度も今日の日付が
+  // 書き込まれないまま「変化なし」と誤判定される事故が起きる（実際にオラクル単位の方で発生し、
+  // 継続注目カード（card_streaks）の価格カテゴリが常に0件になっていた）。
+  console.log("R2（print-price-history）へ書き込み中（変化が無いプリントはR2側でスキップ）...");
   if (archiveRows.length > 0) await mergePrintPriceRows(archiveRows);
 
   console.log("Postgres（card_print_current_prices）を更新中...");
   await supabaseUpsert("card_print_current_prices", cacheRows, "scryfall_id");
 
-  console.log(`\n完了: 現在価格キャッシュ${cacheRows.length}件更新、R2へ${archiveRows.length}件書き込み`);
+  console.log(`\n完了: 現在価格キャッシュ${cacheRows.length}件更新、R2へ${archiveRows.length}件処理（変化分のみ実書き込み）`);
 }
 
 main().catch((err) => {

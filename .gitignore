@@ -54,3 +54,4 @@ next-env.d.ts
 /ml/data/
 __pycache__/
 *.pyc
+scratch/

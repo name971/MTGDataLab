@@ -50,41 +50,43 @@ fbettega氏・j6e氏・MTGOFormatDataメンテナー（Jiliac氏）への利用�
 
 ---
 
-## 4. データベーススキーマ
+## 4. データベーススキーマ・データ基盤
 
-`schema.sql`として別途納品済み。実際にPostgreSQLに流し込み、ダミーデータでの動作検証まで完了している。
+`schema.sql`（Supabase/Postgres）・`db/archive-schema.sql`（Cloudflare D1、後述の通り現在はカタログ用途のみ）として別途納品済み。
 
-### テーブル構成
+**2026-08時点で、当初計画（Postgres一本＋週次/月次ロールアップ）から実装が大きく変わっている。** Postgresの無料枠（500MB）が価格の全履歴を持つには小さすぎることが運用開始後に判明し、「今の状態」はPostgres、「時系列の全履歴」はCloudflare R2、という3層構成に再設計した。詳細な経緯は本章末尾を参照。
 
-| グループ | テーブル |
-|---|---|
-| カードマスタ | `card_oracles`（カード概念単位）、`cards`（プリント単位） |
-| 価格 | `exchange_rates`、`card_price_snapshots`、`sealed_price_snapshots`、`language_premium_stats` |
-| トーナメント・デッキ | `tournaments`、`archetypes`、`decks`、`deck_cards`、`format_settings` |
-| 集計・ランキング | `card_usage_stats`（採用率）、`trending_scores`（注目カードスコア）、`archetype_price_stats`（アーキタイプ中央値） |
-| パックEV | `pack_slot_definitions`（Play Boosterのみ） |
-| アカウント | `users`、`favorite_cards`、`price_alerts`（RLSで本人以外アクセス不可） |
-| データ保持（肥大化対策） | `card_price_snapshots_weekly`（週次ロールアップ）、`card_price_snapshots_monthly`（月次ロールアップ） |
+### 現在のストレージ構成（3層）
 
-### データ保持ポリシー（肥大化対策）
+| ストレージ | 役割 | 具体例 |
+|---|---|---|
+| **Supabase (Postgres)** | 頻繁に読む「今の状態」。行数が増えないキャッシュ型のテーブルのみ置く | `card_current_prices`・`card_print_current_prices`（1行=1カード/プリントの現在価格）、`card_usage_stats`（採用率、60日で自動削除）、`decks`・`deck_cards`・`tournaments`・`archetypes`など |
+| **Cloudflare D1** | デッキで一度も使われていないカードのカタログ検索専用 | `catalog_oracles`・`catalog_prints`（`card_oracles`/`card_prints`の未収録分。名前・画像・価格の直近値を持つ） |
+| **Cloudflare R2** | 全カードの価格時系列の全履歴（2024-02〜、無期限） | カード単位ファイル1枚=1カードの価格推移（`oracle-history/{oracle_id}.ndjson.gz`・`print-history/{scryfall_id}.ndjson.gz`）。月次バルクファイルはバッチ集計専用 |
 
-全プリンティングを無期限に日次追跡すると年間3,000万〜4,000万行規模になりSupabaseの容量を圧迫するため、以下の方針で運用する（詳細は`schema.sql` 8章）。
+Postgresのテーブル構成自体（`card_oracles`/`card_prints`/`sets`/`tournaments`/`archetypes`/`decks`/`deck_cards`/`card_usage_stats`/`trending_scores`/`card_streaks`/`pack_slot_*`/`users`/`favorite_cards`/`price_alerts`等）は当初計画とおおむね一致している。変わったのは**価格の時系列データの置き場所**のみ。
 
-- **価格追跡の対象を絞る**：`card_price_snapshots`は各oracle_idの代表プリントと日本語版プリント（存在する場合）のみ対象とし、ショーケース等の亜種プリントは追跡しない
-- **日次→週次→月次の3段階で解像度を落とす**：価格チャートの期間切替の具体的な日数は未定だが、直近1ヶ月分の生データがあれば当面の表示要件は満たせるため、直近30日は`card_price_snapshots`に日次、30日〜365日は`card_price_snapshots_weekly`に週次、365日超は`card_price_snapshots_monthly`に月次（無期限保持）で集約する。週次だけを無期限保持すると数年で再び容量を圧迫するため、1年より古いデータはさらに月次（週次の約4分の1のペース）に丸めて増加を抑える。引き換えに1年より前の価格は月次の粒度でしか見られなくなる
-- **集計テーブルは短期のみ保持**：`card_usage_stats`/`trending_scores`は30日、`archetype_price_stats`は90日で削除（いずれも「現在の状態」表示が主目的で長期履歴は不要なため）
-- `sealed_price_snapshots`・`language_premium_stats`は母数が小さいため対象外（ロールアップ不要）
+### データ保持ポリシー
 
-この削除・ロールアップ処理は、まだ未確定のスクレイピング/集計バッチのスケジュールが決まり次第、日次バッチ（週次ロールアップは週1回、月次ロールアップは月1回の別ジョブ）に組み込む。
+- **Postgresは「今の価格」の1行キャッシュのみ**：`card_current_prices`（オラクル単位）・`card_print_current_prices`（プリント単位）は日次で上書きするだけなので、日数が経っても行数が増えない
+- **時系列の全履歴はR2で無期限保持**：日次バッチが当日分をR2のカード単位ファイルへ追記していく。行数でなくリクエスト回数で課金されるため、全カード×2024-02〜の履歴を無期限に持っても無料枠（storage 10GB、書き込み100万リクエスト/月、読み取り1,000万リクエスト/月）に収まる
+- **集計テーブルは短期のみ保持**：`card_usage_stats`は60日、`trending_scores`は前日比分のみで自動削除
+- **旧設計の名残（廃止済み・間引き中）**：`card_print_prices`（プリント単位JSONB全履歴）・`card_cheapest_price_snapshots`（オラクル単位の日次スナップショット）は新規書き込みを停止済み。前者は既存データをR2へ吸い出しながら間引いており（`scripts/archive-old-print-prices.mjs`）、完了後はテーブルごと削除してよい。後者は既に空
 
 ### 設計上の重要な判断
 
 - **oracle_id単位とscryfall_id単位を明確に分離**：同一カードの複数プリントを束ねるため
-- **価格履歴はoracle_id + series（en/ja）単位で記録し、scryfall_idはキーにしない**：`card_price_snapshots`をscryfall_id（プリント単位）でキーにすると、再録で代表プリントが切り替わるたびに新しいプリントの行として履歴がゼロから始まってしまう。oracle_id + series（'en'/'ja'）を主キーにすることで、代表プリントが変わっても同じ系列として価格チャートの履歴が連続する。scryfall_idは「その日実際に価格を取得したプリントがどれだったか」の監査用カラムとして保持するのみ
-- **デッキ価格の鮮度問題**：`decks.total_price_jpy_est`は取り込み時点の参考値に留め、ランキング集計は`deck_cards × 当日のcard_price_snapshots`で毎回再計算する
+- **価格履歴はoracle_id単位で「その日の全プリント中最安値」を記録し、scryfall_idは監査用カラム**：オラクル単位の価格系列は、当初計画の「en/ja seriesごとに記録」ではなく「その日どのプリントが最安だったか」をscryfall_id列に持つ形に変わった。再録で最安プリントが入れ替わっても同じオラクルの系列として価格チャートの履歴が連続する
+- **デッキ未使用カードもカタログとして持つ**：当初計画には無かった要件。デッキで一度も使われていないカードも検索・詳細ページの対象にするため、Postgres未収録分をD1に別途持たせている
+- **デッキ価格の鮮度問題**：ランキング集計は`deck_cards`×当日の現在価格キャッシュで毎回再計算する
 - **価格nullのフォールバック**：低流動性カード（Reserved List等）で価格がnullになった場合、直近の非null値を繰り越す
 - **日本語名の更新ルール**：`card_oracles.printed_name_ja`は「日本語版プリントのうち発売日が最新のもの」を採用（エラッタ改名対応）
-- **言語プレミアム**：新規外部データソース不要。既存のcard_price_snapshotsの'en'系列と'ja'系列を突き合わせるだけで、EN版とJP版が両方独自のUSD価格を持つカードに限り計算可能
+
+### 経緯（なぜPostgres一本から3層構成に変わったか）
+
+1. 当初計画通りPostgresに日次価格履歴（JSONB）を書き続けた結果、無料枠500MBを圧迫。「今の価格」1行キャッシュ＋日次履歴は別ストレージ、という形に再設計
+2. 日次履歴の移設先に最初はCloudflare D1を選んだが、D1無料枠の**日次リクエスト数上限**（読み取り500万行/日・書き込み10万行/日）に達し、ランキング/価格推移グラフ表示のたびにこの上限を超過する事態に
+3. リクエスト回数課金のCloudflare R2へ全面移行。ただし保存形式（月次バルクファイルを毎回全部読む設計）がCloudflare Workers無料枠のCPU時間制限（10ms/リクエスト）に抵触するリスクがあったため、1カード=1ファイルの単位に再設計して決着
 
 ---
 

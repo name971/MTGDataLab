@@ -19,16 +19,13 @@ jobs:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
       TOPDECK_API_KEY: ${{ secrets.TOPDECK_API_KEY }}
-      # ml/snapshot_catalog_prices_daily.pyがD1（catalog_oracles、デッキ未使用カードの
-      # scryfall_id→oracle_id対応）をHTTP API経由で読むために必要。価格履歴アーカイブ自体は
-      # 今はD1ではなくR2（下記）なので、snapshot-print-prices.mjs/compute-cheapest-price-
-      # snapshots.mjsはもうこれを使わない。
+      # scripts/snapshot-catalog-prices.mjsがD1（catalog_prints、デッキ未使用カードの
+      # scryfall_id→oracle_id対応）をHTTP API経由で読むために必要。
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      # 価格履歴アーカイブ（scripts/lib/r2PriceArchive.mjs、月次バルク＋カード単位ファイル）と
-      # ml/fetch_tcgcsv_history.py/snapshot_catalog_prices_daily.py（全カード長期価格履歴、
-      # デッキ未使用カード含む）が読み書きするために必要。D1無料枠の日次読み書き行数上限に
-      # 達したため、価格履歴はD1からR2へ全面移行した。
+      # 価格履歴アーカイブ（scripts/lib/r2PriceArchive.mjs、月次バルク＋カード単位ファイル、
+      # デッキ未使用カード含む全カードの長期価格履歴）が読み書きするために必要。D1無料枠の
+      # 日次読み書き行数上限に達したため、価格履歴はD1からR2へ全面移行した。
       R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -40,10 +37,6 @@ jobs:
         with:
           node-version: 22
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
       # ランナー同梱のnpmはlockfileVersion 3のoptionalDependencies同期チェックが
       # 甘く、実際には存在するのに"missing from lock file"と誤検知することがあるため、
       # ローカル開発環境と揃えて最新版に上げてからnpm ciする。
@@ -52,9 +45,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Install Python dependencies
-        run: pip install -r ml/requirements.txt
 
       # card_price_snapshots（代表プリント単体の日次価格）はgetPriceHistoryForCard/
       # getLatestPriceSnapshotの参照元をcard_cheapest_price_snapshots（全プリント横断の最安値）に
@@ -72,14 +62,15 @@ jobs:
       - name: Compute cheapest-print-price snapshots
         run: node scripts/compute-cheapest-price-snapshots.mjs
 
-      # デッキ未使用カード（card_prints/catalog_oraclesの代表プリント以外は追跡対象外）を
-      # 含む全カードの当日分価格を、TCGCSV経由でR2へ追記する（ml/fetch_tcgcsv_history.py参照）。
-      # 上のsnapshot-print-prices.mjs/compute-cheapest-price-snapshots.mjsはScryfallの価格を
-      # 対象カードのみR2へ書くのに対し、こちらはTCGCSVソースで全カタログを対象にする。
+      # デッキ未使用カード（catalog_oracles/catalog_prints、card_printsの追跡対象外）の当日分価格を
+      # R2へ追記する。以前はTCGCSVを別データソースとして使っていたが、Scryfall bulk data
+      # （上のsnapshot-print-prices.mjsが既にダウンロード・キャッシュ済み）が事実上「全カード」の
+      # 価格を持っているため、デッキ未使用カードだけ別ソースを使う理由が無かった。1つのデータ
+      # ソースに寄せてTCGCSV/py7zr/boto3への依存を日次パイプラインから外した。
       # 他ステップの成否に関わらず進める。
-      - name: Snapshot all-card prices to R2 (TCGCSV)
+      - name: Snapshot catalog-only card prices to R2 (Scryfall bulk)
         continue-on-error: true
-        run: python ml/snapshot_catalog_prices_daily.py
+        run: node scripts/snapshot-catalog-prices.mjs
 
       # パックEV: パック単品の実勢価格（TCGCSV）はレート制限を気にせず取得できる別ソースなので
       # 他ステップの成否に関わらず進める。片方が失敗してもEVページ側でフォールバックする。
