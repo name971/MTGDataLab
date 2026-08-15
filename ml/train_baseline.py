@@ -34,8 +34,13 @@ class FoldResult:
 
 def _pick_window_days(available_days: int) -> tuple[int, int, int]:
     """データ量に応じて (train_days, test_days, step_days) を決める。
-    半年（約180日）以上あれば指示書に近い比率（train:test = 8:1）を使い、
-    それ未満なら手元のデータで最低限フォールドが作れるだけの窓に縮める。"""
+    2026-08-15のR2移行で価格履歴が2024-02〜の約2.5年分（900日超）に拡大したため、
+    指示書の想定（2年訓練/3ヶ月テスト）に近い窓を使えるようになった
+    （docs/price-prediction-plan.md参照）。データが少なかった頃の縮小ロジック
+    （180日未満の分岐）は当面使われない見込みだが、将来別の理由でデータ期間が
+    短くなるケース（対象カードを絞った時等）に備えて残す。"""
+    if available_days >= 730:
+        return 540, 60, 60
     if available_days >= 180:
         return 120, 15, 15
     if available_days >= 60:

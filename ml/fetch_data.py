@@ -2,19 +2,18 @@
 価格予測モデルの学習データを組み立てる。
 
 データソース:
-  1. Cloudflare D1（自前の実データ、HTTP API経由）
-     - price_history_archive: オラクル単位・日付単位の最安値（USD/JPY）。
-       scripts/compute-cheapest-price-snapshots.mjsが日次で書き込む本番の日次履歴
-       （2026-07-25以降、最も信頼できる）。
-  2. Cloudflare R2（自前の長期履歴、ml/fetch_tcgcsv_history.py / snapshot_catalog_prices_daily.py
-     参照）
-     - price-history/*.ndjson.gz: TCGCSV由来の全カード・オラクル単位価格履歴（2024-02〜）。
-       D1の実データより古い日付だけを補完に使う（実データと重複する日付は実データ側を優先）。
-       以前はMTGJSONの直近90日ローリング分をその都度ダウンロードして補完していたが、
-       自前でR2に長期履歴を持つようになったため不要になった。
-  3. Supabase（自前の実データ、REST経由）
+  1. Cloudflare R2（自前の長期履歴、scripts/lib/r2PriceArchive.mjs参照）
+     - price-history/*.ndjson.gz: 全カード・オラクル単位価格履歴（2024-02〜今日まで
+       連続、TCGCSVバックフィル＋日次実データ、使用不可プリント除外済み）。
+       以前はCloudflare D1（price_history_archive）に日次実データを書いていたが、
+       2026-08-15にR2へ全面移行し、D1側は書き込みが完全に止まっている
+       （docs/spec.md 4章・docs/incident-log.md参照）。今はR2単独で完結する。
+  2. Supabase（自前の実データ、REST経由）
      - card_usage_stats: フォーマット別・日付別の採用率
      - card_oracles / cards: 静的属性（レアリティ・タイプ・マナコスト）
+  3. Cloudflare D1（catalog_oracles、デッキ未使用カードのカタログ、HTTP API経由）
+     - デッキで一度も使われていないためPostgresには無いオラクルの静的属性
+       （こちらは今も現役、価格アーカイブとは別物）
 
 本番のPostgres DB（無料枠500MB）には一切書き込まない。取得結果はml/data/配下に
 Parquetでキャッシュするのみ（再実行時の高速化・オフライン作業用）。
@@ -108,33 +107,6 @@ def d1_query(sql: str, params: list) -> list[dict]:
     return body["result"][0]["results"]
 
 
-def fetch_own_price_history() -> pd.DataFrame:
-    """price_history_archive（Cloudflare D1）: 自前の実価格履歴（最も信頼できるソース）。
-    scripts/compute-cheapest-price-snapshots.mjsが日次で書き込む本番データ。1回のHTTP
-    レスポンスが肥大化しないよう、日付単位でページングして取得する。"""
-    print("D1: price_history_archive を取得中...")
-    rows: list[dict] = []
-    offset = 0
-    d1_page_size = 50000
-    while True:
-        page = d1_query(
-            "SELECT oracle_id, date, jpy_est FROM price_history_archive "
-            "WHERE jpy_est IS NOT NULL ORDER BY date, oracle_id LIMIT ? OFFSET ?",
-            [d1_page_size, offset],
-        )
-        rows.extend(page)
-        if len(page) < d1_page_size:
-            break
-        offset += d1_page_size
-    df = pd.DataFrame(rows)
-    if df.empty:
-        return df
-    df["date"] = pd.to_datetime(df["date"])
-    df["jpy_est"] = df["jpy_est"].astype(float)
-    print(f"  {len(df)}行（{df['date'].min().date()}〜{df['date'].max().date()}）")
-    return df
-
-
 def fetch_supabase_usage_stats() -> pd.DataFrame:
     """card_usage_stats: 採用率（meta_shareの代理変数）。period_days=7のものだけ使う
     （compute-card-streaks.mjsと同じ考え方で、母数の入れ替わりが最も速いため）。"""
@@ -226,10 +198,12 @@ def r2_client():
 
 
 def fetch_r2_price_history() -> pd.DataFrame:
-    """R2（price-history/*.ndjson.gz、ml/fetch_tcgcsv_history.py参照）: 全カードのオラクル単位
-    価格履歴（2024-02〜、既にJPY換算済み）。D1の実データ期間（2026-07-25〜）より前を補う。
-    Parquetでなくgzip圧縮NDJSONにしている理由はfetch_tcgcsv_history.pyのsync_month_to_r2
-    docstring参照（Cloudflare Workers側のCPU時間制限の都合）。"""
+    """R2（price-history/*.ndjson.gz、scripts/lib/r2PriceArchive.mjs参照）: 全カードの
+    オラクル単位価格履歴（2024-02〜今日まで連続、既にJPY換算済み）。今はこれが唯一の
+    ソースで、D1との突き合わせ・優先順位付けは不要（ファイル内はscripts/lib/
+    r2PriceArchive.mjsのmergeCardFileが日付キー単位で既に重複排除済み）。
+    Parquetでなくgzip圧縮NDJSONにしている理由はscripts/lib/r2PriceArchive.mjsの
+    モジュールdocstring参照（Cloudflare Workers側のCPU時間制限の都合）。"""
     print("R2: price-history（長期履歴）を取得中...")
     s3 = r2_client()
     bucket = os.environ["R2_BUCKET_NAME"]
@@ -254,30 +228,16 @@ def fetch_r2_price_history() -> pd.DataFrame:
 def main() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    own_history = fetch_own_price_history()
-    r2_history = fetch_r2_price_history()
-
-    # 実データ（own_history、D1）にある日付はR2側より優先し、無い日付だけR2で補完する
-    # （収集タイミングの違いによる二重計上・誤差混入を避けるため）。
-    if not own_history.empty and not r2_history.empty:
-        own_keys = set(zip(own_history["oracle_id"], own_history["date"]))
-        r2_history = r2_history[
-            ~r2_history.apply(lambda r: (r["oracle_id"], r["date"]) in own_keys, axis=1)
-        ]
-
-    combined = pd.concat(
-        [own_history[["oracle_id", "date", "jpy_est"]], r2_history[["oracle_id", "date", "jpy_est"]]],
-        ignore_index=True,
-    ).drop_duplicates(subset=["oracle_id", "date"])
-    combined = combined.sort_values(["oracle_id", "date"])
+    price_history = fetch_r2_price_history()
+    price_history = price_history.sort_values(["oracle_id", "date"])
 
     print(
-        f"\n価格履歴マージ完了: {len(combined)}行、"
-        f"{combined['date'].min().date()}〜{combined['date'].max().date()}、"
-        f"{combined['oracle_id'].nunique()}オラクル"
+        f"\n価格履歴取得完了: {len(price_history)}行、"
+        f"{price_history['date'].min().date()}〜{price_history['date'].max().date()}、"
+        f"{price_history['oracle_id'].nunique()}オラクル"
     )
 
-    combined.to_parquet(DATA_DIR / "price_history.parquet", index=False)
+    price_history.to_parquet(DATA_DIR / "price_history.parquet", index=False)
     fetch_supabase_usage_stats().to_parquet(DATA_DIR / "usage_stats.parquet", index=False)
 
     static_attrs = pd.concat(
