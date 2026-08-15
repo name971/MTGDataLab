@@ -19,12 +19,16 @@ jobs:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
       TOPDECK_API_KEY: ${{ secrets.TOPDECK_API_KEY }}
-      # snapshot-print-prices.mjs / compute-cheapest-price-snapshots.mjsがwrangler d1経由で
-      # D1（価格履歴のアーカイブ先）に直接書き込むようになったため必要（DB容量超過対応の再設計）。
+      # ml/snapshot_catalog_prices_daily.pyがD1（catalog_oracles、デッキ未使用カードの
+      # scryfall_id→oracle_id対応）をHTTP API経由で読むために必要。価格履歴アーカイブ自体は
+      # 今はD1ではなくR2（下記）なので、snapshot-print-prices.mjs/compute-cheapest-price-
+      # snapshots.mjsはもうこれを使わない。
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      # ml/fetch_tcgcsv_history.py / snapshot_catalog_prices_daily.pyがR2（全カード長期価格履歴、
-      # デッキ未使用カード含む）へ読み書きするために必要。
+      # 価格履歴アーカイブ（scripts/lib/r2PriceArchive.mjs、月次バルク＋カード単位ファイル）と
+      # ml/fetch_tcgcsv_history.py/snapshot_catalog_prices_daily.py（全カード長期価格履歴、
+      # デッキ未使用カード含む）が読み書きするために必要。D1無料枠の日次読み書き行数上限に
+      # 達したため、価格履歴はD1からR2へ全面移行した。
       R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -68,9 +72,11 @@ jobs:
       - name: Compute cheapest-print-price snapshots
         run: node scripts/compute-cheapest-price-snapshots.mjs
 
-      # デッキ未使用カードを含む全カードの当日分価格をTCGCSV経由でR2へ追記する
-      # （ml/fetch_tcgcsv_history.py参照。D1は直近のみ・行数課金のため対象外にしていたカードも
-      # リクエスト課金のR2になら全部載せられる）。他ステップの成否に関わらず進める。
+      # デッキ未使用カード（card_prints/catalog_oraclesの代表プリント以外は追跡対象外）を
+      # 含む全カードの当日分価格を、TCGCSV経由でR2へ追記する（ml/fetch_tcgcsv_history.py参照）。
+      # 上のsnapshot-print-prices.mjs/compute-cheapest-price-snapshots.mjsはScryfallの価格を
+      # 対象カードのみR2へ書くのに対し、こちらはTCGCSVソースで全カタログを対象にする。
+      # 他ステップの成否に関わらず進める。
       - name: Snapshot all-card prices to R2 (TCGCSV)
         continue-on-error: true
         run: python ml/snapshot_catalog_prices_daily.py
@@ -163,9 +169,9 @@ jobs:
       - name: Compute trending scores
         run: node scripts/compute-trending-scores.mjs
 
-      # card_streaks（トップページ「継続注目カード」）はcard_cheapest_price_snapshots
-      # （このワークフロー前半）とcard_usage_stats（ひとつ上のステップ）の両方を必要とするため、
-      # 両方が終わった後の最後に置く。
+      # card_streaks（トップページ「継続注目カード」）はR2価格履歴（compute-cheapest-price-
+      # snapshots.mjsが書き込む、このワークフロー前半）とcard_usage_stats（ひとつ上のステップ）
+      # の両方を必要とするため、両方が終わった後の最後に置く。
       - name: Compute card streaks
         run: node scripts/compute-card-streaks.mjs
 
