@@ -149,7 +149,10 @@ async function main() {
   // 1ファイルにまとめて書いておく（src/lib/dbCardRanking.ts等が、オラクルごとに個別ファイルを
   // 読む代わりにこれを1回のGetObjectで読むことで、100件規模でもラウンドトリップが1回で済む
   // ようにする）。トレンドページ（src/lib/dbTrendingRanking.ts）が直近1/3/6日の推移一致を
-  // 見るため、3日前比の数値だけでなく直近7日分の系列も含める。
+  // 見るだけなので7日分で十分——連続上昇日数（compute-card-streaks.mjs）は、これとは別に
+  // 月次バルクファイルから直接必要な分だけ読む設計にした。ここを長くすると、サイト側
+  // （ランキングページ等）が毎リクエストで読むファイルが大きくなり、CPU時間制限の問題を
+  // 再現しかねない（docs/incident-log.md参照）。
   console.log("直近7日分の価格履歴を読み込んで変化率・系列を計算中...");
   const RECENT_SERIES_DAYS = 7;
   const pastDate = new Date(`${today}T00:00:00Z`);
