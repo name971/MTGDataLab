@@ -3,6 +3,11 @@ import { notFound } from "next/navigation";
 import { getCardDetailByOracleId, getCardDetailFromDb, type DbCardDetail } from "@/lib/cardData";
 import { getDecksByCardAndFormat } from "@/lib/dbDeckDetail";
 import { SAMPLE_CARD_SLUGS } from "@/lib/sampleCards";
+import { FORMATS, formatLabelJa, type Format } from "@/lib/formats";
+
+function formatLabelJaSafe(format: string): string {
+  return FORMATS.includes(format as Format) ? formatLabelJa(format as Format) : format;
+}
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -59,7 +64,7 @@ export default async function CardDecksPage({
           ← {cardName}に戻る
         </Link>
         <h1 className="mt-1 text-xl font-semibold">
-          {cardName}を使用したデッキ（{format}）
+          {cardName}を使用したデッキ（{formatLabelJaSafe(format)}）
         </h1>
       </div>
 

@@ -17,6 +17,8 @@
  * 例:   node scripts/import-tournaments.mjs Standard 14
  */
 
+import { createSupabaseRest } from "./lib/supabaseRest.mjs";
+
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const TOPDECK_API_KEY = process.env.TOPDECK_API_KEY;
@@ -35,43 +37,10 @@ const LAST_DAYS = parseInt(process.argv[3] ?? "14", 10);
 const FORMAT_ALIASES = { Commander: "EDH" };
 const TOPDECK_FORMAT = FORMAT_ALIASES[FORMAT] ?? FORMAT;
 
-async function supabaseUpsert(table, rows, conflictColumn) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?on_conflict=${conflictColumn}`, {
-    method: "POST",
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      "Content-Type": "application/json",
-      Prefer: "resolution=merge-duplicates,return=representation",
-    },
-    body: JSON.stringify(rows),
-  });
-  if (!res.ok) throw new Error(`${table} upsert failed: ${res.status} ${await res.text()}`);
-  return res.json();
-}
-
-async function supabaseGet(path) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
-  });
-  if (!res.ok) throw new Error(`GET ${path} failed: ${res.status} ${await res.text()}`);
-  return res.json();
-}
-
-async function supabaseInsert(table, rows) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
-    method: "POST",
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      "Content-Type": "application/json",
-      Prefer: "return=representation",
-    },
-    body: JSON.stringify(rows),
-  });
-  if (!res.ok) throw new Error(`${table} insert failed: ${res.status} ${await res.text()}`);
-  return res.json();
-}
+const db = createSupabaseRest({ url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY });
+const supabaseUpsert = (table, rows, conflictColumn) => db.upsert(table, rows, conflictColumn, { returnRows: true });
+const supabaseGet = (path) => db.get(path);
+const supabaseInsert = (table, rows) => db.insert(table, rows, { returnRows: true });
 
 function computeStanding(s) {
   return `${s.wins}-${s.losses}${s.draws ? `-${s.draws}` : ""}`;

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { FORMATS, formatSlug, type Format } from "@/lib/formats";
+import { FORMATS, formatSlug, formatLabelJa, type Format } from "@/lib/formats";
 import { getSampleArchetypes } from "@/lib/sampleDeckData";
 import { getFormatSettings } from "@/lib/formatSettings";
 import { getRecentDecksFromDb } from "@/lib/dbDeckDetail";
@@ -99,7 +99,7 @@ export default async function DeckRankingPage({
                 : "border-neutral-300 text-neutral-600 hover:border-neutral-500"
             }`}
           >
-            {f}
+            {formatLabelJa(f)}
           </Link>
         ))}
       </div>

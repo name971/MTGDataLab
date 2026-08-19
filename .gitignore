@@ -52,6 +52,11 @@ next-env.d.ts
 # （db/schema.sqlの運用メモ参照）なので、リポジトリにもコミットしない
 /ml/.venv/
 /ml/data/
+/ml/.cache/
+/ml/catboost_info/
 __pycache__/
 *.pyc
 scratch/
+
+# デバッグ時の一時ログ
+ssh_debug.log

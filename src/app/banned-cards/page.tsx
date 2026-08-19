@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { FORMATS, type Format } from "@/lib/formats";
+import { FORMATS, formatLabelJa, type Format } from "@/lib/formats";
 import { getBannedCardsByYear, type BannedCardWithCard } from "@/lib/dbBannedCards";
 
 export const metadata = { title: "歴代禁止カード - MTG DataLab" };
@@ -164,7 +164,7 @@ export default async function BannedCardsPage({
                   : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
               }`}
             >
-              {f}
+              {formatLabelJa(f)}
             </Link>
           ))}
         </div>

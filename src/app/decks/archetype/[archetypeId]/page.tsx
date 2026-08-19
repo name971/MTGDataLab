@@ -7,6 +7,11 @@ import {
   type RecentDeckSummary,
 } from "@/lib/dbDeckDetail";
 import DeckDetailView from "@/components/DeckDetailView";
+import { FORMATS, formatLabelJa, type Format } from "@/lib/formats";
+
+function formatLabelJaSafe(format: string): string {
+  return FORMATS.includes(format as Format) ? formatLabelJa(format as Format) : format;
+}
 
 // 集計バッチは1日1回しか回らないため、長めにキャッシュしてegressを抑える
 export const revalidate = 21600;
@@ -74,7 +79,7 @@ export default async function ArchetypeDetailPage({
       <div>
         <h1 className="text-xl font-semibold">{archetype.nameJa ?? archetype.nameEn}</h1>
         <p className="text-sm text-neutral-500">
-          {archetype.nameEn} ・ {archetype.format}
+          {archetype.nameEn} ・ {formatLabelJaSafe(archetype.format)}
         </p>
       </div>
 

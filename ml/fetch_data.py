@@ -112,13 +112,15 @@ def fetch_supabase_usage_stats() -> pd.DataFrame:
     （compute-card-streaks.mjsと同じ考え方で、母数の入れ替わりが最も速いため）。"""
     print("Supabase: card_usage_stats を取得中...")
     rows = supabase_get_all(
-        "card_usage_stats?select=oracle_id,format,usage_rate,calculated_at&period_days=eq.7"
+        "card_usage_stats?select=oracle_id,format,usage_rate,deck_sample_size,calculated_at"
+        "&period_days=eq.7"
     )
     df = pd.DataFrame(rows)
     if df.empty:
         return df
     df["calculated_at"] = pd.to_datetime(df["calculated_at"])
     df["usage_rate"] = df["usage_rate"].astype(float)
+    df["deck_sample_size"] = df["deck_sample_size"].astype(float)
     print(f"  {len(df)}行")
     return df
 
@@ -238,7 +240,27 @@ def main() -> None:
     )
 
     price_history.to_parquet(DATA_DIR / "price_history.parquet", index=False)
-    fetch_supabase_usage_stats().to_parquet(DATA_DIR / "usage_stats.parquet", index=False)
+
+    # card_usage_statsはSupabase側で直近60日分しか保持しないため、実行のたびに
+    # ここ（ローカルのusage_stats.parquet）へ差分マージして長期蓄積する。クラウドに
+    # 何も書き込まないので課金は発生しない（ml/README.md記載の通り、定期的に
+    # fetch_data.pyを実行し続けることが前提。実行しない期間があるとその分は
+    # 欠測のまま埋まらない）。
+    usage_stats = fetch_supabase_usage_stats()
+    usage_stats_path = DATA_DIR / "usage_stats.parquet"
+    if usage_stats_path.exists():
+        existing_usage_stats = pd.read_parquet(usage_stats_path)
+        usage_stats = pd.concat([existing_usage_stats, usage_stats], ignore_index=True)
+        usage_stats = usage_stats.drop_duplicates(
+            subset=["oracle_id", "format", "calculated_at"], keep="last"
+        )
+    print(
+        f"採用率アーカイブ: {len(usage_stats)}行"
+        f"（{usage_stats['calculated_at'].min().date()}〜{usage_stats['calculated_at'].max().date()}）"
+        if not usage_stats.empty
+        else "採用率アーカイブ: 0行"
+    )
+    usage_stats.to_parquet(usage_stats_path, index=False)
 
     static_attrs = pd.concat(
         [fetch_supabase_static_attrs(), fetch_d1_catalog_static_attrs()], ignore_index=True
