@@ -11,8 +11,8 @@ Supabaseの`card_price_predictions`テーブルに書き込む。
 グリッドサーチ（docs/price-prediction-plan.md 12-4章）で、閾値を緩めた方が
 実際のPrecision@Nが高かったことに合わせている。
 
-現時点では日次自動化はまだ組み込んでいない（採用率アーカイブのR2永続化が未完了、
-docs/price-prediction-plan.md参照）。このスクリプトは手動実行を想定。
+2026-08-21、.github/workflows/daily-data-pipeline.ymlに組み込み、日次自動実行になった
+（それまでは手動実行のみだった）。
 
 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... \
       python ml/predict_and_publish.py
