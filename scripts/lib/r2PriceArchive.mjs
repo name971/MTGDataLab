@@ -91,7 +91,10 @@ async function readNdjsonGz(key) {
     const rows = [];
     for (const line of text.split("\n")) {
       if (!line.trim()) continue;
-      rows.push(JSON.parse(line));
+      // 一部の書き込み元でJSON.stringify(NaN)相当の不正な"NaN"トークンが混入することがある
+      // （2026-08分で実際に発生、原因未特定）。JSON非準拠のためJSON.parseが失敗する箇所を
+      // nullへ寄せて読み進められるようにする（書き込み側の根本修正は別途必要）。
+      rows.push(JSON.parse(line.replace(/:\s*NaN\b/g, ": null")));
     }
     return rows;
   } catch (err) {
@@ -132,7 +135,7 @@ async function mergeMonthFile(prefix, month, newRows, idColumn) {
  * 1件失敗しても、数万件規模の処理全体を巻き込んで止めない。失敗した項目はログに出すだけで
  * 継続し、呼び出し元には失敗件数を返す（0件なら全件成功）。
  */
-async function runWithConcurrency(items, concurrency, fn) {
+export async function runWithConcurrency(items, concurrency, fn) {
   const queue = [...items];
   let failed = 0;
   async function worker() {
@@ -227,6 +230,25 @@ export async function mergePrintPriceRows(rows) {
   await mergeRowsGroupedByMonth(R2_PRINT_PRICE_PREFIX, rows, "scryfall_id");
   const cardCount = await mergeCardFiles(R2_PRINT_CARD_PREFIX, rows, "scryfall_id");
   console.log(`  R2（${R2_PRINT_CARD_PREFIX}）へカード単位で書き込み: ${cardCount}件`);
+}
+
+/**
+ * 月次ファイル側は既に正しい一方、カード単位ファイルだけが古い/欠けている場合の復旧用
+ * （2026-08-20、ml/fetch_tcgcsv_history.pyが月次ファイルにしか書いておらずカード単位
+ * ファイルが空のままだった問題、docs/incident-log.md参照）。月ごとに呼ぶ前提のため、
+ * guardAgainstRepeatedMergeCallsは適用しない。
+ */
+export async function readPrintPriceMonth(month) {
+  return readMonthFile(R2_PRINT_PRICE_PREFIX, month);
+}
+
+/**
+ * プリント単位ファイルを、GETによるマージをせず直接上書きする（呼び出し元が既に全期間分の
+ * 行を集約済みで、既存ファイルを読む必要が無い場合専用。通常はmergeCardFile相当を使うこと）。
+ */
+export async function writePrintCardFileDirect(scryfallId, rows) {
+  const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date));
+  await writeNdjsonGz(`${R2_PRINT_CARD_PREFIX}/${scryfallId}.ndjson.gz`, sorted);
 }
 
 async function mergeRowsGroupedByMonth(prefix, rows, idColumn) {
