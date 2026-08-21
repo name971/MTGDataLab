@@ -176,8 +176,26 @@ jobs:
       - name: Compute card streaks
         run: node scripts/compute-card-streaks.mjs
 
-      # TOPページ「注目カードランキング」（値上がり/値下がり予想）。card_price_predictionsを
-      # 全件入れ替えるだけの処理（モデル学習込みで数分程度）。他の集計が終わった後に置く
+      # card_usage_stats（Supabase）は直近60日分しか無く、価格予測モデルの学習には
+      # それでは足りない（TopDeck.gg由来の15ヶ月分アーカイブで的中率が明確に改善した実績、
+      # docs/price-prediction-plan.md参照）。日次では直近21日分だけTopDeckから再取得・
+      # 再計算し（7日ローリング窓の計算に7日分の余白を持たせるため21日）、
+      # R2（usage-history/）の長期アーカイブへ差分マージする。失敗しても前回分の
+      # アーカイブがそのまま使われるだけなので他ステップを止めない。
+      - name: Fetch recent tournament usage history (TopDeck.gg)
+        continue-on-error: true
+        run: node ml/fetch_tournament_history.mjs 21
+
+      - name: Build usage history from tournaments
+        continue-on-error: true
+        run: python ml/build_usage_history_from_tournaments.py
+
+      - name: Sync usage archive to R2
+        continue-on-error: true
+        run: python ml/sync_usage_archive_to_r2.py
+
+      # TOPページ「注目カードランキング」（値上がり/値下がり予想）。card_price_predictionsに
+      # 当日分を追加する処理（モデル学習込みで数分程度）。他の集計が終わった後に置く
       # （build_training_frameがcard_usage_stats/価格履歴を参照するため）。失敗しても
       # 前回分がそのまま表示され続けるだけなので他ステップを止めない。
       - name: Predict and publish ML card ranking
