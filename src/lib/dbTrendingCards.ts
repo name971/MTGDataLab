@@ -66,12 +66,17 @@ function pickForCategory(rows: StreakRow[], category: "price" | "usage") {
  * データがまだ無い場合は空配列を返す（呼び出し側でサンプルにフォールバックする想定）。
  */
 export async function getTrendingCardsFromDb(): Promise<TrendingCardData[]> {
-  const { data: latestRow } = await supabase
+  const { data: latestRow, error } = await supabase
     .from("card_streaks")
     .select("calculated_date")
     .order("calculated_date", { ascending: false })
     .limit(1)
     .maybeSingle();
+  // errorは「接続できない/クエリ失敗」、data無しは「まだデータが無いだけ」で意味が違う。
+  // 前者を後者と同じ空配列にして黙ってサンプルデータへフォールバックすると、DB障害中も
+  // 気づけない（2026-08-17のインシデントで発覚）。前者は呼び出し元（page.tsx）が
+  // メンテナンス表示を出せるよう例外にする。
+  if (error) throw new Error(`getTrendingCardsFromDb: ${error.message}`);
   if (!latestRow) return [];
 
   // card_streaksはある日、その日実際に連続上昇しているカード全件（数万件規模になりうる）を

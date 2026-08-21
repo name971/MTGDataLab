@@ -1,10 +1,10 @@
-import Link from "next/link";
-import { FORMATS, formatSlug } from "@/lib/formats";
 import TrendingCard, { type TrendingCardData } from "@/components/TrendingCard";
 import { applyDbPrices } from "@/lib/applyDbPrices";
 import { getTrendingCardsFromDb } from "@/lib/dbTrendingCards";
-import { getTrendingRankingFromDb } from "@/lib/dbTrendingRanking";
-import TrendingRankingList from "@/components/TrendingRankingList";
+import { getMlRankingFromDb } from "@/lib/dbMlRanking";
+import MlRankingList from "@/components/MlRankingList";
+import InfoTooltip from "@/components/InfoTooltip";
+import MaintenanceBanner from "@/components/MaintenanceBanner";
 
 // 集計バッチは1日1回しか回らないため、鮮度より egress 削減を優先して長めにキャッシュする（ISR）
 export const revalidate = 3600;
@@ -62,45 +62,55 @@ const SAMPLE_TRENDING_CARDS: TrendingCardData[] = [
 ];
 
 export default async function TopPage() {
-  const [dbTrendingCards, trendingRanking] = await Promise.all([
-    getTrendingCardsFromDb(),
-    getTrendingRankingFromDb(),
-  ]);
-  const trendingCards =
-    dbTrendingCards.length > 0 ? dbTrendingCards : await applyDbPrices(SAMPLE_TRENDING_CARDS);
+  // DB接続そのものが失敗した場合（データがまだ無いだけの場合と区別、dbTrendingCards.ts参照）は
+  // サンプルデータへ黙ってフォールバックせず、メンテナンス中であることを表示する
+  // （2026-08-17、DB障害中もサイトが正常に見えてしまっていたインシデントの再発防止）。
+  let dbTrendingCards: TrendingCardData[] = [];
+  let mlRankingUp: Awaited<ReturnType<typeof getMlRankingFromDb>> = [];
+  let mlRankingDown: Awaited<ReturnType<typeof getMlRankingFromDb>> = [];
+  let dbDown = false;
+  try {
+    [dbTrendingCards, mlRankingUp, mlRankingDown] = await Promise.all([
+      getTrendingCardsFromDb(),
+      getMlRankingFromDb("up"),
+      getMlRankingFromDb("down"),
+    ]);
+  } catch {
+    dbDown = true;
+  }
+  // dbDown中はサンプルへのフォールバックもしない（本物のデータのように見えてしまうため）。
+  // フォールバックが必要なのは「DBは生きているがまだデータが溜まっていない」ケースのみ。
+  const trendingCards = dbDown
+    ? []
+    : dbTrendingCards.length > 0
+      ? dbTrendingCards
+      : await applyDbPrices(SAMPLE_TRENDING_CARDS);
 
   return (
     <div className="flex flex-col gap-10">
-      <section>
-        <h2 className="mb-3 text-sm font-medium text-neutral-500">継続注目カード</h2>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {trendingCards.map((card) => (
-            <TrendingCard key={card.oracleId} card={card} />
-          ))}
-        </div>
-      </section>
+      {dbDown && <MaintenanceBanner />}
 
-      {trendingRanking.length > 0 && (
+      {trendingCards.length > 0 && (
         <section>
-          <h2 className="mb-3 text-sm font-medium text-neutral-500">注目カードランキング</h2>
-          <TrendingRankingList rows={trendingRanking} />
+          <h2 className="mb-3 text-sm font-medium text-neutral-500">継続注目カード</h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {trendingCards.map((card) => (
+              <TrendingCard key={card.oracleId} card={card} />
+            ))}
+          </div>
         </section>
       )}
 
-      <section>
-        <h2 className="mb-3 text-sm font-medium text-neutral-500">フォーマットランキング</h2>
-        <div className="flex flex-wrap gap-2">
-          {FORMATS.map((format) => (
-            <Link
-              key={format}
-              href={`/rankings/${formatSlug(format)}`}
-              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:border-neutral-500"
-            >
-              {format}
-            </Link>
-          ))}
-        </div>
-      </section>
+      {(mlRankingUp.length > 0 || mlRankingDown.length > 0) && (
+        <section>
+          <h2 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-neutral-500">
+            注目カードランキング
+            <InfoTooltip text="7日以内に一定以上値上がり・値下がりする確率を機械学習モデルで予測し、確率が高い順に並べています（トーナメントで使用実績のあるカードが対象）。過去のTop10的中率: 急騰予想は約73%、急落予想は約95%。" />
+          </h2>
+          <MlRankingList up={mlRankingUp} down={mlRankingDown} />
+        </section>
+      )}
+
     </div>
   );
 }

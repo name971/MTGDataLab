@@ -112,13 +112,15 @@ def fetch_supabase_usage_stats() -> pd.DataFrame:
     （compute-card-streaks.mjsと同じ考え方で、母数の入れ替わりが最も速いため）。"""
     print("Supabase: card_usage_stats を取得中...")
     rows = supabase_get_all(
-        "card_usage_stats?select=oracle_id,format,usage_rate,calculated_at&period_days=eq.7"
+        "card_usage_stats?select=oracle_id,format,usage_rate,deck_sample_size,calculated_at"
+        "&period_days=eq.7"
     )
     df = pd.DataFrame(rows)
     if df.empty:
         return df
     df["calculated_at"] = pd.to_datetime(df["calculated_at"])
     df["usage_rate"] = df["usage_rate"].astype(float)
+    df["deck_sample_size"] = df["deck_sample_size"].astype(float)
     print(f"  {len(df)}行")
     return df
 
@@ -225,6 +227,36 @@ def fetch_r2_price_history() -> pd.DataFrame:
     return df
 
 
+def fetch_r2_usage_history() -> pd.DataFrame:
+    """R2（usage-history/*.ndjson.gz、ml/sync_usage_archive_to_r2.py参照）: 長期の採用率
+    アーカイブ。card_usage_stats（Supabase）は直近60日分しか保持しないため、GitHub Actions
+    の毎回まっさらなランナーでも15ヶ月規模の学習データを再現できるよう、価格履歴
+    （fetch_r2_price_history）と同じ設計でR2に永続化している
+    （docs/price-prediction-plan.md 5章「自動化パイプラインの実行可能性チェック」参照）。
+    月次バルクファイルのみで、価格アーカイブにあるカード単位ファイル層は無い
+    （学習専用データでCloudflare WorkersのCPU時間制限を気にする必要が無いため）。"""
+    print("R2: usage-history（長期採用率アーカイブ）を取得中...")
+    s3 = r2_client()
+    bucket = os.environ["R2_BUCKET_NAME"]
+    records = []
+    paginator = s3.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=bucket, Prefix="usage-history/"):
+        for obj in page.get("Contents", []):
+            if not obj["Key"].endswith(".ndjson.gz"):
+                continue
+            body = s3.get_object(Bucket=bucket, Key=obj["Key"])["Body"].read()
+            with gzip.GzipFile(fileobj=io.BytesIO(body)) as gz:
+                records.extend(json.loads(line) for line in gz if line.strip())
+    if not records:
+        return pd.DataFrame(columns=["oracle_id", "format", "usage_rate", "deck_sample_size", "calculated_at"])
+    df = pd.DataFrame(records)
+    df["calculated_at"] = pd.to_datetime(df["calculated_at"])
+    df["usage_rate"] = df["usage_rate"].astype(float)
+    df["deck_sample_size"] = df["deck_sample_size"].astype(float)
+    print(f"  {len(df)}行（{df['calculated_at'].min().date()}〜{df['calculated_at'].max().date()}）")
+    return df
+
+
 def main() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -238,7 +270,27 @@ def main() -> None:
     )
 
     price_history.to_parquet(DATA_DIR / "price_history.parquet", index=False)
-    fetch_supabase_usage_stats().to_parquet(DATA_DIR / "usage_stats.parquet", index=False)
+
+    # card_usage_statsはSupabase側で直近60日分しか保持しないため、長期の採用率アーカイブは
+    # R2（usage-history/、fetch_r2_usage_history参照）を土台にする。GitHub Actionsの
+    # 毎回まっさらなランナーでも15ヶ月規模の学習データを再現できる（2026-08-21、
+    # docs/price-prediction-plan.md 5章の未着手事項に対応）。ローカルのusage_stats.parquetが
+    # あればさらに上乗せでマージする（ml/sync_usage_archive_to_r2.pyでR2へ反映する前の
+    # ローカル限定の最新データを取りこぼさないため）。
+    usage_stats = fetch_r2_usage_history()
+    usage_stats_path = DATA_DIR / "usage_stats.parquet"
+    if usage_stats_path.exists():
+        local_usage_stats = pd.read_parquet(usage_stats_path)
+        usage_stats = pd.concat([usage_stats, local_usage_stats], ignore_index=True)
+    usage_stats = pd.concat([usage_stats, fetch_supabase_usage_stats()], ignore_index=True)
+    usage_stats = usage_stats.drop_duplicates(subset=["oracle_id", "format", "calculated_at"], keep="last")
+    print(
+        f"採用率アーカイブ: {len(usage_stats)}行"
+        f"（{usage_stats['calculated_at'].min().date()}〜{usage_stats['calculated_at'].max().date()}）"
+        if not usage_stats.empty
+        else "採用率アーカイブ: 0行"
+    )
+    usage_stats.to_parquet(usage_stats_path, index=False)
 
     static_attrs = pd.concat(
         [fetch_supabase_static_attrs(), fetch_d1_catalog_static_attrs()], ignore_index=True

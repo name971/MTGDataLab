@@ -16,9 +16,31 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 
-from features import FEATURE_COLUMNS, TARGET_COLUMN, build_training_frame
+from features import FEATURE_COLUMNS, SEGMENTS, TARGET_COLUMN, build_training_frame
 
 RANDOM_SEED = 42
+
+# 中央値（alpha=0.5）に加えて下側/上側の分位点も学習し、予測区間（確信度）を出す。
+QUANTILE_ALPHAS = (0.1, 0.5, 0.9)
+
+
+def _fit_quantile_model(train_df: pd.DataFrame, alpha: float) -> lgb.LGBMRegressor:
+    model = lgb.LGBMRegressor(
+        objective="quantile",
+        alpha=alpha,
+        random_state=RANDOM_SEED,
+        n_estimators=200,
+        num_leaves=31,
+        min_child_samples=20,
+        verbose=-1,
+    )
+    model.fit(train_df[FEATURE_COLUMNS], train_df[TARGET_COLUMN])
+    return model
+
+# Winsorizing（学習データの目的変数を上下1%でクリップ）は試したが逆効果だった
+# （2026-08-16、docs/price-prediction-plan.md参照）。禁止改定等の急変動は再現性の
+# 無いノイズではなく、is_banned/reprint_count等の特徴量で学習すべき実信号だったため、
+# クリップするとテスト側の急変動をむしろ外しやすくなった。
 
 
 @dataclass
@@ -30,6 +52,11 @@ class FoldResult:
     mae: float
     rmse: float
     directional_accuracy: float
+    # 実測値がpred_0.1〜pred_0.9の区間に収まった割合。alpha=0.1/0.9で学習していれば
+    # 理論上80%に近づくはず（区間のキャリブレーションが取れているかの確認用）。
+    interval_coverage: float
+    # 区間の平均幅（対数リターン）。狭いほどモデルが自信を持っている。
+    mean_interval_width: float
 
 
 def _pick_window_days(available_days: int) -> tuple[int, int, int]:
@@ -88,23 +115,24 @@ def train_and_evaluate_fold(
         # サンプル数が少なすぎるフォールドは学習が不安定になるためスキップする
         return None
 
-    model = lgb.LGBMRegressor(
-        objective="quantile",
-        alpha=0.5,
-        random_state=RANDOM_SEED,
-        n_estimators=200,
-        num_leaves=31,
-        min_child_samples=20,
-        verbose=-1,
-    )
-    model.fit(train_df[FEATURE_COLUMNS], train_df[TARGET_COLUMN])
+    model_low = _fit_quantile_model(train_df, 0.1)
+    model_mid = _fit_quantile_model(train_df, 0.5)
+    model_high = _fit_quantile_model(train_df, 0.9)
 
-    pred = model.predict(test_df[FEATURE_COLUMNS])
+    pred = model_mid.predict(test_df[FEATURE_COLUMNS])
+    pred_low = model_low.predict(test_df[FEATURE_COLUMNS])
+    pred_high = model_high.predict(test_df[FEATURE_COLUMNS])
+    # 分位点モデルは独立に学習しているため、まれにlow > mid > highの交差が起こりうる。
+    # 単調性を保証する（quantile crossing対策）。
+    pred_low = np.minimum(pred_low, pred)
+    pred_high = np.maximum(pred_high, pred)
     actual = test_df[TARGET_COLUMN].to_numpy()
 
     mae = float(np.mean(np.abs(pred - actual)))
     rmse = float(np.sqrt(np.mean((pred - actual) ** 2)))
     directional_accuracy = float(np.mean(np.sign(pred) == np.sign(actual)))
+    interval_coverage = float(np.mean((actual >= pred_low) & (actual <= pred_high)))
+    mean_interval_width = float(np.mean(pred_high - pred_low))
 
     return FoldResult(
         test_start=train_end,
@@ -114,6 +142,8 @@ def train_and_evaluate_fold(
         mae=mae,
         rmse=rmse,
         directional_accuracy=directional_accuracy,
+        interval_coverage=interval_coverage,
+        mean_interval_width=mean_interval_width,
     )
 
 
@@ -125,16 +155,9 @@ def print_top_movers(frame: pd.DataFrame, static_attrs_by_oracle: pd.DataFrame) 
         print("目的変数が計算できる行が無いため、Top10予測はスキップします。")
         return
 
-    model = lgb.LGBMRegressor(
-        objective="quantile",
-        alpha=0.5,
-        random_state=RANDOM_SEED,
-        n_estimators=200,
-        num_leaves=31,
-        min_child_samples=20,
-        verbose=-1,
-    )
-    model.fit(labeled[FEATURE_COLUMNS], labeled[TARGET_COLUMN])
+    model_low = _fit_quantile_model(labeled, 0.1)
+    model_mid = _fit_quantile_model(labeled, 0.5)
+    model_high = _fit_quantile_model(labeled, 0.9)
 
     latest_date = frame["date"].max()
     # return_30d等、まだ十分な日数が無く恒常的にNaNになる特徴量もある。LightGBMは欠損値を
@@ -146,34 +169,47 @@ def print_top_movers(frame: pd.DataFrame, static_attrs_by_oracle: pd.DataFrame) 
         return
 
     latest = latest.copy()
-    latest["predicted_log_return_7d"] = model.predict(latest[FEATURE_COLUMNS])
-    top10 = latest.sort_values("predicted_log_return_7d", ascending=False).head(10)
+    latest["pred_low"] = np.minimum(model_low.predict(latest[FEATURE_COLUMNS]), model_mid.predict(latest[FEATURE_COLUMNS]))
+    latest["predicted_log_return_7d"] = model_mid.predict(latest[FEATURE_COLUMNS])
+    latest["pred_high"] = np.maximum(model_high.predict(latest[FEATURE_COLUMNS]), latest["predicted_log_return_7d"])
+    latest["interval_width"] = latest["pred_high"] - latest["pred_low"]
 
-    print(f"\n=== {latest_date.date()} 時点: 今後1週間の予測上昇率トップ10 ===")
+    top10 = latest.sort_values("predicted_log_return_7d", ascending=False).head(10)
+    print(f"\n=== {latest_date.date()} 時点: 今後1週間の予測上昇率トップ10（中央値ベース） ===")
     for _, row in top10.iterrows():
         pct = (np.exp(row["predicted_log_return_7d"]) - 1) * 100
-        print(f"  {row['oracle_id']}: 予測変化率 {pct:+.1f}%（現在価格 {row['jpy_est']:.0f}円）")
+        pct_low = (np.exp(row["pred_low"]) - 1) * 100
+        pct_high = (np.exp(row["pred_high"]) - 1) * 100
+        print(f"  {row['oracle_id']}: {pct:+.1f}%（80%区間 {pct_low:+.1f}%〜{pct_high:+.1f}%、現在価格 {row['jpy_est']:.0f}円）")
+
+    # 確信度フィルター: 中央値が上位20%、かつ区間幅も狭い方から選ぶ（DeepSeek提案の運用イメージ）
+    strong_up = latest[latest["predicted_log_return_7d"] >= latest["predicted_log_return_7d"].quantile(0.8)]
+    confident_picks = strong_up.sort_values("interval_width").head(10)
+    print(f"\n=== 確信度フィルター（予測上位20%のうち区間幅が狭い順トップ10） ===")
+    for _, row in confident_picks.iterrows():
+        pct = (np.exp(row["predicted_log_return_7d"]) - 1) * 100
+        pct_low = (np.exp(row["pred_low"]) - 1) * 100
+        pct_high = (np.exp(row["pred_high"]) - 1) * 100
+        print(f"  {row['oracle_id']}: {pct:+.1f}%（80%区間 {pct_low:+.1f}%〜{pct_high:+.1f}%、現在価格 {row['jpy_est']:.0f}円）")
 
 
-def main() -> None:
+def run_segment(segment: str) -> None:
+    print(f"\n{'='*20} セグメント: {segment} {'='*20}")
     print("特徴量データフレームを構築中...")
-    frame = build_training_frame()
+    frame = build_training_frame(segment)
     # log_return_7d はshift(-7)で計算しているため、直近7日分の行は目的変数が欠損する
     # （まだ7日後が来ていないため）。ウォークフォワードの窓は「目的変数が計算できる
     # 日付範囲」だけで組む（そうしないと終盤のフォールドがサンプル0件になる）。
     labeled_dates = frame.loc[frame[TARGET_COLUMN].notna(), "date"]
     dates = pd.DatetimeIndex(labeled_dates.unique()).sort_values()
     if len(dates) < 10:
-        raise SystemExit(
-            f"日付のバリエーションが{len(dates)}日しかなく、評価不可能です。"
-            "ml/fetch_data.py を先に実行してデータを揃えてください。"
-        )
+        print(f"日付のバリエーションが{len(dates)}日しかなく、評価不可能です。スキップします。")
+        return
 
     folds = walk_forward_folds(dates)
     if not folds:
-        raise SystemExit(
-            "有効なフォールドを1つも作れませんでした。データ期間が短すぎる可能性があります。"
-        )
+        print("有効なフォールドを1つも作れませんでした。スキップします。")
+        return
 
     results = []
     for train_start, train_end, test_end in folds:
@@ -184,19 +220,29 @@ def main() -> None:
                 f"  fold [{result.test_start.date()}〜{result.test_end.date()}): "
                 f"train={result.n_train} test={result.n_test} "
                 f"MAE={result.mae:.4f} RMSE={result.rmse:.4f} "
-                f"方向的中率={result.directional_accuracy:.1%}"
+                f"方向的中率={result.directional_accuracy:.1%} "
+                f"区間カバレッジ={result.interval_coverage:.1%} "
+                f"区間幅={result.mean_interval_width:.4f}"
             )
 
     if not results:
-        raise SystemExit("全フォールドでサンプル数不足のため評価できませんでした。")
+        print("全フォールドでサンプル数不足のため評価できませんでした。")
+        return
 
-    print("\n=== 全フォールド平均 ===")
+    print(f"\n=== {segment} 全フォールド平均 ===")
     print(f"MAE: {np.mean([r.mae for r in results]):.4f}")
     print(f"RMSE: {np.mean([r.rmse for r in results]):.4f}")
     print(f"方向的中率: {np.mean([r.directional_accuracy for r in results]):.1%}")
+    print(f"区間カバレッジ（alpha=0.1〜0.9、理想は80%前後）: {np.mean([r.interval_coverage for r in results]):.1%}")
+    print(f"平均区間幅（対数リターン）: {np.mean([r.mean_interval_width for r in results]):.4f}")
     print(f"フォールド数: {len(results)}")
 
     print_top_movers(frame, frame)
+
+
+def main() -> None:
+    for segment in SEGMENTS:
+        run_segment(segment)
 
 
 if __name__ == "__main__":

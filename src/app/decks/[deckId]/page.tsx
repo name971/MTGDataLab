@@ -2,6 +2,11 @@ import { notFound } from "next/navigation";
 import { getSampleDeckDetail } from "@/lib/sampleDeckDetail";
 import { getDeckDetailFromDb } from "@/lib/dbDeckDetail";
 import DeckDetailView, { type DeckCardDisplay } from "@/components/DeckDetailView";
+import { FORMATS, formatLabelJa, type Format } from "@/lib/formats";
+
+function formatLabelJaSafe(format: string): string {
+  return FORMATS.includes(format as Format) ? formatLabelJa(format as Format) : format;
+}
 
 // 過去のトーナメント戦績デッキは内容が変わらないため、長めにキャッシュしてegressを抑える
 export const revalidate = 86400;
@@ -27,7 +32,7 @@ async function resolveDeck(deckId: string): Promise<PageDeck | null> {
       const dateLabel = dbDeck.eventDate ? formatDateShort(dbDeck.eventDate) : null;
       return {
         title: `${dbDeck.playerName} のデッキ`,
-        subtitle: [dbDeck.format, dbDeck.eventName, dbDeck.standing, dateLabel]
+        subtitle: [formatLabelJaSafe(dbDeck.format), dbDeck.eventName, dbDeck.standing, dateLabel]
           .filter(Boolean)
           .join(" ・ "),
         cards: dbDeck.cards,

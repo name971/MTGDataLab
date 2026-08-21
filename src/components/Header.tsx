@@ -1,6 +1,7 @@
 import Link from "next/link";
 import NavLinks from "./NavLinks";
 import SearchBar from "./SearchBar";
+import AuthButton from "./AuthButton";
 
 export default function Header() {
   return (
@@ -11,6 +12,7 @@ export default function Header() {
         </Link>
         <NavLinks />
         <SearchBar />
+        <AuthButton />
       </div>
     </header>
   );

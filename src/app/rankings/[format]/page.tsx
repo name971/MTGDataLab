@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { FORMATS, formatSlug, type Format } from "@/lib/formats";
+import { FORMATS, formatSlug, formatLabelJa, type Format } from "@/lib/formats";
 import { getFormatSettings } from "@/lib/formatSettings";
 import { getCardRankingFromDb } from "@/lib/dbCardRanking";
 import RankingTable from "@/components/RankingTable";
@@ -27,7 +27,7 @@ export async function generateMetadata({
 }) {
   const { format: slug } = await params;
   const format = resolveFormat(slug);
-  return { title: format ? `${format} カードランキング - MTG DataLab` : "MTG DataLab" };
+  return { title: format ? `${formatLabelJa(format)} カードランキング - MTG DataLab` : "MTG DataLab" };
 }
 
 export default async function FormatRankingPage({
@@ -62,7 +62,7 @@ export default async function FormatRankingPage({
                 : "border-neutral-300 text-neutral-600 hover:border-neutral-500"
             }`}
           >
-            {f}
+            {formatLabelJa(f)}
           </Link>
         ))}
       </div>

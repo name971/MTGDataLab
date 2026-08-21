@@ -1,4 +1,4 @@
-import { FORMATS, formatSlug } from "@/lib/formats";
+import { FORMATS, formatSlug, formatLabelJa } from "@/lib/formats";
 
 const STATUS_LABEL: Record<string, string> = {
   legal: "✓",
@@ -36,7 +36,7 @@ export default function LegalityGrid({
         const status = disabled ? "print_not_legal" : (legalities[formatSlug(format)] ?? "not_legal");
         return (
           <div key={format} className="flex items-center justify-between gap-2">
-            <dt className="text-neutral-600">{format}</dt>
+            <dt className="text-neutral-600">{formatLabelJa(format)}</dt>
             <dd
               className={`font-semibold ${disabled ? "text-red-800" : (STATUS_CLASS[status] ?? "text-neutral-400")}`}
               title={disabled ? "このプリントは使用不可" : (STATUS_TITLE[status] ?? status)}

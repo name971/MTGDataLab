@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { advancedSearchCards, MV_BUCKETS, PAGE_SIZE } from "@/lib/dbAdvancedSearch";
 import { RARITY_LABEL_JA } from "@/lib/scryfall";
-import { FORMATS } from "@/lib/formats";
+import { FORMATS, formatLabelJa } from "@/lib/formats";
 import { COLOR_ORDER } from "@/lib/manaColors";
 import {
   COMMON_TYPES,
@@ -163,7 +163,7 @@ export default async function AdvancedSearchPage({
                     className="peer sr-only"
                   />
                   <span className="rounded-full border border-neutral-300 px-2.5 py-0.5 text-xs text-neutral-500 hover:border-neutral-500 peer-checked:border-neutral-500 peer-checked:bg-neutral-100 peer-checked:text-neutral-900">
-                    {f}
+                    {formatLabelJa(f)}
                   </span>
                 </label>
               ))}
