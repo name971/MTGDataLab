@@ -61,6 +61,17 @@ function isoDate(d) {
   return d.toISOString().slice(0, 10);
 }
 
+// trending_scoresのprice_change_3d_pct/usage_change_3d_pt/scoreはNUMERIC(6,2)（絶対値9999.99が
+// 上限）。数円の激安カードが数百円になった等、%換算すると桁違いに巨大な値になるケースで
+// upsert自体がnumeric field overflowで失敗し、後続のcard_streaks/ML予測ステップまで巻き添えで
+// 未実行になった事故が実際に発生した（2026-08-21）。表示上も9999.99%を超える値に意味は無いため
+// クランプする。
+const NUMERIC_6_2_MAX = 9999.99;
+function clampPct(value) {
+  if (value == null) return value;
+  return Math.max(-NUMERIC_6_2_MAX, Math.min(NUMERIC_6_2_MAX, value));
+}
+
 const PAGE_SIZE = 1000; // PostgRESTのデフォルト最大行数（db-max-rows）に合わせてページングする
 
 async function supabaseGet(path) {
@@ -241,11 +252,11 @@ async function main() {
       oracle_id: r.oracleId,
       format: "ALL",
       calculated_date: todayStr,
-      price_change_3d_pct: r.pct,
+      price_change_3d_pct: clampPct(r.pct),
       usage_change_3d_pt: null,
       volume_change_3d_pct: null,
       category: "price",
-      score: r.pct,
+      score: clampPct(r.pct),
       streak_days: streak,
     });
   });
