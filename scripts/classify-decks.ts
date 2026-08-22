@@ -172,7 +172,10 @@ async function main() {
   const DECK_ID_CHUNK = 200;
   for (let i = 0; i < deckMetas.length; i += DECK_ID_CHUNK) {
     const idsChunk = deckMetas.slice(i, i + DECK_ID_CHUNK).map((d) => d.id);
-    const cards = (await supabaseGet(
+    // supabaseGet（無ページング）はPostgRESTのデフォルト1000行で暗黙に切り捨てるため、
+    // 200デッキ分のdeck_cards（Commanderは1デッキ100枚超）はこれを軽く超えうる。
+    // supabaseGetAll（Rangeページング）を使う。
+    const cards = (await supabaseGetAll(
       `deck_cards?select=deck_id,card_name,quantity,board,card_oracles(name)&deck_id=in.(${idsChunk.join(",")})`,
     )) as (DeckCardRow & { deck_id: number })[];
     for (const c of cards) {

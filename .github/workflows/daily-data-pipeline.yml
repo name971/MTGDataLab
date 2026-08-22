@@ -170,6 +170,15 @@ jobs:
       - name: Compute usage stats / archetype price stats
         run: node scripts/compute-deck-stats.mjs
 
+      # deck_cardsはDB容量（無料枠500MB）を最も圧迫するテーブルだった（2026-08-22判明、
+      # 158MB/73万行）。集計（直前のステップ、直近30日のみ使用）・分類（classify-decks系、
+      # 未分類デッキのみ対象に変更済み）どちらも古いデッキのdeck_cardsに依存しないため、
+      # 30日より前の分をR2へアーカイブしてSupabaseから削除する
+      # （デッキ詳細ページはsrc/lib/dbDeckDetail.tsがR2へフォールバックして表示を続ける）。
+      - name: Archive old deck_cards to R2
+        continue-on-error: true
+        run: node scripts/archive-old-deck-cards.mjs
+
       # card_usage_statsは削除されず積み上がる一方だった（DB容量超過の原因の一つ）。
       # 実際に読まれるのは直近60日以内だけなので、それより古い行は日次で削除する。
       - name: Prune old usage stats

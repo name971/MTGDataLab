@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { getBestCardImages } from "./dbCardPrints";
+import { getR2ArchivedDeckCards } from "./deckCardsArchiveR2";
 
 export interface DbDeckCard {
   oracleId: string | null;
@@ -165,12 +166,17 @@ export async function getDeckDetailFromDb(deckId: number): Promise<DbDeckDetail 
 
   if (deckError || !deck) return null;
 
-  const { data: cards, error: cardsError } = await supabase
+  const { data: dbCards, error: cardsError } = await supabase
     .from("deck_cards")
     .select("card_name, oracle_id, board, quantity")
     .eq("deck_id", deckId);
 
-  if (cardsError || !cards) return null;
+  if (cardsError) return null;
+
+  // 30日より前のデッキはscripts/archive-old-deck-cards.mjsによりdeck_cardsがR2へ
+  // アーカイブ・Supabaseから削除済みのため、無ければR2から読む（DB容量対策、2026-08-22）。
+  const cards = dbCards && dbCards.length > 0 ? dbCards : await getR2ArchivedDeckCards(deckId);
+  if (cards.length === 0) return null;
 
   const oracleIds = [...new Set(cards.map((c) => c.oracle_id).filter((id): id is string => !!id))];
   const oracleInfo = new Map<
