@@ -24,7 +24,7 @@ async function resolveCardDetail(oracleId: string): Promise<DbCardDetail | null>
   return null;
 }
 
-const PERIOD_OPTIONS = [7, 30, 90] as const;
+const PERIOD_OPTIONS = [7, 30] as const;
 type PeriodDays = (typeof PERIOD_OPTIONS)[number];
 
 function resolvePeriod(raw: string | undefined): PeriodDays {

@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import TrendingCard, { type TrendingCardData } from "@/components/TrendingCard";
 import { applyDbPrices } from "@/lib/applyDbPrices";
 import { getTrendingCardsFromDb } from "@/lib/dbTrendingCards";
@@ -105,9 +106,11 @@ export default async function TopPage() {
         <section>
           <h2 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-neutral-500">
             注目カードランキング
-            <InfoTooltip text="7日以内に一定以上値上がり・値下がりする確率を機械学習モデルで予測し、確率が高い順に並べています（トーナメントで使用実績のあるカードが対象）。過去のTop10的中率: 急騰予想は約73%、急落予想は約95%。" />
+            <InfoTooltip text="7日以内に一定以上値上がり・値下がりする確率を機械学習モデルで予測し、確率が高い順に並べています（トーナメントで使用実績のあるカードが対象）。過去のTop10的中率: 高騰予想は約73%、暴落予想は約95%。" />
           </h2>
-          <MlRankingList up={mlRankingUp} down={mlRankingDown} />
+          <Suspense fallback={null}>
+            <MlRankingList up={mlRankingUp} down={mlRankingDown} />
+          </Suspense>
         </section>
       )}
 

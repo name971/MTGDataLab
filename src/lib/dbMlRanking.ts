@@ -33,10 +33,24 @@ export interface MlRankingRow {
 export async function getMlRankingFromDb(
   direction: "up" | "down" = "up",
 ): Promise<MlRankingRow[]> {
+  // 2026-08-21、的中率の事後検証用に過去分も残す設計へ変更した（PRIMARY KEYにcalculated_at
+  // が加わり1オラクルにつき複数日分の行を持つ、db/schema.sql参照）ため、表示には
+  // 最新calculated_atの行だけを使う必要がある。
+  const { data: latestRow, error: latestError } = await supabase
+    .from("card_price_predictions")
+    .select("calculated_at")
+    .eq("direction", direction)
+    .order("calculated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (latestError) throw new Error(`getMlRankingFromDb: ${latestError.message}`);
+  if (!latestRow) return [];
+
   const { data: rows, error } = await supabase
     .from("card_price_predictions")
     .select("oracle_id, rank, p_5, p_10, p_15, p_20, jpy_est")
     .eq("direction", direction)
+    .eq("calculated_at", latestRow.calculated_at)
     .order("rank", { ascending: true })
     .limit(RANKING_SIZE);
   // errorは接続/クエリ失敗、rows=[]はまだ予測が無いだけ、で意味が違う（dbTrendingCards.ts参照）

@@ -16,7 +16,9 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   process.exit(1);
 }
 
-const PERIOD_DAYS_OPTIONS = [7, 30, 90];
+// 90日は2026-08-20にDB容量対策で廃止（docs/incident-log.md参照）。deck_cards等の生データも
+// 30日分だけ保持すればよくなった。
+const PERIOD_DAYS_OPTIONS = [7, 30];
 const ARCHETYPE_DECK_WINDOW = 20; // アーキタイプごとに直近何件を集計対象にするか
 
 const PAGE_SIZE = 1000; // PostgRESTのデフォルト最大行数（db-max-rows）に合わせてページングする
@@ -75,13 +77,17 @@ function isoDate(d) {
 }
 
 async function main() {
-  const today = new Date().toISOString().slice(0, 10);
+  // --date=YYYY-MM-DD で過去日付として計算できる（継続注目カードの3日連続判定に必要な
+  // card_usage_stats の履歴を、待たずに過去分から一気に埋めるための後付けオプション。
+  // ponytail: 未来日付や存在しないトーナメントデータの妥当性チェックはしない、手動実行前提）
+  const dateArg = process.argv.find((a) => a.startsWith("--date="));
+  const today = dateArg ? dateArg.slice("--date=".length) : new Date().toISOString().slice(0, 10);
 
-  // card_usage_stats（採用率）が実際に使う範囲は最大でもPERIOD_DAYS_OPTIONSの最大値（90日）分だけ。
+  // card_usage_stats（採用率）が実際に使う範囲は最大でもPERIOD_DAYS_OPTIONSの最大値（30日）分だけ。
   // それより古いデッキは絞り込み無しで取得しても集計に使われないため、データ量が増えると
   // （例: Commanderの大量バックフィルで一時的にdeck_cardsが数十万行に達した際）Supabase側の
   // クエリタイムアウトを起こす。必要な範囲だけサーバー側で絞り込んで取得する。
-  const oldestNeededDate = new Date();
+  const oldestNeededDate = new Date(today);
   oldestNeededDate.setDate(oldestNeededDate.getDate() - (Math.max(...PERIOD_DAYS_OPTIONS) - 1));
   const oldestNeededDateStr = isoDate(oldestNeededDate);
 
@@ -119,7 +125,7 @@ async function main() {
   // ── card_usage_stats: フォーマット別・オラクルID別の採用率（7/30/90日それぞれ） ──
   const usageRows = [];
   for (const periodDays of PERIOD_DAYS_OPTIONS) {
-    const cutoff = new Date();
+    const cutoff = new Date(today);
     cutoff.setDate(cutoff.getDate() - (periodDays - 1));
     const cutoffStr = isoDate(cutoff);
     const decksInPeriod = decks.filter((d) => (d.tournaments?.event_date ?? "") >= cutoffStr);
@@ -173,7 +179,7 @@ async function main() {
   // 積み上がるだけの無駄なので、日次実行のたびに不要な古い行を削除する
   // （2026-08時点でこの間引きが無くDB容量が無料枠500MBを超過した実績があるため）。
   const USAGE_STREAK_LOOKBACK_DAYS = 60;
-  const usageStreakCutoff = new Date();
+  const usageStreakCutoff = new Date(today);
   usageStreakCutoff.setDate(usageStreakCutoff.getDate() - USAGE_STREAK_LOOKBACK_DAYS);
   await supabaseDelete(
     `card_usage_stats?period_days=in.(30,90)&calculated_at=lt.${today}`,

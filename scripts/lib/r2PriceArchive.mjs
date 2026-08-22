@@ -251,6 +251,34 @@ export async function writePrintCardFileDirect(scryfallId, rows) {
   await writeNdjsonGz(`${R2_PRINT_CARD_PREFIX}/${scryfallId}.ndjson.gz`, sorted);
 }
 
+/**
+ * プリント単位ファイルを、既存の内容とGETでマージしてから書き戻す（差分更新用）。
+ * 全期間分を再構築するwritePrintCardFileDirectと違い、一部の月だけ更新したい場合は
+ * こちらを使う（scripts/rebuild-print-history-cards.mjs --months=YYYY-MM参照）。
+ */
+export async function mergePrintCardFile(scryfallId, newRows) {
+  const key = `${R2_PRINT_CARD_PREFIX}/${scryfallId}.ndjson.gz`;
+  const existing = await readNdjsonGz(key);
+  const byDate = new Map(existing.map((r) => [r.date, r]));
+  for (const r of newRows) byDate.set(r.date, r);
+  const merged = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+  await writeNdjsonGz(key, merged);
+}
+
+export async function readOraclePriceMonth(month) {
+  return readMonthFile(R2_PRICE_PREFIX, month);
+}
+
+/** オラクル単位ファイルを、既存の内容とGETでマージしてから書き戻す（差分更新用、mergePrintCardFile参照）。 */
+export async function mergeOracleCardFile(oracleId, newRows) {
+  const key = `${R2_ORACLE_CARD_PREFIX}/${oracleId}.ndjson.gz`;
+  const existing = await readNdjsonGz(key);
+  const byDate = new Map(existing.map((r) => [r.date, r]));
+  for (const r of newRows) byDate.set(r.date, r);
+  const merged = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+  await writeNdjsonGz(key, merged);
+}
+
 async function mergeRowsGroupedByMonth(prefix, rows, idColumn) {
   const byMonth = new Map();
   for (const r of rows) {

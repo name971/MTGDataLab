@@ -206,7 +206,7 @@ export async function generateMetadata({
   return { title: `${card.nameJa ?? card.nameEn} - MTG DataLab` };
 }
 
-const USAGE_PERIOD_OPTIONS = [7, 30, 90] as const;
+const USAGE_PERIOD_OPTIONS = [7, 30] as const;
 type UsagePeriodDays = (typeof USAGE_PERIOD_OPTIONS)[number];
 
 function resolveUsagePeriod(raw: string | undefined): UsagePeriodDays {
