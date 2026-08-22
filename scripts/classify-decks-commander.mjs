@@ -81,10 +81,13 @@ async function main() {
     return;
   }
 
+  // 未分類（archetype_id IS NULL）のデッキだけを対象にする。以前は期間・分類状態を
+  // 問わず全デッキを毎日読み直しており、分類済みデッキのdeck_cardsまで無駄に再取得し
+  // 続けていた（deck_cardsテーブルがDB容量を圧迫する一因、docs/incident-log.md参照）。
   const decks = [];
   for (let offset = 0; ; offset += PAGE_SIZE) {
     const page = await supabaseGet(
-      `decks?select=id,tournament_id&order=id&offset=${offset}&limit=${PAGE_SIZE}`,
+      `decks?archetype_id=is.null&select=id,tournament_id&order=id&offset=${offset}&limit=${PAGE_SIZE}`,
     );
     if (page.length === 0) break;
     decks.push(...page.filter((d) => tournamentIds.has(d.tournament_id)));

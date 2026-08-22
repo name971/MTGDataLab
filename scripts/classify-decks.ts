@@ -152,6 +152,12 @@ async function main() {
   // （2026-08-20発覚）。compute-deck-stats.mjsと同じく、デッキID一覧→deck_cardsを
   // ID分割で別取得する2段階方式に分ける。oracle_id解決済みの行はcard_nameをNULLに
   // 間引いている（db/schema.sql参照）ため、card_oracles(name)を埋め込み取得してフォールバックする。
+  //
+  // 未分類（archetype_id IS NULL）のデッキだけを対象にする。以前は期間指定無しで
+  // 「そのフォーマットの全デッキ」を毎日読み直しており、分類済みデッキのdeck_cardsまで
+  // 無駄に再取得し続けていた（deck_cardsテーブルがDB容量を圧迫する一因、
+  // docs/incident-log.md参照）。分類ルール自体は日々ほぼ変わらないため、
+  // 一度分類済みのデッキを再分類する必要は無い。
   type DeckCardRow = {
     card_name: string | null;
     quantity: number;
@@ -159,7 +165,7 @@ async function main() {
     card_oracles: { name: string } | null;
   };
   const deckMetas = (await supabaseGetAll(
-    `decks?tournaments.format=eq.${FORMAT}&select=id,tournaments!inner(format)`,
+    `decks?tournaments.format=eq.${FORMAT}&archetype_id=is.null&select=id,tournaments!inner(format)`,
   )) as { id: number }[];
 
   const deckCardsByDeckId = new Map<number, DeckCardRow[]>();
