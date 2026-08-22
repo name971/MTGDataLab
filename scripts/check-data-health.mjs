@@ -5,8 +5,12 @@
  * 閾値割れをログとGitHub Actionsのジョブサマリーに警告として出すだけに留める
  * （自動修復はしない。原因調査・修正は手動で行う想定）。
  *
- * 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... node scripts/check-data-health.mjs
+ * 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... \
+ *      R2_BUCKET_NAME=... R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=... R2_ENDPOINT_URL=... \
+ *      node scripts/check-data-health.mjs
  */
+
+import { readOraclePriceMonth } from "./lib/r2PriceArchive.mjs";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -62,6 +66,19 @@ async function main() {
     return null;
   });
 
+  await check("注目カードランキング（card_price_predictions）の鮮度", async () => {
+    const rows = await supabaseGet(
+      "card_price_predictions?select=calculated_at&order=calculated_at.desc&limit=1",
+    );
+    if (rows.length === 0) return "データが1件も無い";
+    const daysStale = Math.floor(
+      (new Date(`${today}T00:00:00Z`).getTime() - new Date(`${rows[0].calculated_at}T00:00:00Z`).getTime()) /
+        86400000,
+    );
+    if (daysStale > 1) return `最新が${rows[0].calculated_at}（${daysStale}日更新無し）。Predict and publish ML card rankingが失敗している可能性`;
+    return null;
+  });
+
   await check("継続注目カード（card_streaks）の本日分", async () => {
     const rows = await supabaseGet("card_streaks?calculated_date=eq." + today + "&select=oracle_id&limit=1");
     if (rows.length === 0) return `本日(${today})分の行が無い`;
@@ -101,6 +118,32 @@ async function main() {
     const classified = rows.filter((r) => r.archetype_id !== null).length;
     const rate = classified / rows.length;
     if (rate < 0.5) return `${(rate * 100).toFixed(1)}%（${classified}/${rows.length}件）。classify-decks系ステップが止まっている可能性`;
+    return null;
+  });
+
+  // 2026-08-21判明の不具合（「使用不可版プリントの絞り込み漏れ」がml/fetch_tcgcsv_history.py
+  // にだけ入っていなかった、docs/incident-log.md参照）が同種の別スクリプトで再発していないか、
+  // 「今月の価格履歴に載っているscryfall_idの中にnot_tournament_legal=trueのものが
+  // 混ざっていないか」を機械的にチェックする。文章に書くだけでは再発を防げなかった実績が
+  // 複数回あるため、この種の不具合はコードで検知できるようにする。
+  await check("価格アーカイブへの使用不可版プリント混入", async () => {
+    const month = today.slice(0, 7);
+    const rows = await readOraclePriceMonth(month);
+    const scryfallIds = [...new Set(rows.map((r) => r.scryfall_id).filter(Boolean))];
+    if (scryfallIds.length === 0) return null;
+
+    const CHUNK = 200;
+    const illegalIds = new Set();
+    for (let i = 0; i < scryfallIds.length; i += CHUNK) {
+      const chunk = scryfallIds.slice(i, i + CHUNK);
+      const printRows = await supabaseGet(
+        `card_prints?select=scryfall_id&scryfall_id=in.(${chunk.join(",")})&not_tournament_legal=eq.true`,
+      );
+      for (const r of printRows) illegalIds.add(r.scryfall_id);
+    }
+    if (illegalIds.size > 0) {
+      return `今月の価格履歴に使用不可版プリントが${illegalIds.size}件混入（例: ${[...illegalIds].slice(0, 3).join(", ")}）。価格取得元のnot_tournament_legalフィルタ漏れを疑う`;
+    }
     return null;
   });
 

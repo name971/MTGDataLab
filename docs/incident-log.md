@@ -13,6 +13,182 @@
 
 ---
 
+## 2026-08-20 新Supabaseプロジェクトへの移行で`backfill-set-icons.mjs`の実行が漏れ、
+全セットのアイコン画像が出ない状態のまま気づかず本番運用していた
+
+**症状**: ユーザーから「Store Championshipsとかのプロモ系セットマークがScryfallから
+ちゃんと取得できていない」と指摘。調べると対象はプロモに限らず`sets`テーブル650件
+**全件**で`icon_svg_uri`がnullだった。`src/components/CardHero.tsx`は
+`iconUrlBySetCode[setCode] ?? https://svgs.scryfall.io/sets/<code>.svg`という
+命名規則フォールバックを持っているため、主要セットは偶然表示され気づきにくく、
+命名規則が成り立たない一部セット（プロモ、Secret Lair Drop等）だけ壊れて見えた。
+
+**原因**: 今回の新規Supabaseプロジェクト移行（本ファイルの一連の障害対応の一環）で、
+カード/セット/価格などの基礎データは`import-full-catalog-local.mjs`経由で移したが、
+`scripts/backfill-set-icons.mjs`（Scryfall `/sets`から`icon_svg_uri`を別途取得する
+専用スクリプト）を実行し忘れていた。移行手順のチェックリストに独立したスクリプトとして
+明記されておらず、「カタログを入れれば終わり」という思い込みで見落とした。
+
+**教訓**: `import-full-catalog*.mjs`だけでは埋まらない、独立した`backfill-*.mjs`
+スクリプト（set icon以外にも同種のものがあれば注意）がこのリポジトリには存在する。
+DBを作り直す/移行するたびに、`scripts/backfill-*.mjs`を全部洗い出して実行漏れが
+無いか確認する必要がある。命名規則フォールバックのような「無くても大体動いて見える」
+救済コードは、根本原因（データ未投入）に気づくのを遅らせる副作用があることも留意。
+
+**対応**: `node scripts/backfill-set-icons.mjs`を実行し650件全て復旧（未設定0件を確認）。
+機械的な防止策としては、`scripts/check-data-health.mjs`（既存の日次ヘルスチェック）に
+「`sets`テーブルで`icon_svg_uri IS NULL`の行数が一定割合を超えたら警告」のチェックを
+追加するのが有効そうだが、今回は未実装（次にこの種の移行漏れを踏んだ時、または
+`check-data-health.mjs`を触る機会に追加する）。
+
+---
+
+## 2026-08-22 MLランキング自動更新がFileNotFoundErrorで毎回失敗していたのに気づけなかった
+
+**症状**: ユーザーから「注目カードランキングが更新されていない」と指摘。日次パイプラインの
+「Predict and publish ML card ranking」ステップはログ上`success`扱いだったが、
+`card_price_predictions`の最新`calculated_at`は8/15のまま何日も更新されていなかった。
+
+**原因**: `ml/predict_and_publish.py`は`ml/data/price_history.parquet`・`static_attrs.parquet`
+を直接ファイルから読むが、これらを生成する`ml/fetch_data.py`をワークフローに追加し忘れていた
+（2026-08-21、採用率アーカイブ永続化のステップを追加した際、`usage_stats.parquet`を作る
+`ml/build_usage_history_from_tournaments.py`は追加したのに、価格履歴・静的属性を作る
+`ml/fetch_data.py`本体を呼ぶステップを入れ忘れた）。GitHub Actionsの毎回まっさらな
+ランナーにはこれらのファイルが存在せず、`FileNotFoundError`で即座に失敗していたが、
+このステップに`continue-on-error: true`を付けていたため、ジョブ全体は`success`のまま
+何日も気づけなかった。
+
+**教訓**: `continue-on-error: true`は「1ステップの失敗で他を止めない」ためのものだが、
+「ステップが実は必ず失敗し続けている」ことを隠す副作用がある。新しいステップを
+ワークフローに追加する際は、そのスクリプトが実際に依存する入力ファイル・前提データを
+全部洗い出し、生成元のステップが本当に含まれているか確認する必要がある
+（[[feedback_db_migration_checklist]]と同種の「見落としがちな依存関係の洗い出し漏れ」）。
+
+**対応**: `Fetch base training data (price history, static attrs)`ステップ
+（`python ml/fetch_data.py`）を追加。あわせて`scripts/check-data-health.mjs`に
+「`card_price_predictions`の最新`calculated_at`が1日以上古い」ことを検知するチェックを
+追加し、同種の「continue-on-errorで隠れた失敗」を次回は日次で機械的に検知できるようにした。
+
+---
+
+## 2026-08-21 TCGCSVバックフィルで使用不可版プリントの絞り込み漏れが再発（既知の不具合の再発）
+
+**症状**: ユーザーから「古えの墳墓の価格グラフに使用不可のカードが入っている」と指摘。
+以前（過去セッション、コミット`4c17b41`）に一度修正した「正規版データが無い日は
+使用不可版（Collectors' Edition等）の価格が代わりに残ってしまう」バグと同じ症状。
+
+**原因**: `4c17b41`の修正は本番の日次パイプライン（`scripts/snapshot-print-prices.mjs`等）
+側にしか入っておらず、今回のSupabase障害復旧で新規に使った`ml/fetch_tcgcsv_history.py`
+（過去データをTCGCSVから直接取得するスクリプト）の`build_candidate_scryfall_to_oracle()`
+には同じ`not_tournament_legal=false`の絞り込みが入っていなかった。「同じ種類の不具合の
+修正」が、修正対象のロジックが複数箇所（本番パイプラインとバックフィルスクリプト）に
+重複して存在することを見落とし、片方にしか適用されていなかった。
+
+**教訓**: 「使用不可版を除外する」のような正しさに関わるフィルタ条件は、同じ目的の
+処理が複数のスクリプトに分散している場合、修正時に全箇所を洗い出す必要がある。
+今回のケースでは、日次パイプラインとバックフィルスクリプトが同じ
+`card_prints`→`scryfall_id`→`oracle_id`の対応表を独立に構築しており、片方だけ直しても
+気づけなかった。
+
+**対応**: `ml/fetch_tcgcsv_history.py`の`card_prints`取得クエリに
+`&not_tournament_legal=eq.false`を追加し、8/17-20分を正しいデータで再取得した。
+機械的な防止策としては、`card_prints`から`scryfall_id→oracle_id`対応表を作る処理を
+共通関数化し全スクリプトで使い回すのが理想だが、Python（ml/）とNode.js（scripts/）の
+言語が分かれているため単純な関数共有はできない。次に同種の絞り込み漏れを踏んだら、
+両言語で同じロジックのテストデータ（既知の使用不可版プリントのoracle_idを1件）を
+使った簡易チェックスクリプトの追加を検討する（今回は未実装）。
+
+---
+
+## 2026-08-20 Workers KVのdelete操作日次上限(無料枠1000件/日)を確認せず4443件削除し、当日分を使い切った
+
+**症状**: ISRキャッシュ反映のためWorkers KVのキー一括削除を2回実施（4319件→再デプロイ後に124件、
+計4443件）。直後にダッシュボードで「KVリクエストが一時的にブロックされています」
+「1日のdelete操作上限1000件を超過、2026-08-21 00:00 UTCにリセット」と表示された。
+
+**原因**: [[feedback_check_supabase_capacity_before_bulk_ops]]で得た教訓（大量読み書きの前に
+容量・残量を確認する）をSupabase以外のサービス（Cloudflare Workers KV）には適用していなかった。
+「キャッシュは再生成可能だから消しても安全」という判断は正しかったが、削除件数そのものが
+サービス側のレート制限に抵触するかどうかは別軸のチェックが必要で、それを怠った。
+
+**教訓**: 「壊れても再生成できるから安全」と「操作回数がプラットフォームの無料枠上限に
+収まるか」は別の確認事項。Cloudflare関連の操作（KV/D1/R2/Workers Scripts）は、
+書き込み系だけでなく削除系にも無料枠の日次上限があることを前提に、事前に対象件数を数え、
+必要なら分割・翌日以降に回すか判断する。4000件超の一括操作をする前に、まず対象件数を
+確認してから実行するかどうかその場で立ち止まる。
+
+**対応**: 今回は実害が軽微（既に必要な反映は完了済み）だったため、コード側のガードは
+追加しない。次にKV等Cloudflareリソースへの大量delete/write操作を行う際は、実行前に
+「件数 × 無料枠の日次上限」を必ず言葉に出して確認してから実行する運用とする
+（[[feedback_think_before_acting_on_risky_ops]]参照）。
+
+---
+
+## 2026-08-20 新Supabaseプロジェクト移行で`db/search-design.sql`（検索RPC）の適用が丸ごと漏れていた
+
+**症状**: ユーザーから「Black Lotusのページが無い」と報告。実際にはページ自体（`/cards/{oracleId}`）は
+存在し200 OKだったが、サイト内検索（`/api/search-suggest`）で"Black Lotus"を検索しても
+無関係な"Black Lotus Lounge"しかヒットしなかった。
+
+**原因**: `src/lib/searchCards.ts`が呼ぶ`search_cards` RPC、`src/lib/nameMatching.ts`が
+呼ぶ`resolve_oracle_id` RPC（トーナメント結果のカード名寄せにも使う）が、どちらも
+新Supabaseプロジェクトに一度も作成されていなかった（`db/search-design.sql`を適用し忘れ）。
+RPC呼び出しはエラーを握りつぶして空配列にフォールバックする設計のため、検索が
+「0件」ではなく「一部だけヒットする（D1カタログ側の別経路のみ生きている）」という
+中途半端な状態になり、機能停止に気づきにくかった。
+
+これは[[project_scriptmigration_gaps]]（set-icon backfill漏れ、card_prints日本語画像
+backfill漏れ）と同じパターンの3件目: `import-full-catalog*.mjs`で運ぶデータ以外に、
+このリポジトリには独立して適用が必要なSQLファイル・スクリプトが複数存在し、
+移行時にそれらを網羅的に洗い出せていなかった。
+
+**教訓**: DBを作り直す/移行する際は、`db/schema.sql`だけでなく`db/*.sql`配下の
+全ファイル、および`scripts/backfill-*.mjs`を機械的に列挙してチェックリスト化すべき。
+「主要な機能を触ってみて動くか確認する」という受動的な確認では、検索のように
+「エラーを握りつぶして一部だけ動いているように見える」機能の欠落を見逃す。
+
+**対応**: `psql`で`db/search-design.sql`を直接適用し復旧（CREATE EXTENSION pg_trgm、
+関連インデックス6件、`search_cards`/`resolve_oracle_id`関数）。次にDB移行する機会が
+あれば、`db/`配下のSQLファイル一覧と`scripts/backfill-*.mjs`一覧を先に洗い出してから
+着手する運用とする（今回は未実装、次回移行時に着手）。
+
+---
+
+## 2026-08-20 useSearchParams()未対応でprerenderが失敗、TOPページのMLランキングが本番に反映されなかった
+
+**症状**: Supabaseプロジェクト移行後、`card_price_predictions`にデータを投入し、
+`getMlRankingFromDb`が単体テスト（実ファイルでtop-level await、isolated）では正しく
+100件返すことを確認したのに、`npm run deploy`を2回実行しても本番のTOPページに
+「注目カードランキング」セクションが出なかった。KVの永続ISRキャッシュを4319件全削除しても
+変化なし、`wrangler tail`で実リクエストを確認してもワーカー自体は`Ok`で応答していた。
+
+**原因**: `src/components/MlRankingList.tsx`が`useSearchParams()`を使うクライアント
+コンポーネントで、`src/app/page.tsx`側で`<Suspense>`に包まずに直接レンダリングしていた。
+このページは`revalidate = 3600`でstatic prerenderの対象になるため、`next build`が
+「useSearchParams() should be wrapped in a suspense boundary」で`/`ページのprerenderに
+失敗し、`Export encountered an error on /page: /, exiting the build`でビルド全体が
+非ゼロ終了していた。`package.json`の`deploy`スクリプトは
+`opennextjs-cloudflare build && opennextjs-cloudflare deploy`で`&&`結合のため、
+本来ビルド失敗時はデプロイされないはずだった。実際、直近の失敗した`npm run deploy`実行では
+`wrangler deploy`まで到達せずエラー終了しており「デプロイに見えて実は古いバンドルが
+そのまま使われていた」ケースは今回確認した限りでは無かった——つまり複数回試した
+「デプロイ」自体がこの日はビルド失敗で止まっていた可能性が高い（正常時のログにだけ出る
+"Populating remote KV incremental cache..."の行が、疑わしかった回のログに無かった）。
+
+**教訓**: `npm run deploy`のログの最後だけ（"Uploaded mtgdatalab"等）を見て成功と
+判断せず、ビルド段階の出力（"Populating remote KV incremental cache..."が出ているか）
+まで確認する。バックエンドのデータ層が単体で正しく動くことを確認しても、それが
+本番ページに反映される保証にはならない——prerender/ビルド自体の成否を別途確認する必要がある。
+
+**対応**: `MlRankingList`を`<Suspense fallback={null}>`で包んでprerender失敗を解消
+（[src/app/page.tsx](../src/app/page.tsx)）。デプロイスクリプト自体は`&&`で既に
+ビルド失敗時にデプロイをスキップする作りだったため、追加のガードコードは不要と判断。
+今後クライアントコンポーネントでフックを使う場合、それがstatic prerender対象の
+ページから直接（Suspenseなしで）呼ばれていないか、`npm run deploy`のログで
+ビルド完了の兆候を都度確認する運用とする。
+
+---
+
 ## 2026-08-15 「気をつける」だけでは同じ非効率パターンを繰り返した→実行時ガードを追加
 
 **症状**: `scripts/backfill-d1-gap-to-r2.mjs`で踏んだ「月ごと・ページごとにR2マージ関数を
@@ -323,3 +499,38 @@ Nanoインスタンスに実際に割り当てられている物理ディスク�
 今後Supabaseに読み書きする新規スクリプトは、その場でfetchラッパーを書かずこのクライアントを
 使うこと。`scripts/import-tournaments.mjs`・`scripts/backfill-tournaments-from-cache.mjs`も
 順次このクライアントへ移行する。
+
+---
+
+## 2026-08-20 新規Supabaseプロジェクトへの一括投入で、即座に容量超過→読み取り専用ロック
+
+**症状**: 旧プロジェクト（上記2026-08-17インシデントで復旧不能と判断）を削除し、新規に
+作成したSupabaseプロジェクトへ、ローカルPostgresで再構築したデータ（`pg_dump --data-only`→
+`psql`でCOPY）を一括投入したところ、`tournaments`（5,949件）・`decks`（99,888件）が入った
+直後、`deck_cards`（9,543,745行）投入中に容量が500MB上限を超え、プロジェクトが自動で
+読み取り専用モードに入った（"Your project is currently using 805.56MB of database space,
+which exceeds the Free Plan limit of 500MB"というメール通知で発覚）。COPY自体も
+`ERROR: cannot execute COPY FROM in a read-only transaction`で失敗し、`card_oracles`/
+`cards`/`card_prints`等は0件のまま（先に投入したはずの行も含めロールバックされていた）。
+
+**原因**: 投入する前に、投入予定データのサイズを一度も見積もらなかった。`deck_cards`
+9,543,745行は2.5年分の全トーナメント履歴で、これは元々ML学習用にNAS/ローカルへ
+ステージングしたものであり、サイト本体が実際に必要とするのは`compute-deck-stats.mjs`
+自身の設計（`PERIOD_DAYS_OPTIONS`最大90日）が示す通り**直近90日分だけ**だった。
+「深い履歴はNAS/R2側だけに置き、Supabaseは"今の状態"だけを持つ」という、この晩
+何時間も前に自分たちで確立した設計方針を、実際に投入する段になって見失っていた。
+
+**教訓**: これは技術的には新しい教訓ではない。2026-08-17に「大量書き込み前に消費リソースを
+確認する」「投入するデータの規模を見積もる」という教訓を得て`docs/incident-log.md`にも
+`feedback_check_supabase_capacity_before_bulk_ops`にも記録していたが、数時間後、
+文脈が変わった（NAS→ローカル→Supabaseという新しい移行フロー）だけで同じチェックを
+またやらなかった。「教訓を覚えているか」ではなく「今やろうとしている具体的な操作に
+その教訓を毎回あてはめる習慣が無い」ことが本当の問題だと再確認した。
+
+**対応**: `scripts/check-remote-db-budget.mjs`を新設。投入予定テーブルのローカル合計サイズと
+リモートの現在サイズを突き合わせ、予算（デフォルト450MB、Supabase無料枠500MBに安全マージン）を
+超える場合は投入前に中断する。今後、Supabase等の容量制限があるリモートDBへ一括投入する
+スクリプトは、実行前に必ずこれを通すこと（今回のように「もう教訓は分かっているはず」という
+思い込みでチェックを省略しないよう、教訓の記憶ではなくスクリプト自体に強制させる）。
+`tournaments`/`decks`/`deck_cards`は直近90日分（`event_date >= 現在 - 90日`）だけに絞って
+Supabaseへ再投入し、2.5年分の深い履歴はNAS/ローカルのみに留める。

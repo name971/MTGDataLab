@@ -185,6 +185,16 @@ jobs:
       # 再計算し（7日ローリング窓の計算に7日分の余白を持たせるため21日）、
       # R2（usage-history/）の長期アーカイブへ差分マージする。失敗しても前回分の
       # アーカイブがそのまま使われるだけなので他ステップを止めない。
+      # ml/predict_and_publish.pyが読むml/data/price_history.parquet・static_attrs.parquetを
+      # このステップで生成する（R2price-history/Supabase/D1から取得）。2026-08-21に採用率
+      # アーカイブ用のステップだけ追加してこれを入れ忘れ、GitHub Actionsのまっさらな
+      # ランナーにこれらのファイルが存在せずPredict and publish ML card rankingが
+      # FileNotFoundErrorで毎回失敗し続けていた（continue-on-error:trueで気づけなかった、
+      # docs/incident-log.md参照）。
+      - name: Fetch base training data (price history, static attrs)
+        continue-on-error: true
+        run: python ml/fetch_data.py
+
       - name: Fetch recent tournament usage history (TopDeck.gg)
         continue-on-error: true
         run: node ml/fetch_tournament_history.mjs 21
