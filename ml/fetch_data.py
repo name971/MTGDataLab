@@ -130,7 +130,7 @@ def fetch_supabase_static_attrs() -> pd.DataFrame:
     cards: レアリティ・タイプ・マナコスト等（デッキ使用実績のある代表英語版のみ、
     デッキ未使用カードの分はfetch_d1_catalog_static_attrs()側で別途補う）。"""
     print("Supabase: 静的属性（card_oracles + cards）を取得中...")
-    oracle_rows = supabase_get_all("card_oracles?select=oracle_id,is_reserved,is_serialized")
+    oracle_rows = supabase_get_all("card_oracles?select=oracle_id,is_reserved,is_serialized,oracle_text")
     oracle_df = pd.DataFrame(oracle_rows)
 
     card_rows = supabase_get_all("cards?select=oracle_id,rarity,type_line,mana_cost,lang&lang=eq.en")
@@ -206,10 +206,16 @@ def fetch_r2_price_history() -> pd.DataFrame:
     r2PriceArchive.mjsのmergeCardFileが日付キー単位で既に重複排除済み）。
     Parquetでなくgzip圧縮NDJSONにしている理由はscripts/lib/r2PriceArchive.mjsの
     モジュールdocstring参照（Cloudflare Workers側のCPU時間制限の都合）。"""
+    # 2026-08-22判明: 全月分（31ヶ月×約100万行=2700万行超）をPythonのdictリストとして
+    # 一度に溜め込んでからDataFrame化すると、GitHub Actionsランナー（メモリ7GB程度）の
+    # 上限を超えてOOM Killされ、エラーメッセージも残さずジョブごと停止する
+    # （日次パイプラインに追加した直後から毎回原因不明で止まっていた）。ファイル（月）
+    # 単位で都度DataFrame化し、最後にconcatすることでピークメモリを抑える
+    # （dictの配列よりpandasの型付き列の方がメモリ効率が良いため）。
     print("R2: price-history（長期履歴）を取得中...")
     s3 = r2_client()
     bucket = os.environ["R2_BUCKET_NAME"]
-    records = []
+    month_frames = []
     paginator = s3.get_paginator("list_objects_v2")
     for page in paginator.paginate(Bucket=bucket, Prefix="price-history/"):
         for obj in page.get("Contents", []):
@@ -217,10 +223,12 @@ def fetch_r2_price_history() -> pd.DataFrame:
                 continue
             body = s3.get_object(Bucket=bucket, Key=obj["Key"])["Body"].read()
             with gzip.GzipFile(fileobj=io.BytesIO(body)) as gz:
-                records.extend(json.loads(line) for line in gz if line.strip())
-    if not records:
+                month_records = [json.loads(line) for line in gz if line.strip()]
+            if month_records:
+                month_frames.append(pd.DataFrame(month_records))
+    if not month_frames:
         return pd.DataFrame(columns=["oracle_id", "date", "jpy_est"])
-    df = pd.DataFrame(records)
+    df = pd.concat(month_frames, ignore_index=True)
     df["date"] = pd.to_datetime(df["date"])
     df["jpy_est"] = df["jpy_est"].astype(float)
     print(f"  {len(df)}行（{df['date'].min().date()}〜{df['date'].max().date()}）")
@@ -235,10 +243,12 @@ def fetch_r2_usage_history() -> pd.DataFrame:
     （docs/price-prediction-plan.md 5章「自動化パイプラインの実行可能性チェック」参照）。
     月次バルクファイルのみで、価格アーカイブにあるカード単位ファイル層は無い
     （学習専用データでCloudflare WorkersのCPU時間制限を気にする必要が無いため）。"""
+    # fetch_r2_price_historyと同じ理由（2026-08-22判明のOOM問題）で、月単位で都度
+    # DataFrame化してから最後にconcatする。
     print("R2: usage-history（長期採用率アーカイブ）を取得中...")
     s3 = r2_client()
     bucket = os.environ["R2_BUCKET_NAME"]
-    records = []
+    month_frames = []
     paginator = s3.get_paginator("list_objects_v2")
     for page in paginator.paginate(Bucket=bucket, Prefix="usage-history/"):
         for obj in page.get("Contents", []):
@@ -246,10 +256,12 @@ def fetch_r2_usage_history() -> pd.DataFrame:
                 continue
             body = s3.get_object(Bucket=bucket, Key=obj["Key"])["Body"].read()
             with gzip.GzipFile(fileobj=io.BytesIO(body)) as gz:
-                records.extend(json.loads(line) for line in gz if line.strip())
-    if not records:
+                month_records = [json.loads(line) for line in gz if line.strip()]
+            if month_records:
+                month_frames.append(pd.DataFrame(month_records))
+    if not month_frames:
         return pd.DataFrame(columns=["oracle_id", "format", "usage_rate", "deck_sample_size", "calculated_at"])
-    df = pd.DataFrame(records)
+    df = pd.concat(month_frames, ignore_index=True)
     df["calculated_at"] = pd.to_datetime(df["calculated_at"])
     df["usage_rate"] = df["usage_rate"].astype(float)
     df["deck_sample_size"] = df["deck_sample_size"].astype(float)
