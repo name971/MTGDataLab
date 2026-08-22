@@ -217,7 +217,7 @@ def build_reprint_features(price_dates: pd.DataFrame) -> pd.DataFrame:
     (oracle_id, date)時点での reprint_count（累計再録回数、初版は含まない）と
     days_since_last_reprint（直近再録からの経過日数、まだ再録が無ければNaN）を
     merge_asofで点時点計算する。未来の発売日を参照しないためdirection="backward"。"""
-    empty_columns = ["oracle_id", "date", "reprint_count", "days_since_last_reprint"]
+    empty_columns = ["oracle_id", "date", "reprint_count", "days_since_last_reprint", "days_since_release"]
     path = DATA_DIR / "reprint_history.ndjson"
     if not path.exists():
         return pd.DataFrame(columns=empty_columns)
