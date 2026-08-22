@@ -36,6 +36,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # scripts/lib/scryfallBulk.mjsはScryfallバルクデータ（374MB）の更新日時を見て
+      # 変化が無ければ再ダウンロードをスキップする仕組みを既に持っているが、GitHub Actions
+      # は毎回まっさらなVMのためこのキャッシュ（.cache/）が永続化されず、実質毎日フル
+      # ダウンロードし続けていた（2026-08-22判明）。actions/cacheで.cache/を永続化し、
+      # 既存のスキップ判定を実際に効かせる。actions/cacheのキーは一度保存すると同じキーでは
+      # 上書きできないため、日付を含めた一意キー＋前日以前のキーをrestore-keysで拾う形にする
+      # （固定キーだとScryfallが更新された日以降ずっと古いキャッシュのままになってしまう）。
+      - uses: actions/cache@v4
+        with:
+          path: .cache
+          key: scryfall-bulk-cache-${{ github.run_id }}
+          restore-keys: scryfall-bulk-cache-
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
