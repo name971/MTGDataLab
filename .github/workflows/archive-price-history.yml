@@ -28,7 +28,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
 
       # ランナー同梱のnpmはlockfileVersion 3のoptionalDependencies同期チェックが
       # 甘く、実際には存在するのに"missing from lock file"と誤検知することがあるため、
