@@ -9,16 +9,17 @@ name: ML card ranking
 #   2. このジョブだけの動作確認・デバッグに、毎回100分超かかるdaily-data-pipeline全体を
 #      待つ必要が無いようにする（workflow_dispatchで単独実行できる）。
 # daily-data-pipelineが集計したcard_usage_stats/デッキ分類結果に依存するため、
-# それが完了した後に走る必要がある（workflow_runで連動、手動実行時はworkflow_dispatch）。
+# それが完了した後に走る必要がある。workflow_runでの連動はworkflow_dispatchで手動実行
+# する一覧にワークフローが出るためにmasterブランチへの反映が必須になり手間だったため、
+# 単純にdaily-data-pipeline（03:00 UTC開始、タイムアウト150分）より後の時刻に
+# 独立したスケジュールを組む方式にした（2026-08-22）。
 on:
-  workflow_run:
-    workflows: ["Daily data pipeline"]
-    types: [completed]
+  schedule:
+    - cron: "0 6 * * *" # 15:00 JST、daily-data-pipeline開始から3時間後
   workflow_dispatch:
 
 jobs:
   ml_ranking:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
