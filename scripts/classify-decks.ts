@@ -147,19 +147,34 @@ async function main() {
   )) as { id: number; name: string }[];
   const archetypeIdByName = new Map(savedArchetypes.map((a) => [a.name, a.id]));
 
-  // 対象フォーマットのデッキを取得して分類。oracle_id解決済みの行はcard_nameをNULLに
+  // 対象フォーマットのデッキを取得して分類。deck_cardsを埋め込みで一度に取ると
+  // （Commanderは100枚デッキ×大量デッキ数のため）JOINが重すぎてstatement timeoutになる
+  // （2026-08-20発覚）。compute-deck-stats.mjsと同じく、デッキID一覧→deck_cardsを
+  // ID分割で別取得する2段階方式に分ける。oracle_id解決済みの行はcard_nameをNULLに
   // 間引いている（db/schema.sql参照）ため、card_oracles(name)を埋め込み取得してフォールバックする。
-  const decks = (await supabaseGetAll(
-    `decks?tournaments.format=eq.${FORMAT}&select=id,deck_cards(card_name,quantity,board,card_oracles(name)),tournaments!inner(format)`,
-  )) as {
-    id: number;
-    deck_cards: {
-      card_name: string | null;
-      quantity: number;
-      board: "main" | "side";
-      card_oracles: { name: string } | null;
-    }[];
-  }[];
+  type DeckCardRow = {
+    card_name: string | null;
+    quantity: number;
+    board: "main" | "side";
+    card_oracles: { name: string } | null;
+  };
+  const deckMetas = (await supabaseGetAll(
+    `decks?tournaments.format=eq.${FORMAT}&select=id,tournaments!inner(format)`,
+  )) as { id: number }[];
+
+  const deckCardsByDeckId = new Map<number, DeckCardRow[]>();
+  const DECK_ID_CHUNK = 200;
+  for (let i = 0; i < deckMetas.length; i += DECK_ID_CHUNK) {
+    const idsChunk = deckMetas.slice(i, i + DECK_ID_CHUNK).map((d) => d.id);
+    const cards = (await supabaseGet(
+      `deck_cards?select=deck_id,card_name,quantity,board,card_oracles(name)&deck_id=in.(${idsChunk.join(",")})`,
+    )) as (DeckCardRow & { deck_id: number })[];
+    for (const c of cards) {
+      if (!deckCardsByDeckId.has(c.deck_id)) deckCardsByDeckId.set(c.deck_id, []);
+      deckCardsByDeckId.get(c.deck_id)!.push(c);
+    }
+  }
+  const decks = deckMetas.map((d) => ({ id: d.id, deck_cards: deckCardsByDeckId.get(d.id) ?? [] }));
 
   let classified = 0;
   let unclassified = 0;

@@ -3,9 +3,11 @@ competitiveセグメントの価格予測モデルを学習し、直近日付の
 段階表示、+5/10/15/20%以上それぞれの確率、predict_magnitude_ladder.py参照）を
 Supabaseの`card_price_predictions`テーブルに書き込む。
 
-サイト側（src/lib/dbMlRanking.ts）がこのテーブルを読んで注目カードランキングに使う。
-`card_current_prices`と同じ設計思想で、最新予測だけを1オラクル1行で持つ
-（時系列で溜め込まない）。実行のたびに全件入れ替える。
+サイト側（src/lib/dbMlRanking.ts）がこのテーブルの最新calculated_at分だけを読んで
+注目カードランキングに使う。2026-08-21、的中率を複数日・複数サンプルで事後検証できる
+よう、日付ごとの予測を上書きせず残す設計に変更した（PRIMARY KEYにcalculated_atを追加、
+db/schema.sql参照）。それまでは最新1回分だけを保持しており、過去の予測を遡って
+検証できなかった。
 
 ランキング順位はp_5（+5%以上の確率、最も緩い閾値）を使う。SOAR_QUANTILEの
 グリッドサーチ（docs/price-prediction-plan.md 12-4章）で、閾値を緩めた方が
@@ -21,6 +23,7 @@ Supabaseの`card_price_predictions`テーブルに書き込む。
 from __future__ import annotations
 
 import os
+from datetime import timedelta
 
 import requests
 
@@ -31,6 +34,7 @@ SUPABASE_URL = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
 SUPABASE_ANON_KEY = os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
 TOP_N = 100
 RANK_BY = f"p_{THRESHOLDS_PCT[0]}"  # 最も緩い閾値（+5%以上）で順位を決める
+RETENTION_DAYS = 90  # 的中率検証に使う過去分の保持期間
 
 
 def _require_supabase_env() -> None:
@@ -38,28 +42,29 @@ def _require_supabase_env() -> None:
         raise SystemExit("NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY を設定してください")
 
 
-def supabase_delete_all(table: str) -> None:
-    # PostgRESTはWHERE無しのDELETEを拒否するため、常に真になる条件を明示的に付ける
-    res = requests.delete(
-        f"{SUPABASE_URL}/rest/v1/{table}?rank=gte.0",
-        headers={"apikey": SUPABASE_ANON_KEY, "Authorization": f"Bearer {SUPABASE_ANON_KEY}"},
+def supabase_upsert(table: str, rows: list[dict], on_conflict: str) -> None:
+    if not rows:
+        return
+    res = requests.post(
+        f"{SUPABASE_URL}/rest/v1/{table}?on_conflict={on_conflict}",
+        headers={
+            "apikey": SUPABASE_ANON_KEY,
+            "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates,return=minimal",
+        },
+        json=rows,
         timeout=60,
     )
     res.raise_for_status()
 
 
-def supabase_insert(table: str, rows: list[dict]) -> None:
-    if not rows:
-        return
-    res = requests.post(
-        f"{SUPABASE_URL}/rest/v1/{table}",
-        headers={
-            "apikey": SUPABASE_ANON_KEY,
-            "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
-            "Content-Type": "application/json",
-            "Prefer": "return=minimal",
-        },
-        json=rows,
+def supabase_prune_older_than(table: str, cutoff_date: str) -> None:
+    # 的中率検証に使う程度の行数（Top100×2方向/日）なのでDB容量への影響は軽微だが、
+    # 無期限に積み上げず一応の上限は設ける（2026-08、DB容量超過を繰り返した教訓）。
+    res = requests.delete(
+        f"{SUPABASE_URL}/rest/v1/{table}?calculated_at=lt.{cutoff_date}",
+        headers={"apikey": SUPABASE_ANON_KEY, "Authorization": f"Bearer {SUPABASE_ANON_KEY}"},
         timeout=60,
     )
     res.raise_for_status()
@@ -109,8 +114,10 @@ def main() -> None:
     rows = _build_rows(frame, latest_date, latest, "up") + _build_rows(frame, latest_date, latest, "down")
 
     print(f"{latest_date.date()} 時点のTop{TOP_N}件×2方向をSupabaseへ書き込み中...")
-    supabase_delete_all("card_price_predictions")
-    supabase_insert("card_price_predictions", rows)
+    supabase_upsert("card_price_predictions", rows, on_conflict="oracle_id,direction,calculated_at")
+
+    cutoff = (latest_date - timedelta(days=RETENTION_DAYS)).date()
+    supabase_prune_older_than("card_price_predictions", str(cutoff))
     print("完了。")
 
 

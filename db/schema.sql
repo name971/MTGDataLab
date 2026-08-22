@@ -4,17 +4,46 @@
 -- ────────────────────────────────────────────────────────────
 
 
+-- cards.mana_valueの生成列が使う関数。mana_cost（例:"{2}{W/U}{B}"）中の{...}記号を全て合算する。
+-- X/Y/Zは0、数値記号はその数値、それ以外（色記号・ハイブリッド・Phyrexian等）は1として数える。
+-- 生成列（CREATE TABLE cards内）より前に定義しておく必要がある
+-- （2026-08-20、末尾に定義していたため新規プロジェクトへのスキーマ適用時にcardsテーブル作成が
+-- 失敗する不具合が発覚。以前は既存DBに後付けで関数を追加していたため気づかれなかった）。
+CREATE OR REPLACE FUNCTION mana_value_from_cost(mana_cost TEXT) RETURNS INTEGER AS $$
+DECLARE
+  total INTEGER := 0;
+  sym TEXT;
+BEGIN
+  IF mana_cost IS NULL THEN RETURN 0; END IF;
+  FOR sym IN SELECT (regexp_matches(mana_cost, '\{([^}]+)\}', 'g'))[1] LOOP
+    IF sym IN ('X','Y','Z') THEN
+      total := total + 0;
+    ELSIF sym ~ '^[0-9]+$' THEN
+      total := total + sym::INTEGER;
+    ELSE
+      total := total + 1;
+    END IF;
+  END LOOP;
+  RETURN total;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
 -- ════════════════════════════════════════════
 -- 1. カードマスタ（Scryfall由来）
 -- ════════════════════════════════════════════
 
 -- 「カードの概念」単位（oracle_id）。再録があっても1行。
 -- ランキング・採用率・トレンドスコアなど、プリント違いを問わない集計はここを参照する。
+-- is_reserved/is_serializedは以前マイグレーションで追加され、scripts/import-full-catalog.mjs
+-- 等が実際に書き込んでいたが、このファイル自体への反映が漏れていた
+-- （2026-08-20、新規プロジェクトへスキーマ適用時に列不足エラーで発覚）。
 CREATE TABLE card_oracles (
   oracle_id       UUID PRIMARY KEY,
   name            TEXT NOT NULL,
   printed_name_ja TEXT,
-  oracle_text     TEXT -- ルールテキスト（英語）。カード詳細ページ表示用
+  oracle_text     TEXT, -- ルールテキスト（英語）。カード詳細ページ表示用
+  is_reserved     BOOLEAN NOT NULL DEFAULT false,
+  is_serialized   BOOLEAN NOT NULL DEFAULT false
 );
 
 -- カードの「印刷」単位（セット違い・言語違いごとに1行）
@@ -439,6 +468,31 @@ CREATE INDEX idx_card_streaks_lookup ON card_streaks (category, calculated_date,
 
 CREATE INDEX idx_trending_lookup ON trending_scores (format, calculated_date, category, score DESC);
 
+-- 注目カードランキング（ML価格予測）用。ml/predict_and_publish.pyが日次で全件入れ替える
+-- （direction='up'/'down'それぞれTop100）。このテーブルはこのファイルに反映されておらず、
+-- 2026-08-20の新規プロジェクト移行時にサイトがメンテナンス表示になる原因になっていた
+-- （db/schema.sqlに書いていなかったので新規プロジェクトに作られなかった）。
+-- 2026-08-21、of的中率を複数日・複数サンプルで事後検証できるように、日付ごとの予測を
+-- 上書きせず残す設計に変更した（PRIMARY KEYにcalculated_atを追加）。それまでは最新1回分
+-- だけを保持しており、「あの日は何を予測していたか」を遡って検証できなかった。
+-- 増加量はTop100×2方向=200行/日程度でごく軽微なため、当面は間引かず全保持する
+-- （将来的にDB容量を圧迫するようなら90日等で間引くことを検討、ml/predict_and_publish.py参照）。
+CREATE TABLE card_price_predictions (
+  oracle_id       UUID NOT NULL REFERENCES card_oracles (oracle_id),
+  direction       TEXT NOT NULL,  -- 'up' | 'down'
+  rank            INT NOT NULL,
+  p_5             NUMERIC(5, 4) NOT NULL,
+  p_10            NUMERIC(5, 4) NOT NULL,
+  p_15            NUMERIC(5, 4) NOT NULL,
+  p_20            NUMERIC(5, 4) NOT NULL,
+  jpy_est         NUMERIC(12, 2) NOT NULL,
+  calculated_at   DATE NOT NULL,
+  PRIMARY KEY (oracle_id, direction, calculated_at)
+);
+
+CREATE INDEX idx_card_price_predictions_direction_rank
+  ON card_price_predictions (direction, calculated_at, rank);
+
 
 -- ════════════════════════════════════════════
 -- 5. パックEV計算用
@@ -636,25 +690,4 @@ LANGUAGE sql STABLE AS $$
   GROUP BY t.format, window_key;
 $$;
 
--- cards.mana_valueの生成列が使う関数。mana_cost（例:"{2}{W/U}{B}"）中の{...}記号を全て合算する。
--- X/Y/Zは0、数値記号はその数値、それ以外（色記号・ハイブリッド・Phyrexian等）は1として数える。
--- 分割・両面カードの" // "区切りされた両面分の記号もまとめて合算する（JS版のmanaValueFromCostと
--- 同じ挙動。src/lib/dbAdvancedSearch.ts参照）。IMMUTABLEなので生成列の定義に使える。
-CREATE OR REPLACE FUNCTION mana_value_from_cost(mana_cost TEXT) RETURNS INTEGER AS $$
-DECLARE
-  total INTEGER := 0;
-  sym TEXT;
-BEGIN
-  IF mana_cost IS NULL THEN RETURN 0; END IF;
-  FOR sym IN SELECT (regexp_matches(mana_cost, '\{([^}]+)\}', 'g'))[1] LOOP
-    IF sym IN ('X','Y','Z') THEN
-      total := total + 0;
-    ELSIF sym ~ '^[0-9]+$' THEN
-      total := total + sym::INTEGER;
-    ELSE
-      total := total + 1;
-    END IF;
-  END LOOP;
-  RETURN total;
-END;
-$$ LANGUAGE plpgsql IMMUTABLE;
+-- mana_value_from_cost関数はファイル冒頭（cards生成列より前）に移動済み。

@@ -82,9 +82,15 @@ def build_product_id_to_scryfall_id() -> dict[str, str]:
 def build_candidate_scryfall_to_oracle() -> dict[str, str]:
     """全カードのscryfall_id -> oracle_id対応を作る（Postgres card_prints全件 + D1
     catalog_oracles.representative_scryfall_id）。R2は行数でなくリクエスト回数課金で
-    無料枠も余裕があるため、D1の時のような候補カード限定は行わない。"""
-    print("Postgres: card_prints（全プリント）を取得中...")
-    print_rows = supabase_get_all("card_prints?select=scryfall_id,oracle_id")
+    無料枠も余裕があるため、D1の時のような候補カード限定は行わない。
+
+    not_tournament_legal=false（トーナメント使用不可版を除外）で絞り込む。以前
+    （コミット4c17b41、docs/incident-log.md参照）この絞り込み漏れで、正規版の価格が
+    無い日に使用不可版（Collectors' Edition等）の価格が代わりに残ってしまう不具合を
+    修正した実績があるが、このTCGCSVバックフィルスクリプトには同じ絞り込みが
+    入っていなかった（2026-08-21判明、同じ不具合の再発）。"""
+    print("Postgres: card_prints（トーナメント使用可能プリントのみ）を取得中...")
+    print_rows = supabase_get_all("card_prints?select=scryfall_id,oracle_id&not_tournament_legal=eq.false")
     print_df = pd.DataFrame(print_rows)
     print(f"  {len(print_df)}件")
 
@@ -129,15 +135,15 @@ def _init_worker(scryfall_by_product_id: dict[str, str], oracle_by_scryfall: dic
     _worker_oracle_by_scryfall = oracle_by_scryfall
 
 
-def _fetch_one_day_worker(day: date) -> tuple[dict[str, float], dict[str, float]]:
+def _fetch_one_day_worker(day: date) -> tuple[dict[str, float], dict[str, str], dict[str, float]]:
     return fetch_one_day(day, _worker_scryfall_by_product_id, _worker_oracle_by_scryfall)
 
 
 def fetch_one_day(
     day: date, scryfall_by_product_id: dict[str, str], oracle_by_scryfall: dict[str, str]
-) -> tuple[dict[str, float], dict[str, float]]:
-    """1日分のアーカイブから、(オラクル単位の最安値, プリント単位の価格) をそれぞれ
-    scryfall_id/oracle_id -> usd の辞書で返す。見つからなければ両方とも空辞書。
+) -> tuple[dict[str, float], dict[str, str], dict[str, float]]:
+    """1日分のアーカイブから、(オラクル単位の最安値, オラクル単位の最安プリントのscryfall_id,
+    プリント単位の価格) を返す。見つからなければ全て空辞書。
     接続エラー（並列アクセスでtcgcsv.com側に接続をリセットされることが実際にあった）は
     数回リトライし、リトライしても失敗したら諦めてその日はスキップする（1日分の失敗で
     ワーカープール全体・スクリプト全体を巻き込んでクラッシュさせない）。"""
@@ -154,10 +160,10 @@ def fetch_one_day(
             time.sleep(3 * (attempt + 1))
     else:
         print(f"  {day.isoformat()}: 接続エラーのため諦めます（{last_error}）", flush=True)
-        return {}, {}
+        return {}, {}, {}
 
     if res.status_code in (401, 403, 404):
-        return {}, {}
+        return {}, {}, {}
     res.raise_for_status()
 
     tmp_dir = tempfile.mkdtemp(prefix="tcgcsv-")
@@ -167,9 +173,14 @@ def fetch_one_day(
 
         mtg_dir = Path(tmp_dir) / day.isoformat() / MTG_CATEGORY_ID
         if not mtg_dir.exists():
-            return {}, {}
+            return {}, {}, {}
 
         best_by_oracle: dict[str, float] = {}
+        # オラクルの最安値がどのプリントだったか（サイト側の価格グラフがセットアイコンを
+        # 表示するのに使う、src/lib/priceArchiveDb.tsのgetArchivedPriceHistory参照）。
+        # 以前はここを記録しておらず、このスクリプトでバックフィルした日は「どのセットか」が
+        # 分からずアイコン無し表示になっていた（2026-08-21判明）。
+        best_scryfall_by_oracle: dict[str, str] = {}
         usd_by_print: dict[str, float] = {}
         for prices_file in mtg_dir.glob("*/prices"):
             body = json.loads(prices_file.read_text(encoding="utf-8"))
@@ -190,10 +201,11 @@ def fetch_one_day(
                     continue
                 if oracle_id not in best_by_oracle or usd < best_by_oracle[oracle_id]:
                     best_by_oracle[oracle_id] = usd
+                    best_scryfall_by_oracle[oracle_id] = scryfall_id
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
-    return best_by_oracle, usd_by_print
+    return best_by_oracle, best_scryfall_by_oracle, usd_by_print
 
 
 def fetch_exchange_rates() -> dict[str, float]:
@@ -265,7 +277,7 @@ def main() -> None:
     sorted_rate_dates = sorted(rate_by_date.keys())
     print(f"  {len(rate_by_date)}件（{sorted_rate_dates[0]}〜{sorted_rate_dates[-1]}）")
 
-    all_days = [d for d in daterange(start, end) if d.isoformat() < REAL_ARCHIVE_START_DATE]
+    all_days = [d for d in daterange(start, end) if d.isoformat() < "2026-08-22"]  # TEMP: 障害期間の穴埋め用に一時変更
     # 月ごとにまとめてR2へ書き込む（sync_month_to_r2が既存ファイルを読んでマージするため、
     # 同じ月を並列で書き込むと競合するので、月内の日付だけ並列化し、月をまたぐ処理は逐次にする）
     days_by_month: dict[str, list[date]] = {}
@@ -289,7 +301,7 @@ def main() -> None:
             for future in as_completed(future_to_day):
                 d = future_to_day[future]
                 day_str = d.isoformat()
-                usd_by_oracle, usd_by_print = future.result()
+                usd_by_oracle, scryfall_by_oracle, usd_by_print = future.result()
                 if not usd_by_oracle and not usd_by_print:
                     print(f"  {day_str}: データ無し", flush=True)
                     continue
@@ -298,7 +310,12 @@ def main() -> None:
                     print(f"  {day_str}: 為替レートが無いためスキップ", flush=True)
                     continue
                 for oracle_id, usd in usd_by_oracle.items():
-                    month_buffer.append({"oracle_id": oracle_id, "date": day_str, "jpy_est": round(usd * rate, 2)})
+                    month_buffer.append({
+                        "oracle_id": oracle_id,
+                        "date": day_str,
+                        "jpy_est": round(usd * rate, 2),
+                        "scryfall_id": scryfall_by_oracle.get(oracle_id),
+                    })
                 for scryfall_id, usd in usd_by_print.items():
                     print_month_buffer.append({"scryfall_id": scryfall_id, "date": day_str, "usd": usd})
                 total_rows_fetched += len(usd_by_oracle)

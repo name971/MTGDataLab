@@ -49,19 +49,33 @@ export async function getArchetypesFromDb(
   const cutoffStr = cutoff.toISOString().slice(0, 10);
 
   // Supabase/PostgRESTはデフォルトで1ページ最大1000件までしか返さないため、
-  // デッキ数がそれを超えるフォーマット（Legacy等）でもtotalDecksが欠けないようページングする。
+  // デッキ数がそれを超えるフォーマット（Commander等、直近30日で6000件超）でも
+  // totalDecksが欠けないようページングする。以前は1ページずつ順番に待っていたため
+  // Commanderで7往復分の通信が直列化され体感速度の主因になっていた（2026-08-21判明）。
+  // 1回目でcount:'exact'を付けて総件数を取得し、残りのページは並列に取得する。
   const PAGE_SIZE = 1000;
-  const decks: { id: number; archetype_id: number | null }[] = [];
-  for (let offset = 0; ; offset += PAGE_SIZE) {
-    const { data: page } = await supabase
+  const deckQuery = (withCount: boolean) =>
+    supabase
       .from("decks")
-      .select("id, archetype_id, tournaments!inner(format, event_date)")
+      .select(
+        "id, archetype_id, tournaments!inner(format, event_date)",
+        withCount ? { count: "exact" } : undefined,
+      )
       .eq("tournaments.format", format)
-      .gte("tournaments.event_date", cutoffStr)
-      .range(offset, offset + PAGE_SIZE - 1);
-    if (!page || page.length === 0) break;
-    decks.push(...page);
-    if (page.length < PAGE_SIZE) break;
+      .gte("tournaments.event_date", cutoffStr);
+
+  const { data: firstPage, count } = await deckQuery(true).range(0, PAGE_SIZE - 1);
+  const decks: { id: number; archetype_id: number | null }[] = [...(firstPage ?? [])];
+
+  const remainingPageCount = count ? Math.max(0, Math.ceil(count / PAGE_SIZE) - 1) : 0;
+  if (remainingPageCount > 0) {
+    const restPages = await Promise.all(
+      Array.from({ length: remainingPageCount }, (_, i) => {
+        const offset = (i + 1) * PAGE_SIZE;
+        return deckQuery(false).range(offset, offset + PAGE_SIZE - 1);
+      }),
+    );
+    for (const { data: page } of restPages) if (page) decks.push(...page);
   }
 
   const totalDecks = decks.length;

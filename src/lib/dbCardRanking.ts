@@ -36,30 +36,58 @@ export async function getCardRankingFromDb(
   format: Format,
   periodDays: 7 | 30 | 90 = 30,
 ): Promise<RankingRow[]> {
-  // Supabase/PostgRESTは1リクエスト最大1000行までしか返さない。Commander等は同一
-  // calculated_atだけで1000件を超えるため、.range()でページングしないと採用率上位のカードが
-  // 黙って切り捨てられ、たまたま残った無関係な低採用率カードが「上位」に見えてしまう。
+  // 必要なのは最新1日分のusage_rateだけなのに、以前はcalculated_at降順で全期間分（Commander等は
+  // period_days=30保持だけで60日以上×数千オラクル分）を.range()でページングして丸ごと取得し、
+  // JS側で「オラクルごとに最初に出てきた（=最新の）行」だけ拾って残りを捨てていた
+  // （2026-08-21判明、フォーマット切り替えが遅い主因）。まず最新日付だけを取得し、
+  // その1日分だけを対象にクエリし直す。
+  const { data: latestDateRow } = await supabase
+    .from("card_usage_stats")
+    .select("calculated_at")
+    .eq("format", format)
+    .eq("period_days", periodDays)
+    .order("calculated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!latestDateRow) return [];
+  const latestDate = latestDateRow.calculated_at;
+
+  // Supabase/PostgRESTは1リクエスト最大1000行までしか返さない。Commander等は1日分だけでも
+  // 1000件を超えうるため、.range()でページングする（今は1日分だけが対象なのでページ数は
+  // 少なく、必要に応じて並列取得する）。
   const PAGE_SIZE = 1000;
   async function fetchUsageRows() {
-    const rows: { oracle_id: string; usage_rate: number; calculated_at: string }[] = [];
-    for (let offset = 0; ; offset += PAGE_SIZE) {
-      const { data: page, error } = await supabase
-        .from("card_usage_stats")
-        .select("oracle_id, usage_rate, calculated_at")
-        .eq("format", format)
-        .eq("period_days", periodDays)
-        .order("calculated_at", { ascending: false })
-        .range(offset, offset + PAGE_SIZE - 1);
-      if (error || !page || page.length === 0) break;
-      rows.push(...page);
-      if (page.length < PAGE_SIZE) break;
+    const { data: firstPage, count } = await supabase
+      .from("card_usage_stats")
+      .select("oracle_id, usage_rate", { count: "exact" })
+      .eq("format", format)
+      .eq("period_days", periodDays)
+      .eq("calculated_at", latestDate)
+      .range(0, PAGE_SIZE - 1);
+    const rows: { oracle_id: string; usage_rate: number }[] = [...(firstPage ?? [])];
+    const remainingPageCount = count ? Math.max(0, Math.ceil(count / PAGE_SIZE) - 1) : 0;
+    if (remainingPageCount > 0) {
+      const restPages = await Promise.all(
+        Array.from({ length: remainingPageCount }, (_, i) => {
+          const offset = (i + 1) * PAGE_SIZE;
+          return supabase
+            .from("card_usage_stats")
+            .select("oracle_id, usage_rate")
+            .eq("format", format)
+            .eq("period_days", periodDays)
+            .eq("calculated_at", latestDate)
+            .range(offset, offset + PAGE_SIZE - 1);
+        }),
+      );
+      for (const { data: page } of restPages) if (page) rows.push(...page);
     }
     return rows;
   }
 
   // 基本土地のoracle_idだけを名前で引く（候補全件をin()で問い合わせるとURLが長くなりすぎるカードが
   // 多いフォーマットで失敗するため、基本土地という少数の既知の名前から逆引きする）。
-  // usageRowsのページング取得とは互いに依存しないので並列実行する。
+  // usageRowsの取得とは互いに依存しないので並列実行する。
   const [usageRows, { data: basicLandOracles }] = await Promise.all([
     fetchUsageRows(),
     supabase.from("card_oracles").select("oracle_id").in("name", [...BASIC_LAND_NAMES]),
@@ -67,7 +95,6 @@ export async function getCardRankingFromDb(
 
   if (usageRows.length === 0) return [];
 
-  // 最新日のusage_rateだけを1オラクル1件に絞る
   const latestUsageByOracle = new Map<string, number>();
   for (const row of usageRows) {
     if (!latestUsageByOracle.has(row.oracle_id)) {

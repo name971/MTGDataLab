@@ -64,7 +64,7 @@ export default function MlRankingList({
                 : "border-neutral-300 text-neutral-700 hover:border-neutral-500"
             }`}
           >
-            急騰予想
+            高騰予想
           </button>
           <button
             type="button"
@@ -75,7 +75,7 @@ export default function MlRankingList({
                 : "border-neutral-300 text-neutral-700 hover:border-neutral-500"
             }`}
           >
-            急落予想
+            暴落予想
           </button>
         </div>
 
