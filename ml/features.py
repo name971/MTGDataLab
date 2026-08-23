@@ -64,11 +64,13 @@ def build_static_features(static_attrs: pd.DataFrame) -> pd.DataFrame:
     ]
 
 
-def build_time_series_features(price_history: pd.DataFrame) -> pd.DataFrame:
-    """オラクル×日付ごとの遅延リターン・移動平均・ボラティリティを計算する。
-    全て過去方向のshift/rollingのみで、未来の値は一切参照しない。"""
-    df = price_history.sort_values(["oracle_id", "date"]).copy()
-    grouped = df.groupby("oracle_id")["jpy_est"]
+def build_time_series_features(price_history: pd.DataFrame, id_column: str = "oracle_id") -> pd.DataFrame:
+    """id_column（既定はoracle_id）×日付ごとの遅延リターン・移動平均・ボラティリティを
+    計算する。全て過去方向のshift/rollingのみで、未来の値は一切参照しない。
+    collectorセグメント（プリント単位で追う、2026-08-22）ではid_column="scryfall_id"
+    で呼ぶ。"""
+    df = price_history.sort_values([id_column, "date"]).copy()
+    grouped = df.groupby(id_column)["jpy_est"]
 
     df["log_price"] = np.log(df["jpy_est"])
     df["return_1d"] = grouped.pct_change(1)
@@ -82,7 +84,7 @@ def build_time_series_features(price_history: pd.DataFrame) -> pd.DataFrame:
     df["price_vs_ma7d"] = df["jpy_est"] / df["ma_7d"] - 1
 
     daily_return = grouped.pct_change(1)
-    df["volatility_7d"] = daily_return.groupby(df["oracle_id"]).transform(
+    df["volatility_7d"] = daily_return.groupby(df[id_column]).transform(
         lambda s: s.rolling(7, min_periods=3).std()
     )
 
@@ -399,46 +401,47 @@ CANDIDATE_MIN_PRICE_JPY = 300
 
 SEGMENTS = ("competitive", "collector")
 
+# 「安いプリントは別にあるのに特定版だけ高い」というコレクター需要のパターンを
+# 判定する閾値（2026-08-22）。is_reserved/is_serialized（発行ルール）だけでは
+# 実際のプレミアムプリント（showcase/borderless/foil-etched等）の大半を取りこぼす
+# ことが実データで判明したため、価格差ベースの判定を追加した。
+# 最高値プリントがこの金額未満（バルク近辺）だと比率が誇張されノイズになるため、
+# 金額の下限も併用する（実データで確認したところ、ある程度の金額があれば比率は
+# ほぼ自然に5倍を超えていた＝比率自体より金額の下限が実質的なフィルターとして効く）。
+PREMIUM_PRINT_MIN_RATIO = 5
+PREMIUM_PRINT_MIN_JPY = 3000
 
-def build_training_frame(segment: str) -> pd.DataFrame:
-    """価格が動く理由が正反対の2層を別モデルで扱うため、segmentごとに候補・価格系列
-    ともに分けて組み立てる:
-      - competitive: トーナメントで実際に使われた実績がある（card_usage_statsに一度でも
-        登場した）オラクル。競技勢は非Foil・最安値を買う傾向があるため、jpy_est
-        （非Foil最安、compute-cheapest-price-snapshots.mjs参照）をそのまま使う。
-      - collector: 再録禁止 or シリアル番号入り、かつcompetitiveでないオラクル
-        （両方に該当する場合は競技実績を優先しcompetitive側にのみ入れる）。
-        コレクターが実際に買うのはFoilや希少プリントなので、jpy_est_foilを使う
-        （Foil自体が存在しない古い再録禁止カードも多いため、無ければjpy_estに
-        フォールバックする）。
-    usage_statsは直近60日分しか無いため「一度でも登場したオラクル」をcompetitiveとして
-    扱い、その上でprice_historyの全期間（約2.5年）を学習対象に含める。"""
-    if segment not in SEGMENTS:
-        raise ValueError(f"segment must be one of {SEGMENTS}, got {segment!r}")
 
+def identify_premium_prints(print_current_prices: pd.DataFrame, usd_to_jpy_rate: float) -> set[str]:
+    """card_print_current_prices（今日時点のプリント単位価格）から、そのオラクルの
+    中で「特定版だけ価格が突出している」プリント（scryfall_id）を判定する。
+    競技実績の有無は問わない（デュアルランドのように競技定番でも旧枠オリジナルだけ
+    コレクター価格が付くケースがあるため）。"""
+    if print_current_prices.empty:
+        return set()
+    df = print_current_prices.copy()
+    df["priciest"] = df[["usd", "usd_foil"]].max(axis=1)
+    df["cheapest"] = df[["usd", "usd_foil"]].min(axis=1)
+    min_by_oracle = df.groupby("oracle_id")["cheapest"].transform("min")
+    priciest_jpy = df["priciest"] * usd_to_jpy_rate
+    is_premium = (priciest_jpy >= PREMIUM_PRINT_MIN_JPY) & (
+        df["priciest"] >= min_by_oracle * PREMIUM_PRINT_MIN_RATIO
+    )
+    return set(df.loc[is_premium, "scryfall_id"])
+
+
+def _build_competitive_frame(static_attrs: pd.DataFrame, usage_stats: pd.DataFrame) -> pd.DataFrame:
+    """トーナメントで実際に使われた実績がある（card_usage_statsに一度でも登場した）
+    オラクル。競技勢は非Foil・最安値を買う傾向があるため、jpy_est（非Foil最安、
+    compute-cheapest-price-snapshots.mjs参照）をそのまま使う。usage_statsは直近60日分
+    しか無いため「一度でも登場したオラクル」をcompetitiveとして扱い、その上で
+    price_historyの全期間（約2.5年）を学習対象に含める。"""
     price_history = pd.read_parquet(DATA_DIR / "price_history.parquet")
-    usage_stats = pd.read_parquet(DATA_DIR / "usage_stats.parquet")
-    static_attrs = pd.read_parquet(DATA_DIR / "static_attrs.parquet")
-
     usage = build_usage_features(usage_stats)
     static = build_static_features(static_attrs)
 
     played_oracle_ids = set(usage_stats["oracle_id"].unique()) if not usage_stats.empty else set()
-    is_competitive = static_attrs["oracle_id"].isin(played_oracle_ids)
-    is_collector = (
-        static_attrs["is_reserved"].fillna(False) | static_attrs["is_serialized"].fillna(False)
-    ) & ~is_competitive
-
-    if segment == "competitive":
-        candidate_oracle_ids = set(static_attrs.loc[is_competitive, "oracle_id"])
-    else:
-        candidate_oracle_ids = set(static_attrs.loc[is_collector, "oracle_id"])
-
-    price_history = price_history[price_history["oracle_id"].isin(candidate_oracle_ids)].copy()
-    if segment == "collector":
-        # jpy_est_foilが無い日（Foil未発売の古いカード等）はjpy_est（非Foil）を代用する
-        if "jpy_est_foil" in price_history.columns:
-            price_history["jpy_est"] = price_history["jpy_est_foil"].fillna(price_history["jpy_est"])
+    price_history = price_history[price_history["oracle_id"].isin(played_oracle_ids)].copy()
 
     ts = build_time_series_features(price_history)
 
@@ -459,6 +462,101 @@ def build_training_frame(segment: str) -> pd.DataFrame:
     frame = frame.merge(sideboard_usage, on=["oracle_id", "date"], how="left")
     frame = frame.merge(rotation, on=["oracle_id", "date"], how="left")
     frame = frame.merge(archetype_features, on=["oracle_id", "date"], how="left")
+    return frame
+
+
+def _build_collector_frame(static_attrs: pd.DataFrame) -> pd.DataFrame:
+    """コレクター需要はプリント単位（scryfall_id）で追う（2026-08-22、オラクル単位の
+    最安値だけ見ていると「安いプリントは別にあるのに特定版だけ高い」というコレクター
+    需要のパターン自体が見えなくなる問題が判明したため）。対象プリントは次のOR条件:
+      - 再録禁止 or シリアル番号入りのオラクルの全プリント（発行ルール上コレクター
+        カード確定、価格差の有無を問わない）
+      - どのオラクルに属していても、そのオラクルの中で価格が突出しているプリント
+        （identify_premium_prints、showcase/borderless/foil-etched等の特殊仕上げ版が
+        典型例）。competitiveとの重複を許容する（デュアルランドのように競技定番でも
+        旧枠オリジナルだけコレクター価格が付くケースがあるため、以前は競技実績優先で
+        除外していたが、そのままだと最安値のjpy_estしか見ずプレミアム版の値動きを
+        見逃していた）。
+    コレクターが実際に買うのはFoilや希少プリントなので、そのプリントのusd_foilを
+    優先し（無ければusd＝非Foルを代用）、日次為替レートでJPY換算する。
+    採用率・アーキタイプ・勝率等（回帰でもcollectorは重要度0だったことを確認済み、
+    docs/price-prediction-plan.md参照）は計算しない。"""
+    print_current_prices = pd.read_parquet(DATA_DIR / "print_current_prices.parquet")
+    print_history = pd.read_parquet(DATA_DIR / "print_history.parquet")
+    exchange_rates = pd.read_parquet(DATA_DIR / "exchange_rates.parquet")
+
+    if print_current_prices.empty or print_history.empty or exchange_rates.empty:
+        return pd.DataFrame(columns=["oracle_id", "scryfall_id", "date", "jpy_est"])
+
+    latest_rate = exchange_rates.sort_values("date")["usd_to_jpy"].iloc[-1]
+    premium_scryfall_ids = identify_premium_prints(print_current_prices, latest_rate)
+
+    reserved_serialized_oracle_ids = set(
+        static_attrs.loc[
+            static_attrs["is_reserved"].fillna(False) | static_attrs["is_serialized"].fillna(False),
+            "oracle_id",
+        ]
+    )
+    reserved_serialized_scryfall_ids = set(
+        print_current_prices.loc[
+            print_current_prices["oracle_id"].isin(reserved_serialized_oracle_ids), "scryfall_id"
+        ]
+    )
+    candidate_scryfall_ids = premium_scryfall_ids | reserved_serialized_scryfall_ids
+
+    scryfall_to_oracle = print_current_prices.drop_duplicates("scryfall_id").set_index("scryfall_id")[
+        "oracle_id"
+    ]
+
+    price_history = print_history[print_history["scryfall_id"].isin(candidate_scryfall_ids)].copy()
+    price_history["oracle_id"] = price_history["scryfall_id"].map(scryfall_to_oracle)
+    price_history = price_history.dropna(subset=["oracle_id"])
+    price_history = price_history.merge(exchange_rates, on="date", how="left")
+    price_history["jpy_est"] = (
+        price_history["usd_foil"].fillna(price_history["usd"]) * price_history["usd_to_jpy"]
+    )
+    price_history = price_history.dropna(subset=["jpy_est", "usd_to_jpy"])
+
+    static = build_static_features(static_attrs)
+    ts = build_time_series_features(price_history, id_column="scryfall_id")
+
+    # 1オラクルに複数のプレミアムプリントがあると、同じ(oracle_id, date)の組がtsに
+    # 複数回出現する。reprint/banned/rotationはどれも(oracle_id, date)1組につき1行を
+    # 前提にしているため、重複が無いオラクル単位のキーで先に計算してから多対1で
+    # 結合する（重複したまま渡すと結合キー側の重複と掛け合わさり、組み合わせ爆発で
+    # メモリを使い果たす。2026-08-22判明）。
+    oracle_dates = ts[["oracle_id", "date"]].drop_duplicates()
+    reprint = build_reprint_features(oracle_dates)
+    banned = build_banned_feature(oracle_dates)
+    rotation = build_standard_rotation_feature(oracle_dates)
+
+    frame = ts.merge(static, on="oracle_id", how="left")
+    frame = frame.merge(reprint, on=["oracle_id", "date"], how="left")
+    frame = frame.merge(banned, on=["oracle_id", "date"], how="left")
+    frame = frame.merge(rotation, on=["oracle_id", "date"], how="left")
+    return frame
+
+
+def build_training_frame(segment: str) -> pd.DataFrame:
+    """価格が動く理由が正反対の2層を別モデルで扱うため、segmentごとに候補・価格系列
+    ともに分けて組み立てる（_build_competitive_frame/_build_collector_frame参照）。"""
+    if segment not in SEGMENTS:
+        raise ValueError(f"segment must be one of {SEGMENTS}, got {segment!r}")
+
+    static_attrs = pd.read_parquet(DATA_DIR / "static_attrs.parquet")
+
+    if segment == "competitive":
+        usage_stats = pd.read_parquet(DATA_DIR / "usage_stats.parquet")
+        frame = _build_competitive_frame(static_attrs, usage_stats)
+    else:
+        frame = _build_collector_frame(static_attrs)
+
+    # collectorはusage_rate等の採用率・アーキタイプ系特徴量を計算しないため、
+    # FEATURE_COLUMNSの列名だけ揃える（値はNaNのまま、LightGBMのネイティブな欠損値
+    # 対応に委ねる）。
+    for column in FEATURE_COLUMNS:
+        if column not in frame.columns:
+            frame[column] = np.nan
 
     # バルク価格帯の行は%変動がノイズだらけになるため、その日の価格が閾値未満の行は除く
     # （移動平均・モメンタムはbuild_time_series_featuresの時点で全価格帯を見て計算済みなので、

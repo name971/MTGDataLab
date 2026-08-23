@@ -269,6 +269,53 @@ def fetch_r2_usage_history() -> pd.DataFrame:
     return df
 
 
+def fetch_r2_print_history() -> pd.DataFrame:
+    """R2（print-price-history/*.ndjson.gz、scripts/lib/r2PriceArchive.mjs参照）:
+    プリント単位（scryfall_id）の価格履歴（USD建て、2024-02〜今日まで）。
+    「安いプリントは別にあるのに特定版だけ高い」というコレクター需要のパターンを
+    プリント単位で追うために使う（オラクル単位のprice-historyでは、そのオラクルの
+    全プリント中の最安値しか分からず、プレミアム版の値動き自体は追えない）。"""
+    print("R2: print-price-history（プリント単位価格履歴）を取得中...")
+    s3 = r2_client()
+    bucket = os.environ["R2_BUCKET_NAME"]
+    month_frames = []
+    paginator = s3.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=bucket, Prefix="print-price-history/"):
+        for obj in page.get("Contents", []):
+            if not obj["Key"].endswith(".ndjson.gz"):
+                continue
+            body = s3.get_object(Bucket=bucket, Key=obj["Key"])["Body"].read()
+            with gzip.GzipFile(fileobj=io.BytesIO(body)) as gz:
+                month_records = [json.loads(line) for line in gz if line.strip()]
+            if month_records:
+                month_frames.append(pd.DataFrame(month_records))
+    if not month_frames:
+        return pd.DataFrame(columns=["scryfall_id", "date", "usd", "usd_foil"])
+    df = pd.concat(month_frames, ignore_index=True)
+    df["date"] = pd.to_datetime(df["date"])
+    df["usd"] = df["usd"].astype(float)
+    if "usd_foil" in df.columns:
+        df["usd_foil"] = df["usd_foil"].astype(float)
+    print(f"  {len(df)}行（{df['date'].min().date()}〜{df['date'].max().date()}）")
+    return df
+
+
+def fetch_supabase_print_current_prices() -> pd.DataFrame:
+    """card_print_current_prices（Postgres、全プリントの「今の価格」キャッシュ、
+    scripts/snapshot-print-prices.mjsが日次更新）から、プリントごとの現在価格とその
+    オラクルIDを取得する。「そのオラクルの中でどのプリントがコレクター価格が付いた
+    プレミアム版か」を判定するために使う（features.pyのidentify_premium_prints参照）。"""
+    print("Supabase: card_print_current_prices（プリント単位現在価格）を取得中...")
+    rows = supabase_get_all("card_print_current_prices?select=scryfall_id,oracle_id,usd,usd_foil")
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return pd.DataFrame(columns=["scryfall_id", "oracle_id", "usd", "usd_foil"])
+    df["usd"] = df["usd"].astype(float)
+    df["usd_foil"] = df["usd_foil"].astype(float)
+    print(f"  {len(df)}件")
+    return df
+
+
 def main() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -308,6 +355,17 @@ def main() -> None:
         [fetch_supabase_static_attrs(), fetch_d1_catalog_static_attrs()], ignore_index=True
     ).drop_duplicates(subset="oracle_id", keep="first")
     static_attrs.to_parquet(DATA_DIR / "static_attrs.parquet", index=False)
+
+    # collectorセグメントの再定義（プリント単位でコレクター価格を追う、2026-08-22）用。
+    exchange_rates = fetch_supabase_exchange_rates()
+    exchange_rates.to_parquet(DATA_DIR / "exchange_rates.parquet", index=False)
+
+    print_history = fetch_r2_print_history()
+    print_history.to_parquet(DATA_DIR / "print_history.parquet", index=False)
+
+    print_current_prices = fetch_supabase_print_current_prices()
+    print_current_prices.to_parquet(DATA_DIR / "print_current_prices.parquet", index=False)
+
     print(f"\n{DATA_DIR} にキャッシュ保存しました。")
 
 
