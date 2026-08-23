@@ -80,22 +80,41 @@ def build_product_id_to_scryfall_id() -> dict[str, str]:
 
 
 def build_candidate_scryfall_to_oracle() -> dict[str, str]:
-    """全カードのscryfall_id -> oracle_id対応を作る（Postgres card_prints全件 + D1
-    catalog_oracles.representative_scryfall_id）。R2は行数でなくリクエスト回数課金で
+    """全カードのscryfall_id -> oracle_id対応を作る（Postgres card_prints + D1
+    catalog_prints、どちらも合法プリントのみ）。R2は行数でなくリクエスト回数課金で
     無料枠も余裕があるため、D1の時のような候補カード限定は行わない。
 
-    not_tournament_legal=false（トーナメント使用不可版を除外）で絞り込む。以前
-    （コミット4c17b41、docs/incident-log.md参照）この絞り込み漏れで、正規版の価格が
-    無い日に使用不可版（Collectors' Edition等）の価格が代わりに残ってしまう不具合を
-    修正した実績があるが、このTCGCSVバックフィルスクリプトには同じ絞り込みが
-    入っていなかった（2026-08-21判明、同じ不具合の再発）。"""
+    not_tournament_legal（トーナメント使用不可版）を除外する。以前（コミット4c17b41、
+    docs/incident-log.md参照）この絞り込み漏れで、正規版の価格が無い日に使用不可版
+    （Collectors' Edition等）の価格が代わりに残ってしまう不具合を修正した実績があるが、
+    2度再発している: (1) 2026-08-21、このTCGCSVバックフィルスクリプト自体に絞り込みが
+    入っていなかった。(2) 2026-08-23、D1のcatalog_oracles.representative_scryfall_id
+    （代表プリント）自体がnot_tournament_legalを考慮せず選ばれており、全プリントが
+    使用不可版のみのオラクルで汚染が再発した。catalog_oracles経由ではなく、
+    not_tournament_legal列を持つcatalog_prints（プリント単位）から直接引く方式に変更。"""
     print("Postgres: card_prints（トーナメント使用可能プリントのみ）を取得中...")
     print_rows = supabase_get_all("card_prints?select=scryfall_id,oracle_id&not_tournament_legal=eq.false")
     print_df = pd.DataFrame(print_rows)
     print(f"  {len(print_df)}件")
 
-    print("D1: catalog_oracles（デッキ未使用カードの代表プリント）を取得中...")
-    d1_rows = d1_query("SELECT oracle_id, representative_scryfall_id FROM catalog_oracles", [])
+    # card_prints全体（合法・不可問わず）に登場するオラクルは「Postgres側で追跡対象」
+    # という扱いにする。合法プリントが1枚も無い（全プリントが使用不可版のみの）
+    # オラクルがD1のcatalog_oraclesにも重複登録されていることがあり（2026-08-23判明、
+    # 43オラクルで実際に発生）、D1の代表プリントで穴埋めすると使用不可版の価格が
+    # 紛れ込む。「合法プリントが無いなら諦めて価格追跡しない」が正しい挙動であり、
+    # D1の代表プリントで代用すべきではない。
+    print("Postgres: card_prints（全件、追跡対象オラクル判定用）を取得中...")
+    all_tracked_oracle_ids = set(
+        r["oracle_id"] for r in supabase_get_all("card_prints?select=oracle_id")
+    )
+    print(f"  {len(all_tracked_oracle_ids)}オラクル")
+
+    # catalog_oracles.representative_scryfall_idは代表プリント選定時にnot_tournament_legalを
+    # 見ておらず、使用不可版を指すことがある（2026-08-23判明）。catalog_prints（プリント単位、
+    # not_tournament_legal列を持つ）から直接、合法プリントのみを取る
+    # （scripts/snapshot-catalog-prices.mjsが日次で使っているのと同じテーブル・同じ絞り込み）。
+    print("D1: catalog_prints（デッキ未使用カードの合法プリントのみ）を取得中...")
+    d1_rows = d1_query("SELECT scryfall_id, oracle_id FROM catalog_prints WHERE not_tournament_legal = 0", [])
     print(f"  {len(d1_rows)}件")
 
     scryfall_to_oracle: dict[str, str] = {}
@@ -103,7 +122,9 @@ def build_candidate_scryfall_to_oracle() -> dict[str, str]:
         for row in print_df.itertuples():
             scryfall_to_oracle[row.scryfall_id] = row.oracle_id
     for row in d1_rows:
-        scryfall_to_oracle[row["representative_scryfall_id"]] = row["oracle_id"]
+        if row["oracle_id"] in all_tracked_oracle_ids:
+            continue
+        scryfall_to_oracle[row["scryfall_id"]] = row["oracle_id"]
 
     print(f"対象プリント: {len(scryfall_to_oracle)}件（オラクル単位ではもっと少ない）")
     return scryfall_to_oracle
