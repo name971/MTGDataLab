@@ -269,6 +269,11 @@ export async function readOraclePriceMonth(month) {
   return readMonthFile(R2_PRICE_PREFIX, month);
 }
 
+/** オラクル単位ファイル（oracle-history/{oracleId}.ndjson.gz）の全行を直接読む（調査用）。 */
+export async function readOracleCardFile(oracleId) {
+  return readNdjsonGz(`${R2_ORACLE_CARD_PREFIX}/${oracleId}.ndjson.gz`);
+}
+
 /** オラクル単位ファイルを、既存の内容とGETでマージしてから書き戻す（差分更新用、mergePrintCardFile参照）。 */
 export async function mergeOracleCardFile(oracleId, newRows) {
   const key = `${R2_ORACLE_CARD_PREFIX}/${oracleId}.ndjson.gz`;
