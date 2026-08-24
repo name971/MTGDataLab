@@ -43,13 +43,16 @@ RANDOM_SEED = 42
 SOAR_QUANTILE = 0.80
 DEFAULT_LGBM_PARAMS = {"n_estimators": 200, "num_leaves": 31, "min_child_samples": 20}
 
-# セグメントごとのハイパーパラメータ（2026-08-16、グリッドサーチで検証）。
+# セグメントごとのハイパーパラメータ。
 # competitiveは訓練データが多い（約150万行/フォールド）ため、木を複雑にして
-# 学習率を下げる設定がTop10/30/100すべてで改善した。同じ設定をcollector
-# （約8.5万行/フォールド、データが少ない）に使うと逆に過学習で悪化したため、
-# セグメントごとに分ける。
+# 学習率を下げる設定がTop10/30/100すべてで改善した（2026-08-16グリッドサーチ）。
+# 同じ設定をcollector（約8.5万行/フォールド、データが少ない）に使うと逆に
+# 過学習で悪化したため、セグメントごとに分ける。
+# n_estimatorsは2026-08-23、訓練データ自身への的中率(ほぼ100%)と未来テストデータ
+# への的中率(急騰Top10で40%)の差が大きく明確な過学習だったため500→150に見直した。
+# Top10/20/50/100全てで一貫して改善（急騰Top10 58.3%→76.7%）。
 SEGMENT_LGBM_PARAMS = {
-    "competitive": {"n_estimators": 500, "num_leaves": 63, "min_child_samples": 20, "learning_rate": 0.05},
+    "competitive": {"n_estimators": 150, "num_leaves": 63, "min_child_samples": 20, "learning_rate": 0.05},
     "collector": DEFAULT_LGBM_PARAMS,
 }
 
