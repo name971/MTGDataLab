@@ -34,6 +34,16 @@ function cardTitle(card: BannedCardWithCard): string {
   return `${card.nameJa ?? card.name}${card.month ? ` (${card.year}年${card.month}月${label})` : ""}`;
 }
 
+// このページのサムネイルは最大でも90px高（コンパクト表示では46px高まで縮む）にしか表示しない
+// のに、DBに保存されているのは488x680の"normal"画像（next.config.tsでimages.unoptimized=true
+// にしているため、next/imageによる自動リサイズも効かず、そのまま丸ごとダウンロードされる）。
+// ScryfallのCDN URLは/normal/を/small/に置き換えるだけで146x204版が同じUUIDで取得できるため、
+// このページ専用にDBスキーマを変えずサムネイルだけ差し替える（歴代分で数百枚あり、
+// 1年分でも数MB→数百KB程度まで転送量を落とせる）。
+function toSmallImageUrl(url: string): string {
+  return url.replace("/normal/", "/small/");
+}
+
 // カード画像の縦横比（通常のカード比率）。next/imageのwidth/heightは実画像取得用のヒントとして
 // 固定値64x90を渡しつつ、実際の表示サイズはstyleのheight（CSS式もしくは数値px）で決める。
 function CardThumb({ card, heightStyle }: { card: BannedCardWithCard; heightStyle: string }) {
@@ -47,7 +57,7 @@ function CardThumb({ card, heightStyle }: { card: BannedCardWithCard; heightStyl
     >
       {card.imageUrl ? (
         <Image
-          src={card.imageUrl}
+          src={toSmallImageUrl(card.imageUrl)}
           alt={card.nameJa ?? card.name}
           width={64}
           height={90}

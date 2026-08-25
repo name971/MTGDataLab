@@ -92,16 +92,38 @@ export async function getArchetypesFromDb(
     }
   }
 
-  // 代表カード選定・Arena換算・実勢価格中央値は、いずれも同じdeckIdsByArchetypeのメインボード
-  // （deck_cards）を土台に計算する。以前はそれぞれが個別にdeck_cards/cardsを取得しており、
-  // 同じ行を2〜3回問い合わせて直列に待っていた（デッキ数が多いフォーマットほど遅くなる主因
-  // だった）。1回だけ共有取得し、互いに依存しない計算は並列化する。
-  const sharedDeckCards = await fetchArchetypeDeckCards(deckIdsByArchetype);
+  // Commander・期間30日（デフォルト表示）は、日次バッチ（scripts/compute-deck-stats.mjs）が
+  // 既に「アーキタイプごと直近20件の実勢価格中央値」をarchetype_price_statsに事前計算済み。
+  // Commanderは統率者数（＝アーキタイプ数）が数百に及び、ライブ集計だとdeck_cardsだけで
+  // 20万行超を毎回転送する羽目になり体感速度の主因になっていたため、この組み合わせだけは
+  // 事前計算値を使い、deck_cards取得・その場集計を丸ごとスキップする。
+  // バッチの窓は日付フィルタ無しの「直近作成20件」なので7日/90日指定時とは厳密には
+  // 一致しないため、その場合と事前計算がまだ無いアーキタイプ（新規等）は従来通りその場で計算する。
+  let medianPriceByArchetype: Map<number, { medianPriceJpy: number; sampleSize: number }>;
+  let artUrlsByArchetype: Map<number, string[]>;
+  let colorsByArchetype: Map<number, string[]>;
+  let arenaMedianByArchetype: Map<number, number>;
 
-  // Commanderはアーキタイプ名そのものが統率者名（"A / B"はパートナー）なので、
-  // メインボードを走査するのではなく統率者自身の絵（パートナーなら2枚とも）を代表カードにする。
-  const [{ art: artUrlsByArchetype, colors: colorsByArchetype }, arenaMedianByArchetype, medianPriceByArchetype] =
-    await Promise.all([
+  const archetypeIds = archetypes.map((a) => a.id);
+  const precomputedPrice =
+    format === "Commander" && periodDays === 30 ? await getPrecomputedMedianPriceByArchetype(archetypeIds) : null;
+
+  if (precomputedPrice && precomputedPrice.size > 0) {
+    medianPriceByArchetype = precomputedPrice;
+    arenaMedianByArchetype = new Map();
+    const art = await getCommanderArtByArchetype(archetypes);
+    artUrlsByArchetype = art.art;
+    colorsByArchetype = art.colors;
+  } else {
+    // 代表カード選定・Arena換算・実勢価格中央値は、いずれも同じdeckIdsByArchetypeのメインボード
+    // （deck_cards）を土台に計算する。以前はそれぞれが個別にdeck_cards/cardsを取得しており、
+    // 同じ行を2〜3回問い合わせて直列に待っていた（デッキ数が多いフォーマットほど遅くなる主因
+    // だった）。1回だけ共有取得し、互いに依存しない計算は並列化する。
+    const sharedDeckCards = await fetchArchetypeDeckCards(deckIdsByArchetype);
+
+    // Commanderはアーキタイプ名そのものが統率者名（"A / B"はパートナー）なので、
+    // メインボードを走査するのではなく統率者自身の絵（パートナーなら2枚とも）を代表カードにする。
+    const [artResult, arenaResult, priceResult] = await Promise.all([
       format === "Commander"
         ? getCommanderArtByArchetype(archetypes)
         : Promise.resolve(getRepresentativeArtByArchetype(deckIdsByArchetype, sharedDeckCards)),
@@ -111,6 +133,11 @@ export async function getArchetypesFromDb(
         : Promise.resolve(new Map<number, number>()),
       getMedianPriceByArchetype(deckIdsByArchetype, sharedDeckCards),
     ]);
+    artUrlsByArchetype = artResult.art;
+    colorsByArchetype = artResult.colors;
+    arenaMedianByArchetype = arenaResult;
+    medianPriceByArchetype = priceResult;
+  }
 
   const rows = archetypes
     .map((a) => {
@@ -138,6 +165,46 @@ export async function getArchetypesFromDb(
 }
 
 /**
+ * archetype_price_stats（scripts/compute-deck-stats.mjsが日次で書く事前計算値）から
+ * 最新calculated_atの行だけを読む。テーブルが空、またはまだその日の分が書かれていない場合は
+ * 空Mapを返し、呼び出し側でその場計算にフォールバックさせる。
+ */
+async function getPrecomputedMedianPriceByArchetype(
+  archetypeIds: number[],
+): Promise<Map<number, { medianPriceJpy: number; sampleSize: number }>> {
+  if (archetypeIds.length === 0) return new Map();
+
+  const { data: latest } = await supabase
+    .from("archetype_price_stats")
+    .select("calculated_at")
+    .order("calculated_at", { ascending: false })
+    .limit(1);
+  const latestDate = latest?.[0]?.calculated_at;
+  if (!latestDate) return new Map();
+
+  const PAGE_SIZE = 500;
+  const chunks: number[][] = [];
+  for (let i = 0; i < archetypeIds.length; i += PAGE_SIZE) chunks.push(archetypeIds.slice(i, i + PAGE_SIZE));
+  const results = await Promise.all(
+    chunks.map((chunk) =>
+      supabase
+        .from("archetype_price_stats")
+        .select("archetype_id, median_price_jpy, sample_size")
+        .eq("calculated_at", latestDate)
+        .in("archetype_id", chunk),
+    ),
+  );
+
+  const map = new Map<number, { medianPriceJpy: number; sampleSize: number }>();
+  for (const { data } of results) {
+    for (const row of data ?? []) {
+      map.set(row.archetype_id, { medianPriceJpy: Number(row.median_price_jpy), sampleSize: row.sample_size });
+    }
+  }
+  return map;
+}
+
+/**
  * Commander用: アーキタイプ名＝統率者名（パートナーは" / "区切り）それぞれの絵を代表カードにする。
  * 両面カードの統率者は名前が"表面 // 裏面"になっており、card_oracles.nameは表面名のみで
  * 保持しているため、参照時は" // "より前（表面）だけを使う。
@@ -152,29 +219,28 @@ async function getCommanderArtByArchetype(
   // Commanderは統率者ごとに別アーキタイプになるため名前の種類数が数百件に及ぶ。.in()に
   // 全件まとめて渡すとURLが長すぎてPostgRESTが400を返し、結果が丸ごと（画像も色も）
   // サイレントに欠落する事故が実際に起きていた。チャンク分割して問い合わせる。
+  // チャンクは互いに独立なので並列に投げる（以前は直列往復で、統率者数が多いCommanderの
+  // 切り替えが体感で遅い主因の一つだった）。
   const NAME_CHUNK = 150;
-  const oracles: { oracle_id: string; name: string }[] = [];
-  for (let i = 0; i < commanderNames.length; i += NAME_CHUNK) {
-    const chunk = commanderNames.slice(i, i + NAME_CHUNK);
-    const { data, error } = await supabase.from("card_oracles").select("oracle_id, name").in("name", chunk);
-    if (error) continue;
-    if (data) oracles.push(...data);
-  }
+  const nameChunks: string[][] = [];
+  for (let i = 0; i < commanderNames.length; i += NAME_CHUNK) nameChunks.push(commanderNames.slice(i, i + NAME_CHUNK));
+  const oracleResults = await Promise.all(
+    nameChunks.map((chunk) => supabase.from("card_oracles").select("oracle_id, name").in("name", chunk)),
+  );
+  const oracles: { oracle_id: string; name: string }[] = oracleResults.flatMap((r) => r.data ?? []);
   if (oracles.length === 0) return { art: new Map(), colors: new Map() };
 
   const oracleIdByName = new Map(oracles.map((o) => [o.name, o.oracle_id]));
   const oracleIds = oracles.map((o) => o.oracle_id);
-  const cards: { oracle_id: string; image_uri_art_crop: string | null; mana_cost: string | null }[] = [];
-  for (let i = 0; i < oracleIds.length; i += NAME_CHUNK) {
-    const chunk = oracleIds.slice(i, i + NAME_CHUNK);
-    const { data, error } = await supabase
-      .from("cards")
-      .select("oracle_id, image_uri_art_crop, mana_cost")
-      .eq("lang", "en")
-      .in("oracle_id", chunk);
-    if (error) continue;
-    if (data) cards.push(...data);
-  }
+  const oracleIdChunks: string[][] = [];
+  for (let i = 0; i < oracleIds.length; i += NAME_CHUNK) oracleIdChunks.push(oracleIds.slice(i, i + NAME_CHUNK));
+  const cardResults = await Promise.all(
+    oracleIdChunks.map((chunk) =>
+      supabase.from("cards").select("oracle_id, image_uri_art_crop, mana_cost").eq("lang", "en").in("oracle_id", chunk),
+    ),
+  );
+  const cards: { oracle_id: string; image_uri_art_crop: string | null; mana_cost: string | null }[] =
+    cardResults.flatMap((r) => r.data ?? []);
 
   const artByOracleId = new Map(cards.map((c) => [c.oracle_id, c.image_uri_art_crop]));
   const manaCostByOracleId = new Map(cards.map((c) => [c.oracle_id, c.mana_cost]));
@@ -214,25 +280,35 @@ async function fetchArchetypeDeckCards(deckIdsByArchetype: Map<number, number[]>
   const chunks: number[][] = [];
   for (let i = 0; i < allDeckIds.length; i += PAGE_SIZE) chunks.push(allDeckIds.slice(i, i + PAGE_SIZE));
 
-  // チャンク・ページはいずれも互いに独立なので並列取得する
-  const chunkResults = await Promise.all(
-    chunks.map(async (chunk) => {
-      const pages: ArchetypeDeckCard[] = [];
-      for (let offset = 0; ; offset += ROW_PAGE_SIZE) {
-        const { data } = await supabase
-          .from("deck_cards")
-          .select("deck_id, oracle_id, quantity")
-          .in("deck_id", chunk)
-          .eq("board", "main")
-          .range(offset, offset + ROW_PAGE_SIZE - 1);
-        if (!data || data.length === 0) break;
-        pages.push(...data);
-        if (data.length < ROW_PAGE_SIZE) break;
-      }
-      return pages;
-    }),
-  );
-  return chunkResults.flat();
+  const rowQuery = (chunk: number[], withCount: boolean) =>
+    supabase
+      .from("deck_cards")
+      .select("deck_id, oracle_id, quantity", withCount ? { count: "exact" } : undefined)
+      .in("deck_id", chunk)
+      .eq("board", "main");
+
+  // 以前はchunkごとに「1ページ待って次のoffsetを決める」を繰り返しており、Commander
+  // （1chunk=200デッキ×90枚前後で1000行を軽く超える）だとchunkが並列でも1chunkあたり
+  // 10ページ超を直列で待つ羽目になり、これが切り替えの体感速度の主因だった。デッキ一覧の
+  // ページング（本ファイル上部のgetArchetypesFromDb）と同じく、1ページ目でcount:'exact'を
+  // 取り、残りページを一括で並列発行する。
+  const firstPages = await Promise.all(chunks.map((chunk) => rowQuery(chunk, true).range(0, ROW_PAGE_SIZE - 1)));
+
+  const restRequests: ReturnType<typeof rowQuery>[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    const count = firstPages[i].count ?? 0;
+    const remainingPageCount = Math.max(0, Math.ceil(count / ROW_PAGE_SIZE) - 1);
+    for (let p = 0; p < remainingPageCount; p++) {
+      const offset = (p + 1) * ROW_PAGE_SIZE;
+      restRequests.push(rowQuery(chunks[i], false).range(offset, offset + ROW_PAGE_SIZE - 1));
+    }
+  }
+  const restPages = await Promise.all(restRequests);
+
+  const rows: ArchetypeDeckCard[] = [];
+  for (const { data } of firstPages) if (data) rows.push(...data);
+  for (const { data } of restPages) if (data) rows.push(...data);
+  return rows;
 }
 
 /**
@@ -273,17 +349,18 @@ async function getRepresentativeArtByArchetype(
   }
 
   const allOracleIds = [...new Set(deckCards.map((dc) => dc.oracle_id).filter((id): id is string => !!id))];
+  const infoChunks: string[][] = [];
+  for (let i = 0; i < allOracleIds.length; i += PAGE_SIZE) infoChunks.push(allOracleIds.slice(i, i + PAGE_SIZE));
+  const infoResults = await Promise.all(
+    infoChunks.map((chunk) =>
+      supabase.from("cards").select("oracle_id, type_line, image_uri_art_crop, mana_cost").eq("lang", "en").in("oracle_id", chunk),
+    ),
+  );
   const cardInfoByOracle = new Map<
     string,
     { typeLine: string | null; artCropUrl: string | null; manaCost: string | null }
   >();
-  for (let i = 0; i < allOracleIds.length; i += PAGE_SIZE) {
-    const chunk = allOracleIds.slice(i, i + PAGE_SIZE);
-    const { data } = await supabase
-      .from("cards")
-      .select("oracle_id, type_line, image_uri_art_crop, mana_cost")
-      .eq("lang", "en")
-      .in("oracle_id", chunk);
+  for (const { data } of infoResults) {
     for (const c of data ?? []) {
       cardInfoByOracle.set(c.oracle_id, {
         typeLine: c.type_line,
@@ -339,10 +416,13 @@ async function getArenaMedianByArchetype(
   const PAGE_SIZE = 200;
 
   const allOracleIds = [...new Set(deckCards.map((dc) => dc.oracle_id).filter((id): id is string => !!id))];
+  const rarityChunks: string[][] = [];
+  for (let i = 0; i < allOracleIds.length; i += PAGE_SIZE) rarityChunks.push(allOracleIds.slice(i, i + PAGE_SIZE));
+  const rarityResults = await Promise.all(
+    rarityChunks.map((chunk) => supabase.from("cards").select("oracle_id, rarity").eq("lang", "en").in("oracle_id", chunk)),
+  );
   const rarityByOracle = new Map<string, string>();
-  for (let i = 0; i < allOracleIds.length; i += PAGE_SIZE) {
-    const chunk = allOracleIds.slice(i, i + PAGE_SIZE);
-    const { data } = await supabase.from("cards").select("oracle_id, rarity").eq("lang", "en").in("oracle_id", chunk);
+  for (const { data } of rarityResults) {
     for (const c of data ?? []) {
       if (c.rarity) rarityByOracle.set(c.oracle_id, c.rarity);
     }
@@ -391,13 +471,18 @@ async function getMedianPriceByArchetype(
   const PAGE_SIZE = 200;
 
   const allOracleIds = [...new Set(deckCards.map((dc) => dc.oracle_id).filter((id): id is string => !!id))];
+  const priceChunks: string[][] = [];
+  for (let i = 0; i < allOracleIds.length; i += PAGE_SIZE) priceChunks.push(allOracleIds.slice(i, i + PAGE_SIZE));
+  // チャンクは互いに独立なので並列に投げる（統率者ごとにユニークカードが多いCommanderで
+  // 直列往復すると切り替えが体感で遅くなる主因になっていた）
+  const priceResults = await Promise.all(
+    priceChunks.map((chunk) => supabase.from("card_current_prices").select("oracle_id, jpy_est").in("oracle_id", chunk)),
+  );
   const priceByOracle = new Map<string, number>();
-  for (let i = 0; i < allOracleIds.length; i += PAGE_SIZE) {
-    const chunk = allOracleIds.slice(i, i + PAGE_SIZE);
+  for (const { data } of priceResults) {
     // date降順なので最初に出てきた行がoracle_idごとの最新スナップショット
-    const { data } = await supabase.from("card_current_prices").select("oracle_id, jpy_est").in("oracle_id", chunk);
     for (const p of data ?? []) {
-      if (p.jpy_est !== null) priceByOracle.set(p.oracle_id, Number(p.jpy_est));
+      if (p.jpy_est !== null && !priceByOracle.has(p.oracle_id)) priceByOracle.set(p.oracle_id, Number(p.jpy_est));
     }
   }
 
