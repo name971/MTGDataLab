@@ -25,19 +25,40 @@ function formatDateShort(isoDate: string): string {
 
 const OTHER_DECKS_VISIBLE_COUNT = 10;
 
+// 代表デッキは「このアーキタイプの今の姿」を見せたいので、古いデッキがいつまでも
+// 居座らないよう直近デッキだけを候補にする。7日以内に無ければ30日、それも無ければ90日、
+// それでも無ければ全期間、と段階的に候補を広げる。
+const REPRESENTATIVE_DECK_WINDOWS_DAYS = [7, 30, 90] as const;
+
 /** "4-0" "2-1-1" 形式のstandingを勝率（勝ち数優先、同点なら負け数が少ない方）で比較する */
 function winRateRank(standing: string): { wins: number; losses: number } {
   const [wins, losses] = standing.split("-").map((n) => parseInt(n, 10) || 0);
   return { wins, losses };
 }
 
+function pickCandidates(decks: RecentDeckSummary[]): RecentDeckSummary[] {
+  for (const windowDays of REPRESENTATIVE_DECK_WINDOWS_DAYS) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - windowDays);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    const inWindow = decks.filter((d) => d.eventDate >= cutoffStr);
+    if (inWindow.length > 0) return inWindow;
+  }
+  return decks;
+}
+
 function pickBestDeck(decks: RecentDeckSummary[]): RecentDeckSummary | null {
   if (decks.length === 0) return null;
-  return [...decks].sort((a, b) => {
+
+  const candidates = pickCandidates(decks);
+
+  return [...candidates].sort((a, b) => {
     const rankA = winRateRank(a.standing);
     const rankB = winRateRank(b.standing);
     if (rankB.wins !== rankA.wins) return rankB.wins - rankA.wins;
-    return rankA.losses - rankB.losses;
+    if (rankA.losses !== rankB.losses) return rankA.losses - rankB.losses;
+    // 戦績が完全に同点なら、新しい開催日の方を優先する
+    return a.eventDate < b.eventDate ? 1 : -1;
   })[0];
 }
 
