@@ -19,7 +19,11 @@ jobs:
     # 事故が再発したため150分に引き上げた。2026-08-22、MLランキング関連ステップは
     # ml-ranking.yml（独立スケジュール、15:00 JST）へ切り出したため本来はもう短くて
     # 良いが、切り戻しの余地を残すため据え置く。
-    timeout-minutes: 150
+    # 2026-08-27、価格スナップショット2ステップだけで約78分（今後も増え続ける）を消費し、
+    # 150分では後半（Archive old deck_cards等、DB容量管理に必須のステップ）まで到達できず
+    # 2日連続でキャンセルされた。同時に価格スナップショット自体も軽量化するが、当面の
+    # バッファとして210分に引き上げる。
+    timeout-minutes: 210
     env:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
@@ -186,6 +190,11 @@ jobs:
 
       - name: Compute trending scores
         run: node scripts/compute-trending-scores.mjs
+
+      # /rankings/trending（値上がり/採用率上昇Top100、週次ランキングページ）用。
+      # 直近7日間の変化をローリング更新する（compute-trending-scores.mjsの3日/Top10とは別軸）。
+      - name: Compute weekly movers
+        run: node scripts/compute-weekly-movers.mjs
 
       # card_streaks（トップページ「継続注目カード」）はR2価格履歴（compute-cheapest-price-
       # snapshots.mjsが書き込む、このワークフロー前半）とcard_usage_stats（ひとつ上のステップ）

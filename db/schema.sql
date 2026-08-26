@@ -438,6 +438,26 @@ CREATE TABLE trending_scores (
   UNIQUE (oracle_id, format, calculated_date, category)
 );
 
+-- 週次ランキングページ（/rankings/trending、src/lib/dbWeeklyMovers.ts）専用。trending_scores
+-- （1日あたり上位10件・直近3日変化、トップページの小さな注目カード表示用）とは別物で、
+-- こちらは直近7日変化・Top100件を対象にする（scripts/compute-weekly-movers.mjs、日次実行で
+-- 「直近7日間の変化」をローリング更新する）。
+-- price: フォーマット非依存（オラクル単位の最安値）なのでformatは常にNULL。
+-- usage: フォーマットごとに別値なので、オラクルごとに一番変化幅が大きかったフォーマットを
+-- 代表として1件だけ保存する（全フォーマット横断で1本化）。
+CREATE TABLE weekly_movers (
+  id              BIGSERIAL PRIMARY KEY,
+  oracle_id       UUID NOT NULL REFERENCES card_oracles (oracle_id),
+  category        TEXT NOT NULL,  -- 'price' | 'usage'
+  format          TEXT,           -- usageのみ、そのオラクルで採用した代表フォーマット
+  change_value    NUMERIC(8, 2) NOT NULL,  -- price: %／usage: pt
+  rank            INT NOT NULL,
+  calculated_date DATE NOT NULL,
+  UNIQUE (oracle_id, category, calculated_date)
+);
+
+CREATE INDEX idx_weekly_movers_lookup ON weekly_movers (calculated_date, category, rank);
+
 -- 「継続注目カード」（トップページ、src/lib/dbTrendingCards.ts）専用。trending_scores（1日あたり
 -- 上位10件しか保存しない、直近3日変化ベース）とは別物で、こちらはカード詳細ページのグラフと
 -- 同じ生データ（card_cheapest_price_snapshots・card_usage_stats）を全カード対象に毎日走査し、
