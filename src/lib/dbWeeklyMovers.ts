@@ -5,7 +5,7 @@ import { colorsFromManaCost } from "./manaColors";
 export type MoverCategory = "price" | "usage";
 
 export const WEEKLY_MOVERS_PAGE_SIZE = 20;
-export const WEEKLY_MOVERS_TOP_N = 100;
+export const WEEKLY_MOVERS_TOP_N = 300;
 
 export interface WeeklyMoverRow {
   oracleId: string;

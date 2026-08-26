@@ -38,7 +38,7 @@ export default async function TrendingRankingPage({
     <div className="flex flex-col gap-4">
       <div>
         <h1 className="text-xl font-semibold">週間ランキング</h1>
-        <p className="text-sm text-neutral-500">直近7日間の変化でTop100を毎日更新</p>
+        <p className="text-sm text-neutral-500">直近7日間の変化でTop300を毎日更新</p>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -58,12 +58,30 @@ export default async function TrendingRankingPage({
           ))}
         </div>
         {category === "price" && (
-          <Link
-            href={`/trending?category=price&metric=${metric === "jpy" ? "pct" : "jpy"}`}
-            className="rounded-md border border-neutral-300 px-2.5 py-1.5 text-xs text-neutral-600 hover:border-neutral-500"
-          >
-            {metric === "jpy" ? "%ランキングに切替" : "金額差ランキングに切替"}
-          </Link>
+          <div className="flex gap-1">
+            <Link
+              href="/trending?category=price&metric=pct"
+              aria-label="%ランキング"
+              className={`rounded-md border px-2.5 py-1.5 text-sm ${
+                metric === "pct"
+                  ? "border-neutral-500 bg-neutral-100 text-neutral-900"
+                  : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
+              }`}
+            >
+              %
+            </Link>
+            <Link
+              href="/trending?category=price&metric=jpy"
+              aria-label="金額差ランキング"
+              className={`rounded-md border px-2.5 py-1.5 text-sm ${
+                metric === "jpy"
+                  ? "border-neutral-500 bg-neutral-100 text-neutral-900"
+                  : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
+              }`}
+            >
+              💰
+            </Link>
+          </div>
         )}
       </div>
 

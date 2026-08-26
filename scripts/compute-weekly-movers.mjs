@@ -20,7 +20,7 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 }
 
 const LOOKBACK_DAYS = 7;
-const TOP_N = 100;
+const TOP_N = 300;
 const NUMERIC_8_2_MAX = 999999.99; // 極端な激安カードの暴騰でnumeric overflowしないようクランプする
 
 function isoDate(d) {
