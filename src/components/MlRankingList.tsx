@@ -3,10 +3,19 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
-import { FORMATS } from "@/lib/formats";
-import { createClient } from "@/lib/supabase/client";
+import { useMemo, useState } from "react";
 import type { MlRankingRow } from "@/lib/dbMlRanking";
+import RankingFilterPanel, {
+  EMPTY_RANKING_FILTERS,
+  GearIcon,
+  matchesRankingFilters,
+  type RankingFilters,
+} from "@/components/RankingFilterPanel";
+
+// 注目カードランキングのフォーマット/価格帯フィルターは有料会員限定から無料開放した
+// （2026-08-27）。overrideLockedにfalseを渡し、実際の会員ステータスに関わらず常に
+// ロックを外す。週間ランキング（WeeklyMoversList.tsx）は引き続き有料会員限定のまま。
+const UNLOCK_FILTERS = true;
 
 const PAGE_SIZE = 15;
 
@@ -34,8 +43,16 @@ export default function MlRankingList({
   // 戻り時にこのコンポーネントが再マウントされて状態が失われていた）。
   const direction = searchParams.get("mlDir") === "down" ? "down" : "up";
   const page = Math.max(0, Number(searchParams.get("mlPage") ?? "0") || 0);
+  const [filters, setFilters] = useState<RankingFilters>(EMPTY_RANKING_FILTERS);
 
-  const rows = direction === "up" ? up : down;
+  const allRows = direction === "up" ? up : down;
+  const rows = useMemo(
+    () =>
+      allRows.filter((r) =>
+        matchesRankingFilters(filters, { formats: r.formats, colors: r.colors, priceJpy: r.priceJpy }),
+      ),
+    [allRows, filters],
+  );
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const pageRows = rows.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
 
@@ -88,7 +105,14 @@ export default function MlRankingList({
           >
             <GearIcon />
           </button>
-          {showFilters && <FilterPanel onClose={() => setShowFilters(false)} />}
+          {showFilters && (
+            <RankingFilterPanel
+              filters={filters}
+              onChange={setFilters}
+              onClose={() => setShowFilters(false)}
+              overrideLocked={UNLOCK_FILTERS ? false : undefined}
+            />
+          )}
         </div>
       </div>
 
@@ -202,126 +226,3 @@ function MlRankingCard({
   );
 }
 
-function GearIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="h-4 w-4"
-    >
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-    </svg>
-  );
-}
-
-/** フォーマット/価格帯/確率しきい値フィルターのUI。会員登録（Supabase Auth+Google）は
-    実装済みだが決済連携は未実装のため、is_premiumを手動でtrueにしない限り常にロック
-    表示になる（有料会員機能として後日、決済連携時にis_premiumを自動更新する想定）。
-    実際の絞り込みロジック自体もまだ未実装（UIのみ）。 */
-function FilterPanel({ onClose }: { onClose: () => void }) {
-  const [status, setStatus] = useState<"loading" | "anonymous" | "free" | "premium">("loading");
-  const supabase = createClient();
-
-  useEffect(() => {
-    supabase.auth.getUser().then(async ({ data }) => {
-      if (!data.user) {
-        setStatus("anonymous");
-        return;
-      }
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("is_premium")
-        .eq("id", data.user.id)
-        .single();
-      setStatus(profile?.is_premium ? "premium" : "free");
-    });
-  }, [supabase]);
-
-  const locked = status !== "premium";
-
-  return (
-    <div className="absolute right-0 top-9 z-10 w-72 rounded-md border border-neutral-200 bg-white p-3 shadow-md">
-      <div className="mb-2 flex items-center justify-between">
-        <p className="text-sm font-medium">絞り込み</p>
-        <button type="button" onClick={onClose} className="text-xs text-neutral-400 hover:text-neutral-600">
-          閉じる
-        </button>
-      </div>
-
-      <div className="relative">
-        <div className={`space-y-3 ${locked ? "pointer-events-none opacity-50" : ""}`}>
-          <div>
-            <label className="mb-1 block text-xs text-neutral-500">フォーマット</label>
-            <select disabled className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm">
-              <option>すべて</option>
-              {FORMATS.map((format) => (
-                <option key={format}>{format}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-neutral-500">価格帯</label>
-            <div className="flex items-center gap-2">
-              <input
-                disabled
-                type="number"
-                placeholder="下限"
-                className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-              />
-              <span className="text-neutral-400">〜</span>
-              <input
-                disabled
-                type="number"
-                placeholder="上限"
-                className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-neutral-500">確率のしきい値</label>
-            <select disabled className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm">
-              <option>+5%以上が◯%以上</option>
-              <option>+10%以上が◯%以上</option>
-              <option>+15%以上が◯%以上</option>
-              <option>+20%以上が◯%以上</option>
-            </select>
-          </div>
-        </div>
-
-        {status !== "loading" && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 rounded-md bg-white/70 text-center">
-            <LockIcon />
-            <p className="text-xs font-medium text-neutral-700">有料会員限定機能</p>
-            <p className="px-4 text-[11px] text-neutral-500">
-              {status === "anonymous"
-                ? "ログインすると詳細が確認できます"
-                : "近日提供予定です"}
-            </p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function LockIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="h-5 w-5 text-neutral-400"
-    >
-      <rect x="3" y="11" width="18" height="11" rx="2" />
-      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-    </svg>
-  );
-}

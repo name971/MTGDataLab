@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { getBestCardImages } from "./dbCardPrints";
+import { colorsFromManaCost } from "./manaColors";
 
 const RANKING_SIZE = 100; // ページ切り替えで最大100件まで閲覧できる
 
@@ -14,6 +15,14 @@ export interface MlRankingRow {
   p10: number;
   p15: number;
   p20: number;
+  /** フォーマットフィルター用の表示専用メタデータ。予測モデル自体はフォーマット横断で
+   * 特徴量をプールしており「どのフォーマットで使われているか」を持たないため、
+   * card_usage_statsに採用実績があるフォーマットを（複数選択フィルターに対応できるよう）
+   * 全て列挙する（採用実績が無いカードは空配列）。 */
+  formats: string[];
+  /** 色フィルター用（RankingFilterPanel.tsx参照）。EN版のmana_costから導出、両面カード等で
+   * 取得できなかった場合は空配列（無色/取得不可を区別しない） */
+  colors: string[];
 }
 
 /**
@@ -58,10 +67,11 @@ export async function getMlRankingFromDb(
   if (!rows || rows.length === 0) return [];
 
   const oracleIds = rows.map((r) => r.oracle_id);
-  const [{ data: oracles }, { data: cardRows }, bestImageByOracle] = await Promise.all([
+  const [{ data: oracles }, { data: cardRows }, bestImageByOracle, formatsByOracle] = await Promise.all([
     supabase.from("card_oracles").select("oracle_id, name, printed_name_ja").in("oracle_id", oracleIds),
-    supabase.from("cards").select("oracle_id, lang, image_uri_art_crop").in("oracle_id", oracleIds),
+    supabase.from("cards").select("oracle_id, lang, image_uri_art_crop, mana_cost").in("oracle_id", oracleIds),
     getBestCardImages(oracleIds),
+    getFormatsByOracle(oracleIds),
   ]);
 
   const nameByOracle = new Map((oracles ?? []).map((o) => [o.oracle_id, o]));
@@ -77,6 +87,10 @@ export async function getMlRankingFromDb(
   }
   for (const [oracleId, normalUrl] of bestImageByOracle) {
     artCropByOracle.set(oracleId, normalUrl.replace("/normal/", "/art_crop/"));
+  }
+  const manaCostByOracle = new Map<string, string | null>();
+  for (const c of cardRows ?? []) {
+    if (c.lang === "en") manaCostByOracle.set(c.oracle_id, c.mana_cost);
   }
 
   return rows
@@ -94,7 +108,38 @@ export async function getMlRankingFromDb(
         p10: Number(row.p_10),
         p15: Number(row.p_15),
         p20: Number(row.p_20),
+        formats: formatsByOracle.get(row.oracle_id) ?? [],
+        colors: colorsFromManaCost(manaCostByOracle.get(row.oracle_id)),
       } satisfies MlRankingRow;
     })
     .filter((r): r is MlRankingRow => r !== null);
+}
+
+/**
+ * オラクルごとに、直近のcard_usage_statsに採用実績があるフォーマットを全て列挙する
+ * （複数選択フィルターに対応するため、1件だけの代表値ではなく配列で返す）。
+ * フィルター表示専用の軽量メタデータで、予測モデルの特徴量には使わない
+ * （getMlRankingFromDb参照）。
+ */
+async function getFormatsByOracle(oracleIds: string[]): Promise<Map<string, string[]>> {
+  const { data: latestUsageRow } = await supabase
+    .from("card_usage_stats")
+    .select("calculated_at")
+    .order("calculated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!latestUsageRow) return new Map();
+
+  const { data: usageRows } = await supabase
+    .from("card_usage_stats")
+    .select("oracle_id, format")
+    .eq("calculated_at", latestUsageRow.calculated_at)
+    .in("oracle_id", oracleIds);
+
+  const formatsByOracle = new Map<string, Set<string>>();
+  for (const r of usageRows ?? []) {
+    if (!formatsByOracle.has(r.oracle_id)) formatsByOracle.set(r.oracle_id, new Set());
+    formatsByOracle.get(r.oracle_id)!.add(r.format);
+  }
+  return new Map([...formatsByOracle.entries()].map(([oracleId, set]) => [oracleId, [...set]]));
 }
