@@ -30,17 +30,18 @@ export function formatChangeUnit(category: MoverCategory): string {
 
 /**
  * weekly_movers（scripts/compute-weekly-movers.mjsが日次で計算）の最新calculated_date分から、
- * 指定カテゴリ・ページ分のランキング行を組み立てる。1ページ20件、Top100（5ページ）まで。
+ * 指定カテゴリのTop100を全件まとめて返す。フィルター適用後にページごとの枚数が
+ * 歯抜けにならないよう、ページングはWeeklyMoversList.tsx側でフィルター後の配列に対して
+ * 行う（MlRankingList.tsxと同じ方式、2026-08-27）。
  */
 export async function getWeeklyMovers(
   category: MoverCategory,
-  page: number,
   /** priceカテゴリのみ、%上昇率ランキングか金額差ランキングかを切り替える。単なる表示単位の
    * 変換ではなく、compute-weekly-movers.mjsがそれぞれ別に算出したTop100（カード構成自体が
    * 異なりうる）を切り替える（2026-08-27、「単位を変えたいだけ」ではなく「別のランキングが
    * 見たい」という要望だった）。weekly_movers.categoryは"price_jpy"として別行で保存されている。 */
   priceMetric: "pct" | "jpy" = "pct",
-): Promise<{ rows: WeeklyMoverRow[]; totalCount: number }> {
+): Promise<{ rows: WeeklyMoverRow[] }> {
   const storedCategory = category === "price" && priceMetric === "jpy" ? "price_jpy" : category;
 
   const { data: latestRow } = await supabase
@@ -49,17 +50,16 @@ export async function getWeeklyMovers(
     .order("calculated_date", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (!latestRow) return { rows: [], totalCount: 0 };
+  if (!latestRow) return { rows: [] };
 
-  const offset = (page - 1) * WEEKLY_MOVERS_PAGE_SIZE;
-  const { data: moverRows, count } = await supabase
+  const { data: moverRows } = await supabase
     .from("weekly_movers")
-    .select("oracle_id, format, change_value, rank", { count: "exact" })
+    .select("oracle_id, format, change_value, rank")
     .eq("calculated_date", latestRow.calculated_date)
     .eq("category", storedCategory)
     .order("rank", { ascending: true })
-    .range(offset, offset + WEEKLY_MOVERS_PAGE_SIZE - 1);
-  if (!moverRows || moverRows.length === 0) return { rows: [], totalCount: count ?? 0 };
+    .limit(WEEKLY_MOVERS_TOP_N);
+  if (!moverRows || moverRows.length === 0) return { rows: [] };
 
   const oracleIds = moverRows.map((r) => r.oracle_id);
   const [{ data: oracles }, { data: cardRows }, { data: priceRows }, bestImageByOracle, formatsByOracle] =
@@ -100,7 +100,7 @@ export async function getWeeklyMovers(
     })
     .filter((r): r is WeeklyMoverRow => r !== null);
 
-  return { rows, totalCount: Math.min(count ?? 0, WEEKLY_MOVERS_TOP_N) };
+  return { rows };
 }
 
 /**

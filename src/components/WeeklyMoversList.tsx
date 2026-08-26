@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { WeeklyMoverRow, MoverCategory } from "@/lib/dbWeeklyMovers";
 import { formatLabelJa, FORMATS } from "@/lib/formats";
 import RankingFilterPanel, {
@@ -20,6 +20,9 @@ function isFormat(v: string | null): v is (typeof FORMATS)[number] {
   return v !== null && (FORMATS as readonly string[]).includes(v);
 }
 
+// 1ページ5×4枚（グリッドの最大列数lg:grid-cols-5に合わせる）
+const PAGE_SIZE = 20;
+
 export default function WeeklyMoversList({
   rows,
   category,
@@ -31,6 +34,7 @@ export default function WeeklyMoversList({
 }) {
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<RankingFilters>(EMPTY_RANKING_FILTERS);
+  const [page, setPage] = useState(0);
 
   const filtered = useMemo(
     () =>
@@ -39,6 +43,11 @@ export default function WeeklyMoversList({
       ),
     [rows, filters],
   );
+  // フィルター/タブ切り替えで対象件数が変わったら1ページ目に戻す
+  // （そうしないと、ページ数が減った状態で空のページを表示し続けてしまう）
+  useEffect(() => setPage(0), [rows, filters]);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageRows = filtered.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
 
   return (
     <div className="flex flex-col gap-3">
@@ -64,7 +73,7 @@ export default function WeeklyMoversList({
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4 lg:grid-cols-5">
-        {filtered.map((row) => (
+        {pageRows.map((row) => (
           <MoverRow key={row.oracleId} row={row} category={category} priceMetric={priceMetric} />
         ))}
       </div>
@@ -72,6 +81,25 @@ export default function WeeklyMoversList({
         <p className="py-6 text-center text-sm text-neutral-500">
           この条件に該当するカードはありません。
         </p>
+      )}
+
+      {pageCount > 1 && (
+        <div className="flex justify-center gap-1.5">
+          {Array.from({ length: pageCount }, (_, i) => i).map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => setPage(p)}
+              className={`rounded-md border px-3 py-1.5 text-sm ${
+                p === page
+                  ? "border-neutral-500 bg-neutral-100 text-neutral-900"
+                  : "border-neutral-300 text-neutral-600 hover:border-neutral-500"
+              }`}
+            >
+              {p + 1}
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getWeeklyMovers, WEEKLY_MOVERS_PAGE_SIZE, WEEKLY_MOVERS_TOP_N, type MoverCategory } from "@/lib/dbWeeklyMovers";
+import { getWeeklyMovers, type MoverCategory } from "@/lib/dbWeeklyMovers";
 import WeeklyMoversList from "@/components/WeeklyMoversList";
 
 // 集計バッチ（compute-weekly-movers.mjs）は1日1回しか回らないため、長めにキャッシュする
@@ -12,8 +12,6 @@ const CATEGORIES: { key: MoverCategory; label: string }[] = [
   { key: "usage", label: "採用率上昇ランキング" },
 ];
 
-const TOTAL_PAGES = WEEKLY_MOVERS_TOP_N / WEEKLY_MOVERS_PAGE_SIZE;
-
 function resolveCategory(raw: string | undefined): MoverCategory {
   return raw === "usage" ? "usage" : "price";
 }
@@ -22,23 +20,19 @@ function resolveMetric(raw: string | undefined): "pct" | "jpy" {
   return raw === "jpy" ? "jpy" : "pct";
 }
 
-function resolvePage(raw: string | undefined): number {
-  const n = Number(raw);
-  return Number.isInteger(n) && n >= 1 && n <= TOTAL_PAGES ? n : 1;
-}
-
 export default async function TrendingRankingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ category?: string; page?: string; metric?: string }>;
+  searchParams: Promise<{ category?: string; metric?: string }>;
 }) {
   const sp = await searchParams;
   const category = resolveCategory(sp.category);
   const metric = resolveMetric(sp.metric);
-  const page = resolvePage(sp.page);
 
-  const { rows, totalCount } = await getWeeklyMovers(category, page, metric);
-  const totalPages = Math.max(1, Math.min(TOTAL_PAGES, Math.ceil(totalCount / WEEKLY_MOVERS_PAGE_SIZE)));
+  // フィルター適用後にページが歯抜けにならないよう、Top100を全件まとめて取得し、
+  // ページングはWeeklyMoversList.tsx（クライアント側、フィルター後の配列に対して）で行う
+  // （MlRankingList.tsxと同じ方式、2026-08-27）。
+  const { rows } = await getWeeklyMovers(category, metric);
 
   return (
     <div className="flex flex-col gap-4">
@@ -79,24 +73,6 @@ export default async function TrendingRankingPage({
         <p className="py-6 text-center text-sm text-neutral-500">
           まだ集計データがありません。しばらくしてから見に来てください。
         </p>
-      )}
-
-      {totalPages > 1 && (
-        <div className="flex justify-center gap-1.5">
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-            <Link
-              key={p}
-              href={`/trending?category=${category}&page=${p}${category === "price" ? `&metric=${metric}` : ""}`}
-              className={`rounded-md border px-3 py-1.5 text-sm ${
-                p === page
-                  ? "border-neutral-500 bg-neutral-100 text-neutral-900"
-                  : "border-neutral-300 text-neutral-600 hover:border-neutral-500"
-              }`}
-            >
-              {p}
-            </Link>
-          ))}
-        </div>
       )}
     </div>
   );
