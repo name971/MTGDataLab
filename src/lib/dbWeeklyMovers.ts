@@ -15,8 +15,7 @@ export interface WeeklyMoverRow {
   imageUrl: string;
   colors: string[];
   rarity: string | null;
-  changeValue: number; // price: %／usage: pt
-  changeValueJpy: number | null; // priceのみ、円建ての変化額（金額差表示切り替えボタン用）
+  changeValue: number; // price: %／price_jpy: 円／usage: pt
   /** usageのみ、この変化幅の元になった代表フォーマット（英語のFormat値そのまま、表示バッジ用） */
   format: string | null;
   /** フォーマットフィルター用。直近のcard_usage_statsに採用実績がある全フォーマット
@@ -36,7 +35,14 @@ export function formatChangeUnit(category: MoverCategory): string {
 export async function getWeeklyMovers(
   category: MoverCategory,
   page: number,
+  /** priceカテゴリのみ、%上昇率ランキングか金額差ランキングかを切り替える。単なる表示単位の
+   * 変換ではなく、compute-weekly-movers.mjsがそれぞれ別に算出したTop100（カード構成自体が
+   * 異なりうる）を切り替える（2026-08-27、「単位を変えたいだけ」ではなく「別のランキングが
+   * 見たい」という要望だった）。weekly_movers.categoryは"price_jpy"として別行で保存されている。 */
+  priceMetric: "pct" | "jpy" = "pct",
 ): Promise<{ rows: WeeklyMoverRow[]; totalCount: number }> {
+  const storedCategory = category === "price" && priceMetric === "jpy" ? "price_jpy" : category;
+
   const { data: latestRow } = await supabase
     .from("weekly_movers")
     .select("calculated_date")
@@ -48,9 +54,9 @@ export async function getWeeklyMovers(
   const offset = (page - 1) * WEEKLY_MOVERS_PAGE_SIZE;
   const { data: moverRows, count } = await supabase
     .from("weekly_movers")
-    .select("oracle_id, format, change_value, change_value_jpy, rank", { count: "exact" })
+    .select("oracle_id, format, change_value, rank", { count: "exact" })
     .eq("calculated_date", latestRow.calculated_date)
-    .eq("category", category)
+    .eq("category", storedCategory)
     .order("rank", { ascending: true })
     .range(offset, offset + WEEKLY_MOVERS_PAGE_SIZE - 1);
   if (!moverRows || moverRows.length === 0) return { rows: [], totalCount: count ?? 0 };
@@ -87,7 +93,6 @@ export async function getWeeklyMovers(
         colors: colorsFromManaCost(manaCostByOracle.get(m.oracle_id)),
         rarity: rarityByOracle.get(m.oracle_id) ?? null,
         changeValue: Number(m.change_value),
-        changeValueJpy: m.change_value_jpy != null ? Number(m.change_value_jpy) : null,
         format: m.format,
         formats: formatsByOracle.get(m.oracle_id) ?? [],
         priceJpy: priceByOracle.get(m.oracle_id) ?? null,

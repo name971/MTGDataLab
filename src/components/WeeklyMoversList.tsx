@@ -23,13 +23,14 @@ function isFormat(v: string | null): v is (typeof FORMATS)[number] {
 export default function WeeklyMoversList({
   rows,
   category,
+  priceMetric,
 }: {
   rows: WeeklyMoverRow[];
   category: MoverCategory;
+  priceMetric: "pct" | "jpy";
 }) {
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<RankingFilters>(EMPTY_RANKING_FILTERS);
-  const [showJpyDiff, setShowJpyDiff] = useState(false); // 値上がりランキングのみ、%⇔円表示切り替え
 
   const filtered = useMemo(
     () =>
@@ -42,15 +43,6 @@ export default function WeeklyMoversList({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-end gap-2">
-        {category === "price" && (
-          <button
-            type="button"
-            onClick={() => setShowJpyDiff((v) => !v)}
-            className="rounded-md border border-neutral-300 px-2.5 py-1.5 text-xs text-neutral-600 hover:border-neutral-500"
-          >
-            {showJpyDiff ? "%表示に切替" : "金額差で表示"}
-          </button>
-        )}
         <div className="relative">
           <button
             type="button"
@@ -73,7 +65,7 @@ export default function WeeklyMoversList({
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4 lg:grid-cols-5">
         {filtered.map((row) => (
-          <MoverRow key={row.oracleId} row={row} category={category} showJpyDiff={showJpyDiff} />
+          <MoverRow key={row.oracleId} row={row} category={category} priceMetric={priceMetric} />
         ))}
       </div>
       {filtered.length === 0 && (
@@ -88,16 +80,18 @@ export default function WeeklyMoversList({
 function MoverRow({
   row,
   category,
-  showJpyDiff,
+  priceMetric,
 }: {
   row: WeeklyMoverRow;
   category: MoverCategory;
-  showJpyDiff: boolean;
+  priceMetric: "pct" | "jpy";
 }) {
-  const useJpy = category === "price" && showJpyDiff && row.changeValueJpy != null;
+  const useJpy = category === "price" && priceMetric === "jpy";
   const changeText = useJpy
-    ? `+¥${Math.round(row.changeValueJpy!).toLocaleString()}`
+    ? `+¥${Math.round(row.changeValue).toLocaleString()}`
     : `+${row.changeValue.toFixed(1)}${category === "price" ? "%" : "pt"}`;
+  // TrendingRankingList.tsxの「採用率(Format) +X.Xpt」表記に揃える
+  const formatLabel = row.format ? (isFormat(row.format) ? formatLabelJa(row.format) : row.format) : null;
   return (
     <Link
       href={`/cards/${row.oracleId}`}
@@ -110,16 +104,12 @@ function MoverRow({
           {row.nameJa}
         </p>
         <p className="truncate text-xs text-neutral-500">{row.nameEn}</p>
-        <div className="mt-1 flex items-center justify-between text-sm">
-          <span className="font-semibold text-teal-800">{changeText}</span>
-          {row.format && (
-            <span className="truncate text-xs text-neutral-400">
-              {isFormat(row.format) ? formatLabelJa(row.format) : row.format}
-            </span>
-          )}
-        </div>
-        {row.priceJpy != null && (
-          <p className="text-right text-xs text-neutral-500">¥{row.priceJpy.toLocaleString()}</p>
+        <p className="mt-1 text-sm font-semibold text-teal-800">
+          {formatLabel && <span className="mr-1 font-normal text-neutral-500">{formatLabel}</span>}
+          {changeText}
+        </p>
+        {row.priceJpy != null && row.priceJpy > 0 && (
+          <p className="text-right text-sm">¥{row.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}</p>
         )}
       </div>
     </Link>

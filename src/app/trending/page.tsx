@@ -18,6 +18,10 @@ function resolveCategory(raw: string | undefined): MoverCategory {
   return raw === "usage" ? "usage" : "price";
 }
 
+function resolveMetric(raw: string | undefined): "pct" | "jpy" {
+  return raw === "jpy" ? "jpy" : "pct";
+}
+
 function resolvePage(raw: string | undefined): number {
   const n = Number(raw);
   return Number.isInteger(n) && n >= 1 && n <= TOTAL_PAGES ? n : 1;
@@ -26,13 +30,14 @@ function resolvePage(raw: string | undefined): number {
 export default async function TrendingRankingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ category?: string; page?: string }>;
+  searchParams: Promise<{ category?: string; page?: string; metric?: string }>;
 }) {
   const sp = await searchParams;
   const category = resolveCategory(sp.category);
+  const metric = resolveMetric(sp.metric);
   const page = resolvePage(sp.page);
 
-  const { rows, totalCount } = await getWeeklyMovers(category, page);
+  const { rows, totalCount } = await getWeeklyMovers(category, page, metric);
   const totalPages = Math.max(1, Math.min(TOTAL_PAGES, Math.ceil(totalCount / WEEKLY_MOVERS_PAGE_SIZE)));
 
   return (
@@ -42,24 +47,34 @@ export default async function TrendingRankingPage({
         <p className="text-sm text-neutral-500">直近7日間の変化でTop100を毎日更新</p>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {CATEGORIES.map((c) => (
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2">
+          {CATEGORIES.map((c) => (
+            <Link
+              key={c.key}
+              href={`/trending?category=${c.key}`}
+              className={`rounded-md border px-3 py-1.5 text-sm ${
+                c.key === category
+                  ? "border-neutral-500 bg-neutral-100 text-neutral-900"
+                  : "border-neutral-300 text-neutral-600 hover:border-neutral-500"
+              }`}
+            >
+              {c.label}
+            </Link>
+          ))}
+        </div>
+        {category === "price" && (
           <Link
-            key={c.key}
-            href={`/trending?category=${c.key}`}
-            className={`rounded-md border px-3 py-1.5 text-sm ${
-              c.key === category
-                ? "border-neutral-500 bg-neutral-100 text-neutral-900"
-                : "border-neutral-300 text-neutral-600 hover:border-neutral-500"
-            }`}
+            href={`/trending?category=price&metric=${metric === "jpy" ? "pct" : "jpy"}`}
+            className="rounded-md border border-neutral-300 px-2.5 py-1.5 text-xs text-neutral-600 hover:border-neutral-500"
           >
-            {c.label}
+            {metric === "jpy" ? "%ランキングに切替" : "金額差ランキングに切替"}
           </Link>
-        ))}
+        )}
       </div>
 
       {rows.length > 0 ? (
-        <WeeklyMoversList rows={rows} category={category} />
+        <WeeklyMoversList rows={rows} category={category} priceMetric={metric} />
       ) : (
         <p className="py-6 text-center text-sm text-neutral-500">
           まだ集計データがありません。しばらくしてから見に来てください。
@@ -71,7 +86,7 @@ export default async function TrendingRankingPage({
           {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
             <Link
               key={p}
-              href={`/trending?category=${category}&page=${p}`}
+              href={`/trending?category=${category}&page=${p}${category === "price" ? `&metric=${metric}` : ""}`}
               className={`rounded-md border px-3 py-1.5 text-sm ${
                 p === page
                   ? "border-neutral-500 bg-neutral-100 text-neutral-900"

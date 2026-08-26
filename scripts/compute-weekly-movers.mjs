@@ -142,13 +142,28 @@ async function main() {
       if (printSwapped && pct >= PRINT_SWAP_PCT_THRESHOLD) continue;
       changes.push({ oracleId: r.oracle_id, pct, jpyDiff: Number(r.jpy_est) - past.jpy });
     }
-    changes.sort((a, b) => b.pct - a.pct);
-    changes.slice(0, TOP_N).forEach((c, i) => {
+    // %ランキング（value上昇率）とは別に、金額差（円）そのもので順位付けした
+    // 別ランキングも保存する（「金額差で表示」ボタンは表示の単位切り替えではなく、
+    // 順位そのものが入れ替わる別ランキングを見せてほしいという要望、2026-08-27）。
+    const byPct = [...changes].sort((a, b) => b.pct - a.pct);
+    byPct.slice(0, TOP_N).forEach((c, i) => {
       rows.push({
         oracle_id: c.oracleId,
         category: "price",
         format: null,
         change_value: clampChange(c.pct),
+        change_value_jpy: clampChange(c.jpyDiff),
+        rank: i + 1,
+        calculated_date: todayStr,
+      });
+    });
+    const byJpy = [...changes].sort((a, b) => b.jpyDiff - a.jpyDiff);
+    byJpy.slice(0, TOP_N).forEach((c, i) => {
+      rows.push({
+        oracle_id: c.oracleId,
+        category: "price_jpy",
+        format: null,
+        change_value: clampChange(c.jpyDiff),
         change_value_jpy: clampChange(c.jpyDiff),
         rank: i + 1,
         calculated_date: todayStr,
