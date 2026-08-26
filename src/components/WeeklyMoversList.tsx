@@ -12,9 +12,9 @@ import RankingFilterPanel, {
   type RankingFilters,
 } from "@/components/RankingFilterPanel";
 
-// テスト用: フィルターの絞り込みロジック自体が正しく動くかを確認する間だけtrueにする
-// （実際の会員ステータスに関わらずロックを外す）。確認後はundefinedに戻すこと。
-const TEST_UNLOCK_FILTERS: boolean | undefined = undefined;
+// 注目カードランキング（MlRankingList.tsx）と同様、フィルター機能を全ユーザーに開放する
+// （2026-08-27、決済連携が未実装のため有料会員限定のまま塩漬けにしない方針）。
+const UNLOCK_FILTERS = true;
 
 function isFormat(v: string | null): v is (typeof FORMATS)[number] {
   return v !== null && (FORMATS as readonly string[]).includes(v);
@@ -29,11 +29,12 @@ export default function WeeklyMoversList({
 }) {
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<RankingFilters>(EMPTY_RANKING_FILTERS);
+  const [showJpyDiff, setShowJpyDiff] = useState(false); // 値上がりランキングのみ、%⇔円表示切り替え
 
   const filtered = useMemo(
     () =>
       rows.filter((r) =>
-        matchesRankingFilters(filters, { formats: r.formats, colors: r.colors, priceJpy: r.priceJpy }),
+        matchesRankingFilters(filters, { formats: r.formats, colors: r.colors, rarity: r.rarity, priceJpy: r.priceJpy }),
       ),
     [rows, filters],
   );
@@ -41,6 +42,15 @@ export default function WeeklyMoversList({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-end gap-2">
+        {category === "price" && (
+          <button
+            type="button"
+            onClick={() => setShowJpyDiff((v) => !v)}
+            className="rounded-md border border-neutral-300 px-2.5 py-1.5 text-xs text-neutral-600 hover:border-neutral-500"
+          >
+            {showJpyDiff ? "%表示に切替" : "金額差で表示"}
+          </button>
+        )}
         <div className="relative">
           <button
             type="button"
@@ -55,7 +65,7 @@ export default function WeeklyMoversList({
               filters={filters}
               onChange={setFilters}
               onClose={() => setShowFilters(false)}
-              overrideLocked={TEST_UNLOCK_FILTERS === true ? false : undefined}
+              overrideLocked={UNLOCK_FILTERS ? false : undefined}
             />
           )}
         </div>
@@ -63,7 +73,7 @@ export default function WeeklyMoversList({
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4 lg:grid-cols-5">
         {filtered.map((row) => (
-          <MoverRow key={row.oracleId} row={row} category={category} />
+          <MoverRow key={row.oracleId} row={row} category={category} showJpyDiff={showJpyDiff} />
         ))}
       </div>
       {filtered.length === 0 && (
@@ -75,8 +85,19 @@ export default function WeeklyMoversList({
   );
 }
 
-function MoverRow({ row, category }: { row: WeeklyMoverRow; category: MoverCategory }) {
-  const unit = category === "price" ? "%" : "pt";
+function MoverRow({
+  row,
+  category,
+  showJpyDiff,
+}: {
+  row: WeeklyMoverRow;
+  category: MoverCategory;
+  showJpyDiff: boolean;
+}) {
+  const useJpy = category === "price" && showJpyDiff && row.changeValueJpy != null;
+  const changeText = useJpy
+    ? `+¥${Math.round(row.changeValueJpy!).toLocaleString()}`
+    : `+${row.changeValue.toFixed(1)}${category === "price" ? "%" : "pt"}`;
   return (
     <Link
       href={`/cards/${row.oracleId}`}
@@ -90,16 +111,16 @@ function MoverRow({ row, category }: { row: WeeklyMoverRow; category: MoverCateg
         </p>
         <p className="truncate text-xs text-neutral-500">{row.nameEn}</p>
         <div className="mt-1 flex items-center justify-between text-sm">
-          <span className="font-semibold text-teal-800">
-            +{row.changeValue.toFixed(1)}
-            {unit}
-          </span>
+          <span className="font-semibold text-teal-800">{changeText}</span>
           {row.format && (
             <span className="truncate text-xs text-neutral-400">
               {isFormat(row.format) ? formatLabelJa(row.format) : row.format}
             </span>
           )}
         </div>
+        {row.priceJpy != null && (
+          <p className="text-right text-xs text-neutral-500">¥{row.priceJpy.toLocaleString()}</p>
+        )}
       </div>
     </Link>
   );

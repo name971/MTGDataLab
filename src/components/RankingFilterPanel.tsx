@@ -5,15 +5,24 @@ import type { ReactNode } from "react";
 import { useIsPremium } from "@/lib/useIsPremium";
 import { FORMATS, formatLabelJa } from "@/lib/formats";
 import { COLOR_ORDER } from "@/lib/manaColors";
+import { RARITIES } from "@/lib/parseAdvancedSearchParams";
+import { RARITY_LABEL_JA } from "@/lib/scryfall";
 
 export interface RankingFilters {
   formats: string[]; // 空配列 = すべて（複数選択、OR条件）
   colors: string[]; // 空配列 = すべて（選択した色構成と完全一致するカードのみ、RankingTable.tsxと同じ判定基準）
+  rarities: string[]; // 空配列 = すべて（複数選択、OR条件）
   priceMin: number | null;
   priceMax: number | null;
 }
 
-export const EMPTY_RANKING_FILTERS: RankingFilters = { formats: [], colors: [], priceMin: null, priceMax: null };
+export const EMPTY_RANKING_FILTERS: RankingFilters = {
+  formats: [],
+  colors: [],
+  rarities: [],
+  priceMin: null,
+  priceMax: null,
+};
 
 function toNumberOrNull(value: string): number | null {
   if (value === "") return null;
@@ -57,6 +66,13 @@ export default function RankingFilterPanel({
       ? filters.colors.filter((c) => c !== color)
       : [...filters.colors, color];
     onChange({ ...filters, colors: next });
+  }
+
+  function toggleRarity(rarity: string) {
+    const next = filters.rarities.includes(rarity)
+      ? filters.rarities.filter((r) => r !== rarity)
+      : [...filters.rarities, rarity];
+    onChange({ ...filters, rarities: next });
   }
 
   return (
@@ -106,6 +122,28 @@ export default function RankingFilterPanel({
                   }`}
                 >
                   <Image src={`/mana/${c}.svg`} alt={c} width={22} height={22} className="h-[22px] w-[22px]" />
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-neutral-500">
+              レアリティ{filters.rarities.length > 0 && `（${filters.rarities.length}件選択中）`}
+            </label>
+            <div className="flex flex-wrap gap-1">
+              {RARITIES.map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => toggleRarity(r)}
+                  aria-pressed={filters.rarities.includes(r)}
+                  className={`rounded-full border px-2.5 py-1 text-xs ${
+                    filters.rarities.includes(r)
+                      ? "border-neutral-700 bg-neutral-800 text-white"
+                      : "border-neutral-300 text-neutral-600 hover:border-neutral-500"
+                  }`}
+                >
+                  {RARITY_LABEL_JA[r]}
                 </button>
               ))}
             </div>
@@ -189,7 +227,7 @@ function LockIcon() {
  * 除外しないための緩い扱い）。 */
 export function matchesRankingFilters(
   filters: RankingFilters,
-  card: { formats: string[]; colors: string[]; priceJpy: number | null },
+  card: { formats: string[]; colors: string[]; rarity?: string | null; priceJpy: number | null },
 ): boolean {
   if (filters.formats.length > 0 && !card.formats.some((f) => filters.formats.includes(f))) return false;
   if (
@@ -198,6 +236,7 @@ export function matchesRankingFilters(
   ) {
     return false;
   }
+  if (filters.rarities.length > 0 && card.rarity != null && !filters.rarities.includes(card.rarity)) return false;
   if (filters.priceMin != null && card.priceJpy != null && card.priceJpy < filters.priceMin) return false;
   if (filters.priceMax != null && card.priceJpy != null && card.priceJpy > filters.priceMax) return false;
   return true;

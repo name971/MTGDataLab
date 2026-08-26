@@ -23,6 +23,8 @@ export interface MlRankingRow {
   /** 色フィルター用（RankingFilterPanel.tsx参照）。EN版のmana_costから導出、両面カード等で
    * 取得できなかった場合は空配列（無色/取得不可を区別しない） */
   colors: string[];
+  /** レアリティフィルター用（RankingFilterPanel.tsx参照）。EN版のcards.rarityから取得。 */
+  rarity: string | null;
 }
 
 /**
@@ -69,7 +71,7 @@ export async function getMlRankingFromDb(
   const oracleIds = rows.map((r) => r.oracle_id);
   const [{ data: oracles }, { data: cardRows }, bestImageByOracle, formatsByOracle] = await Promise.all([
     supabase.from("card_oracles").select("oracle_id, name, printed_name_ja").in("oracle_id", oracleIds),
-    supabase.from("cards").select("oracle_id, lang, image_uri_art_crop, mana_cost").in("oracle_id", oracleIds),
+    supabase.from("cards").select("oracle_id, lang, image_uri_art_crop, mana_cost, rarity").in("oracle_id", oracleIds),
     getBestCardImages(oracleIds),
     getFormatsByOracle(oracleIds),
   ]);
@@ -89,8 +91,12 @@ export async function getMlRankingFromDb(
     artCropByOracle.set(oracleId, normalUrl.replace("/normal/", "/art_crop/"));
   }
   const manaCostByOracle = new Map<string, string | null>();
+  const rarityByOracle = new Map<string, string | null>();
   for (const c of cardRows ?? []) {
-    if (c.lang === "en") manaCostByOracle.set(c.oracle_id, c.mana_cost);
+    if (c.lang === "en") {
+      manaCostByOracle.set(c.oracle_id, c.mana_cost);
+      rarityByOracle.set(c.oracle_id, c.rarity);
+    }
   }
 
   return rows
@@ -110,6 +116,7 @@ export async function getMlRankingFromDb(
         p20: Number(row.p_20),
         formats: formatsByOracle.get(row.oracle_id) ?? [],
         colors: colorsFromManaCost(manaCostByOracle.get(row.oracle_id)),
+        rarity: rarityByOracle.get(row.oracle_id) ?? null,
       } satisfies MlRankingRow;
     })
     .filter((r): r is MlRankingRow => r !== null);

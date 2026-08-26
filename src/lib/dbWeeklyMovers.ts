@@ -14,7 +14,9 @@ export interface WeeklyMoverRow {
   nameEn: string;
   imageUrl: string;
   colors: string[];
+  rarity: string | null;
   changeValue: number; // price: %／usage: pt
+  changeValueJpy: number | null; // priceのみ、円建ての変化額（金額差表示切り替えボタン用）
   /** usageのみ、この変化幅の元になった代表フォーマット（英語のFormat値そのまま、表示バッジ用） */
   format: string | null;
   /** フォーマットフィルター用。直近のcard_usage_statsに採用実績がある全フォーマット
@@ -46,7 +48,7 @@ export async function getWeeklyMovers(
   const offset = (page - 1) * WEEKLY_MOVERS_PAGE_SIZE;
   const { data: moverRows, count } = await supabase
     .from("weekly_movers")
-    .select("oracle_id, format, change_value, rank", { count: "exact" })
+    .select("oracle_id, format, change_value, change_value_jpy, rank", { count: "exact" })
     .eq("calculated_date", latestRow.calculated_date)
     .eq("category", category)
     .order("rank", { ascending: true })
@@ -57,7 +59,7 @@ export async function getWeeklyMovers(
   const [{ data: oracles }, { data: cardRows }, { data: priceRows }, bestImageByOracle, formatsByOracle] =
     await Promise.all([
       supabase.from("card_oracles").select("oracle_id, name, printed_name_ja").in("oracle_id", oracleIds),
-      supabase.from("cards").select("oracle_id, mana_cost").eq("lang", "en").in("oracle_id", oracleIds),
+      supabase.from("cards").select("oracle_id, mana_cost, rarity").eq("lang", "en").in("oracle_id", oracleIds),
       supabase.from("card_current_prices").select("oracle_id, jpy_est").in("oracle_id", oracleIds),
       getBestCardImages(oracleIds),
       getFormatsByOracle(oracleIds),
@@ -65,6 +67,7 @@ export async function getWeeklyMovers(
 
   const nameByOracle = new Map((oracles ?? []).map((o) => [o.oracle_id, o]));
   const manaCostByOracle = new Map((cardRows ?? []).map((c) => [c.oracle_id, c.mana_cost]));
+  const rarityByOracle = new Map((cardRows ?? []).map((c) => [c.oracle_id, c.rarity]));
   const priceByOracle = new Map<string, number>();
   for (const p of priceRows ?? []) {
     if (!priceByOracle.has(p.oracle_id) && p.jpy_est !== null) priceByOracle.set(p.oracle_id, Number(p.jpy_est));
@@ -82,7 +85,9 @@ export async function getWeeklyMovers(
         nameEn: oracle.name,
         imageUrl,
         colors: colorsFromManaCost(manaCostByOracle.get(m.oracle_id)),
+        rarity: rarityByOracle.get(m.oracle_id) ?? null,
         changeValue: Number(m.change_value),
+        changeValueJpy: m.change_value_jpy != null ? Number(m.change_value_jpy) : null,
         format: m.format,
         formats: formatsByOracle.get(m.oracle_id) ?? [],
         priceJpy: priceByOracle.get(m.oracle_id) ?? null,

@@ -140,7 +140,7 @@ async function main() {
       const scryfallId = r.scryfall_id ?? null;
       const printSwapped = scryfallId != null && past.scryfallId != null && scryfallId !== past.scryfallId;
       if (printSwapped && pct >= PRINT_SWAP_PCT_THRESHOLD) continue;
-      changes.push({ oracleId: r.oracle_id, pct });
+      changes.push({ oracleId: r.oracle_id, pct, jpyDiff: Number(r.jpy_est) - past.jpy });
     }
     changes.sort((a, b) => b.pct - a.pct);
     changes.slice(0, TOP_N).forEach((c, i) => {
@@ -149,6 +149,7 @@ async function main() {
         category: "price",
         format: null,
         change_value: clampChange(c.pct),
+        change_value_jpy: clampChange(c.jpyDiff),
         rank: i + 1,
         calculated_date: todayStr,
       });
@@ -163,24 +164,45 @@ async function main() {
       supabaseGet(`card_usage_stats?select=format,oracle_id,usage_rate&calculated_at=eq.${resolvedTodayUsageDate}`),
       supabaseGet(`card_usage_stats?select=format,oracle_id,usage_rate&calculated_at=eq.${resolvedPastUsageDate}`),
     ]);
+    // pt（percentage point）差分・相対成長率どちらで全フォーマット横断ソートしても、
+    // EDHREC統計の母数の性質上そもそも変動幅が大きいCommanderが常に勝ってしまい、
+    // Top100がCommander一色になっていた（2026-08-27判明）。フォーマットごとに
+    // 独立してTop候補を出し、ラウンドロビンで混ぜることで多様性を担保する
+    // （1オラクルは最初に採用されたフォーマットのみでカウント、重複除外）。
+    const MIN_PAST_USAGE_RATE = 1; // % 採用率がほぼ0だった場合の相対成長率の暴発を防ぐ下限
     const pastMap = new Map(usagePast.map((r) => [`${r.format}|${r.oracle_id}`, Number(r.usage_rate)]));
-    const bestByOracle = new Map(); // oracle_id -> { format, pt }
+    const candidatesByFormat = new Map(); // format -> [{ oracleId, pt, relGrowth }]（relGrowth降順）
     for (const r of usageToday) {
       const past = pastMap.get(`${r.format}|${r.oracle_id}`);
       if (past == null) continue;
       const pt = Number(r.usage_rate) - past;
       if (pt <= 0) continue;
-      const existing = bestByOracle.get(r.oracle_id);
-      if (!existing || pt > existing.pt) bestByOracle.set(r.oracle_id, { format: r.format, pt });
+      const relGrowth = pt / Math.max(past, MIN_PAST_USAGE_RATE);
+      if (!candidatesByFormat.has(r.format)) candidatesByFormat.set(r.format, []);
+      candidatesByFormat.get(r.format).push({ oracleId: r.oracle_id, pt, relGrowth });
     }
-    const changes = [...bestByOracle.entries()].map(([oracleId, v]) => ({ oracleId, ...v }));
-    changes.sort((a, b) => b.pt - a.pt);
+    for (const list of candidatesByFormat.values()) list.sort((a, b) => b.relGrowth - a.relGrowth);
+
+    const formatQueues = [...candidatesByFormat.entries()].map(([format, list]) => ({ format, list, idx: 0 }));
+    const seenOracle = new Set();
+    const changes = [];
+    while (changes.length < TOP_N && formatQueues.some((q) => q.idx < q.list.length)) {
+      for (const q of formatQueues) {
+        while (q.idx < q.list.length && seenOracle.has(q.list[q.idx].oracleId)) q.idx++;
+        if (q.idx >= q.list.length) continue;
+        const c = q.list[q.idx++];
+        seenOracle.add(c.oracleId);
+        changes.push({ oracleId: c.oracleId, format: q.format, pt: c.pt, relGrowth: c.relGrowth });
+        if (changes.length >= TOP_N) break;
+      }
+    }
     changes.slice(0, TOP_N).forEach((c, i) => {
       rows.push({
         oracle_id: c.oracleId,
         category: "usage",
         format: c.format,
         change_value: clampChange(c.pt),
+        change_value_jpy: null,
         rank: i + 1,
         calculated_date: todayStr,
       });

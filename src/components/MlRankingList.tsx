@@ -49,7 +49,7 @@ export default function MlRankingList({
   const rows = useMemo(
     () =>
       allRows.filter((r) =>
-        matchesRankingFilters(filters, { formats: r.formats, colors: r.colors, priceJpy: r.priceJpy }),
+        matchesRankingFilters(filters, { formats: r.formats, colors: r.colors, rarity: r.rarity, priceJpy: r.priceJpy }),
       ),
     [allRows, filters],
   );

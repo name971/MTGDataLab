@@ -445,12 +445,15 @@ CREATE TABLE trending_scores (
 -- price: フォーマット非依存（オラクル単位の最安値）なのでformatは常にNULL。
 -- usage: フォーマットごとに別値なので、オラクルごとに一番変化幅が大きかったフォーマットを
 -- 代表として1件だけ保存する（全フォーマット横断で1本化）。
+-- change_value_jpy: priceのみ、金額差表示切り替えボタン用（円、値上がり額の絶対値）。
+-- usageはNULL（2026-08-27追加）。
 CREATE TABLE weekly_movers (
   id              BIGSERIAL PRIMARY KEY,
   oracle_id       UUID NOT NULL REFERENCES card_oracles (oracle_id),
   category        TEXT NOT NULL,  -- 'price' | 'usage'
   format          TEXT,           -- usageのみ、そのオラクルで採用した代表フォーマット
   change_value    NUMERIC(8, 2) NOT NULL,  -- price: %／usage: pt
+  change_value_jpy NUMERIC(10, 2),  -- priceのみ、円建ての変化額
   rank            INT NOT NULL,
   calculated_date DATE NOT NULL,
   UNIQUE (oracle_id, category, calculated_date)
