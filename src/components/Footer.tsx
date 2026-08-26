@@ -13,7 +13,7 @@ export default function Footer() {
           <Link href="/decks" className="hover:text-neutral-700">
             デッキランキング
           </Link>
-          <Link href="/rankings/trending" className="hover:text-neutral-700">
+          <Link href="/trending" className="hover:text-neutral-700">
             週間ランキング
           </Link>
           <Link href="/packs" className="hover:text-neutral-700">

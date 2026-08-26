@@ -104,6 +104,27 @@ async function main() {
   }
 
   console.log(`完了: ${archivedDecks}デッキをR2へアーカイブ、${deletedRows}行をSupabaseから削除`);
+
+  // decks/tournamentsはdeck_cardsと違って削除処理が無く、無期限に増え続けていた
+  // （2026-08-27判明）。deck_cardsを消した後の空decks・古いtournamentsもここで刈る。
+  const deckIds = deckMetas.map((d) => d.id);
+  let deletedDecks = 0;
+  for (let i = 0; i < deckIds.length; i += DECK_ID_CHUNK) {
+    const idsChunk = deckIds.slice(i, i + DECK_ID_CHUNK);
+    await supabaseDelete(`decks?id=in.(${idsChunk.join(",")})`);
+    deletedDecks += idsChunk.length;
+  }
+  console.log(`decks削除: ${deletedDecks}件`);
+
+  const oldTournaments = await supabaseGetAll(`tournaments?select=id&event_date=lt.${cutoffStr}`);
+  if (oldTournaments.length > 0) {
+    const tIds = oldTournaments.map((t) => t.id);
+    for (let i = 0; i < tIds.length; i += DECK_ID_CHUNK) {
+      const idsChunk = tIds.slice(i, i + DECK_ID_CHUNK);
+      await supabaseDelete(`tournaments?id=in.(${idsChunk.join(",")})`);
+    }
+  }
+  console.log(`tournaments削除: ${oldTournaments.length}件`);
 }
 
 main().catch((err) => {

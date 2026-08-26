@@ -46,7 +46,7 @@ export default async function TrendingRankingPage({
         {CATEGORIES.map((c) => (
           <Link
             key={c.key}
-            href={`/rankings/trending?category=${c.key}`}
+            href={`/trending?category=${c.key}`}
             className={`rounded-md border px-3 py-1.5 text-sm ${
               c.key === category
                 ? "border-neutral-500 bg-neutral-100 text-neutral-900"
@@ -71,7 +71,7 @@ export default async function TrendingRankingPage({
           {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
             <Link
               key={p}
-              href={`/rankings/trending?category=${category}&page=${p}`}
+              href={`/trending?category=${category}&page=${p}`}
               className={`rounded-md border px-3 py-1.5 text-sm ${
                 p === page
                   ? "border-neutral-500 bg-neutral-100 text-neutral-900"
