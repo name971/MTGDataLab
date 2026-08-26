@@ -25,7 +25,9 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 }
 
 const ARCHIVE_OLDER_THAN_DAYS = 30;
-const DECK_ID_CHUNK = 200; // classify-decks.ts等と同じ、deck_cardsのJOIN/INフィルタが重くなりすぎない単位
+// DB容量逼迫（500MB無料枠の95%）で200件単位のSELECTすらstatement timeoutした実績があるため、
+// 一時的に50件へ縮小（2026-08-27）。負荷が落ち着いたら200に戻して良い。
+const DECK_ID_CHUNK = 50;
 
 async function supabaseGetAll(pathWithoutOrder) {
   const PAGE_SIZE = 1000;

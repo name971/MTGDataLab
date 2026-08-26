@@ -17,7 +17,13 @@
  *      node scripts/compute-cheapest-price-snapshots.mjs
  */
 
-import { mergeOraclePriceRows, monthsBetween, readOraclePriceMonths, writeRecentPriceChanges } from "./lib/r2PriceArchive.mjs";
+import {
+  mergeOraclePriceRows,
+  monthsBetween,
+  readOraclePriceMonths,
+  writeRecentPriceChanges,
+  runWithConcurrency,
+} from "./lib/r2PriceArchive.mjs";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -28,11 +34,35 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 }
 
 const PAGE_SIZE = 1000;
+// DB容量逼迫時に大量の同時接続で追い打ちをかけないよう、控えめな同時実行数にする
+// （runWithConcurrency、scripts/lib/r2PriceArchive.mjs参照）。
+const DB_CONCURRENCY = 6;
 
+/**
+ * 1ページ目でcount:'exact'を付けて総件数を取得し、残りのページを並列に取得する
+ * （以前は1ページずつ順番に待っており、card_print_current_prices等10万行規模のテーブルで
+ * 往復だけで数分かかっていた。dbArchetypeStats.tsのgetArchetypesFromDbと同じパターン）。
+ */
 async function supabaseGet(path) {
-  const rows = [];
-  let offset = 0;
-  for (;;) {
+  const firstRes = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      Prefer: "count=exact",
+      Range: `0-${PAGE_SIZE - 1}`,
+    },
+  });
+  if (!firstRes.ok) throw new Error(`GET ${path} failed: ${firstRes.status} ${await firstRes.text()}`);
+  const firstPage = await firstRes.json();
+  const total = Number(firstRes.headers.get("content-range")?.split("/")[1] ?? firstPage.length);
+
+  const rows = [...firstPage];
+  const remainingPageCount = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
+  const offsets = Array.from({ length: remainingPageCount }, (_, i) => (i + 1) * PAGE_SIZE);
+  const pages = new Array(offsets.length);
+  // runWithConcurrencyは1件失敗しても継続する設計（R2向け）だが、Supabaseの読み取り欠落は
+  // 静かに見過ごせないため、失敗件数を見て呼び出し元で必ず例外に変換する。
+  const failed = await runWithConcurrency(offsets, DB_CONCURRENCY, async (offset) => {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
       headers: {
         apikey: SUPABASE_ANON_KEY,
@@ -40,18 +70,18 @@ async function supabaseGet(path) {
         Range: `${offset}-${offset + PAGE_SIZE - 1}`,
       },
     });
-    if (!res.ok) throw new Error(`GET ${path} failed: ${res.status} ${await res.text()}`);
-    const page = await res.json();
-    rows.push(...page);
-    if (page.length < PAGE_SIZE) break;
-    offset += PAGE_SIZE;
-  }
+    if (!res.ok) throw new Error(`GET ${path} (offset ${offset}) failed: ${res.status} ${await res.text()}`);
+    pages[offsets.indexOf(offset)] = await res.json();
+  });
+  if (failed > 0) throw new Error(`GET ${path}: ${failed}件のページ取得に失敗`);
+  for (const page of pages) rows.push(...page);
   return rows;
 }
 
 async function supabaseUpsert(table, rows, conflictColumn) {
-  for (let i = 0; i < rows.length; i += PAGE_SIZE) {
-    const chunk = rows.slice(i, i + PAGE_SIZE);
+  const chunks = [];
+  for (let i = 0; i < rows.length; i += PAGE_SIZE) chunks.push(rows.slice(i, i + PAGE_SIZE));
+  const failed = await runWithConcurrency(chunks, DB_CONCURRENCY, async (chunk) => {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?on_conflict=${conflictColumn}`, {
       method: "POST",
       headers: {
@@ -63,7 +93,8 @@ async function supabaseUpsert(table, rows, conflictColumn) {
       body: JSON.stringify(chunk),
     });
     if (!res.ok) throw new Error(`${table} upsert failed: ${res.status} ${await res.text()}`);
-  }
+  });
+  if (failed > 0) throw new Error(`${table} upsert: ${failed}件のチャンクが失敗`);
 }
 
 async function main() {
