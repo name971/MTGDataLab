@@ -184,65 +184,93 @@ async function main() {
     console.log(`価格履歴に${pastStr}以前のデータがありません。値上がりランキングをスキップします。`);
   }
 
-  // ── 採用率上昇Top100（全フォーマット横断、オラクルごとに一番変化幅が大きいフォーマットを採用） ──
+  // ── 採用率ランキングTop300（上昇/下降、全フォーマット横断、オラクルごとに一番変化幅が
+  // 大きいフォーマットを採用）。下降版は2026-08-27追加、ユーザー要望で上昇/下降を
+  // 切り替えられるようにした（category="usage"=上昇、"usage_down"=下降）。 ──
   if (resolvedTodayUsageDate && resolvedPastUsageDate) {
     const [usageToday, usagePast] = await Promise.all([
       supabaseGet(`card_usage_stats?select=format,oracle_id,usage_rate&calculated_at=eq.${resolvedTodayUsageDate}`),
       supabaseGet(`card_usage_stats?select=format,oracle_id,usage_rate&calculated_at=eq.${resolvedPastUsageDate}`),
     ]);
+    const pastMap = new Map(usagePast.map((r) => [`${r.format}|${r.oracle_id}`, Number(r.usage_rate)]));
+
     // pt（percentage point）差分・相対成長率どちらで全フォーマット横断ソートしても、
     // EDHREC統計の母数の性質上そもそも変動幅が大きいCommanderが常に勝ってしまい、
     // Top100がCommander一色になっていた（2026-08-27判明）。フォーマットごとに
     // 独立してTop候補を出し、ラウンドロビンで混ぜることで多様性を担保する
     // （1オラクルは最初に採用されたフォーマットのみでカウント、重複除外）。
     const MIN_PAST_USAGE_RATE = 1; // % 採用率がほぼ0だった場合の相対成長率の暴発を防ぐ下限
-    const pastMap = new Map(usagePast.map((r) => [`${r.format}|${r.oracle_id}`, Number(r.usage_rate)]));
-    const candidatesByFormat = new Map(); // format -> [{ oracleId, pt, relGrowth }]（relGrowth降順）
-    for (const r of usageToday) {
-      const past = pastMap.get(`${r.format}|${r.oracle_id}`);
-      if (past == null) continue;
-      const pt = Number(r.usage_rate) - past;
-      if (pt <= 0) continue;
-      const relGrowth = pt / Math.max(past, MIN_PAST_USAGE_RATE);
-      if (!candidatesByFormat.has(r.format)) candidatesByFormat.set(r.format, []);
-      candidatesByFormat.get(r.format).push({ oracleId: r.oracle_id, pt, relGrowth });
-    }
-    for (const list of candidatesByFormat.values()) list.sort((a, b) => b.relGrowth - a.relGrowth);
-
-    const formatQueues = [...candidatesByFormat.entries()].map(([format, list]) => ({ format, list, idx: 0 }));
-    const seenOracle = new Set();
-    const changes = [];
-    while (changes.length < TOP_N && formatQueues.some((q) => q.idx < q.list.length)) {
-      for (const q of formatQueues) {
-        while (q.idx < q.list.length && seenOracle.has(q.list[q.idx].oracleId)) q.idx++;
-        if (q.idx >= q.list.length) continue;
-        const c = q.list[q.idx++];
-        seenOracle.add(c.oracleId);
-        changes.push({ oracleId: c.oracleId, format: q.format, pt: c.pt, relGrowth: c.relGrowth });
-        if (changes.length >= TOP_N) break;
+    function buildUsageRanking(direction) {
+      const candidatesByFormat = new Map(); // format -> [{ oracleId, pt, relGrowth }]（relGrowth降順）
+      for (const r of usageToday) {
+        const past = pastMap.get(`${r.format}|${r.oracle_id}`);
+        if (past == null) continue;
+        const pt = Number(r.usage_rate) - past;
+        if (direction === "up" ? pt <= 0 : pt >= 0) continue;
+        const relGrowth = pt / Math.max(past, MIN_PAST_USAGE_RATE);
+        if (!candidatesByFormat.has(r.format)) candidatesByFormat.set(r.format, []);
+        candidatesByFormat.get(r.format).push({ oracleId: r.oracle_id, pt, relGrowth });
       }
+      const sortFn = direction === "up" ? (a, b) => b.relGrowth - a.relGrowth : (a, b) => a.relGrowth - b.relGrowth;
+      for (const list of candidatesByFormat.values()) list.sort(sortFn);
+
+      const formatQueues = [...candidatesByFormat.entries()].map(([format, list]) => ({ format, list, idx: 0 }));
+      const seenOracle = new Set();
+      const changes = [];
+      while (changes.length < TOP_N && formatQueues.some((q) => q.idx < q.list.length)) {
+        for (const q of formatQueues) {
+          while (q.idx < q.list.length && seenOracle.has(q.list[q.idx].oracleId)) q.idx++;
+          if (q.idx >= q.list.length) continue;
+          const c = q.list[q.idx++];
+          seenOracle.add(c.oracleId);
+          changes.push({ oracleId: c.oracleId, format: q.format, pt: c.pt, relGrowth: c.relGrowth });
+          if (changes.length >= TOP_N) break;
+        }
+      }
+      return changes;
     }
-    changes.slice(0, TOP_N).forEach((c, i) => {
-      rows.push({
-        oracle_id: c.oracleId,
-        scryfall_id: null,
-        category: "usage",
-        format: c.format,
-        finish: null,
-        change_value: clampChange(c.pt),
-        change_value_jpy: null,
-        rank: i + 1,
-        calculated_date: todayStr,
+
+    buildUsageRanking("up")
+      .slice(0, TOP_N)
+      .forEach((c, i) => {
+        rows.push({
+          oracle_id: c.oracleId,
+          scryfall_id: null,
+          category: "usage",
+          format: c.format,
+          finish: null,
+          change_value: clampChange(c.pt),
+          change_value_jpy: null,
+          rank: i + 1,
+          calculated_date: todayStr,
+        });
       });
-    });
+    buildUsageRanking("down")
+      .slice(0, TOP_N)
+      .forEach((c, i) => {
+        rows.push({
+          oracle_id: c.oracleId,
+          scryfall_id: null,
+          category: "usage_down",
+          format: c.format,
+          finish: null,
+          change_value: clampChange(c.pt),
+          change_value_jpy: null,
+          rank: i + 1,
+          calculated_date: todayStr,
+        });
+      });
   } else {
     console.log(`card_usage_statsに${pastStr}以前のデータがありません。採用率上昇ランキングをスキップします。`);
   }
 
-  // ── プリント単位の価格データを共通で用意（コレクターカード・全プリントランキングで共有） ──
+  // ── 全プリントTop300（プリント×仕上げ単位で素直に集計する。オラクル単位の最安値だと
+  // 「安い版は別にあるのに特定版だけ動いた」が見えないため。foilと非foilは別の市場
+  // （別の買い手）として独立に候補にする。2026-08-27。
+  // コレクターカード（プレミアム版だけに絞る旧カテゴリ）は「全プリント」と役割が
+  // 重複するため2026-08-27に廃止した。 ──
   {
-    const [reservedOrSerialized, currentPrices, rateRows] = await Promise.all([
-      supabaseGet(`card_oracles?select=oracle_id&or=(is_reserved.eq.true,is_serialized.eq.true)`),
+    const [currentPrices, rateRows] = await Promise.all([
       supabaseGet(`card_print_current_prices?select=scryfall_id,oracle_id,usd,usd_foil`),
       supabaseGet(`exchange_rates?select=usd_to_jpy&order=date.desc&limit=1`),
     ]);
@@ -260,108 +288,49 @@ async function main() {
       }
 
       if (latestPrintDate && pastPrintDate) {
-        const pastByPrint = new Map();
+        // 1プリントにつき1日1件を単純比較すると、業者側の一時的な入力ミス等による
+        // 「その日だけ$0.2」のような単発の異常値をそのまま暴騰として拾ってしまう
+        // （Tundraで実際に発生、2026-08-27判明: 通常$3000のところ08-20だけ$0.2）。
+        // 前後3日以内の値を集めて中央値を取り、2点以上揃わなければ判定不能として
+        // スキップすることで、単発の異常値1点だけに引っ張られないようにする。
+        const rowsByPrint = new Map();
         for (const r of printRows) {
-          if (r.date !== pastPrintDate) continue;
-          pastByPrint.set(r.scryfall_id, r);
+          if (!rowsByPrint.has(r.scryfall_id)) rowsByPrint.set(r.scryfall_id, []);
+          rowsByPrint.get(r.scryfall_id).push(r);
         }
-
-        // ── コレクターカードTop300（ml/features.pyのidentify_premium_prints/
-        // _build_collector_frameと同じ判定基準をJS側に移植: is_reserved/is_serializedオラクルの
-        // 全プリント、またはそのオラクル内で価格が突出したプリント。2026-08-27） ──
-        const PREMIUM_PRINT_MIN_RATIO = 5;
-        const PREMIUM_PRINT_MIN_JPY = 3000;
-        const cheapestByOracle = new Map();
-        for (const p of currentPrices) {
-          const cheapest = Math.min(p.usd ?? Infinity, p.usd_foil ?? Infinity);
-          if (!Number.isFinite(cheapest)) continue;
-          const cur = cheapestByOracle.get(p.oracle_id);
-          if (cur == null || cheapest < cur) cheapestByOracle.set(p.oracle_id, cheapest);
-        }
-        const reservedSerializedOracleIds = new Set(reservedOrSerialized.map((o) => o.oracle_id));
-        const collectorCandidateIds = new Set();
-        for (const p of currentPrices) {
-          if (reservedSerializedOracleIds.has(p.oracle_id)) {
-            collectorCandidateIds.add(p.scryfall_id);
-            continue;
+        const WINDOW_DAYS = 3;
+        function robustPriceAt(printRowsForId, targetDateStr, finish) {
+          const target = new Date(`${targetDateStr}T00:00:00Z`).getTime();
+          const values = [];
+          for (const r of printRowsForId) {
+            const v = finish === "foil" ? r.usd_foil : r.usd;
+            if (v == null) continue;
+            const d = new Date(`${r.date}T00:00:00Z`).getTime();
+            if (Math.abs(d - target) <= WINDOW_DAYS * 86400000) values.push(Number(v));
           }
-          const priciest = Math.max(p.usd ?? -Infinity, p.usd_foil ?? -Infinity);
-          const cheapestOfOracle = cheapestByOracle.get(p.oracle_id);
-          if (
-            Number.isFinite(priciest) &&
-            cheapestOfOracle != null &&
-            priciest * usdToJpy >= PREMIUM_PRINT_MIN_JPY &&
-            priciest >= cheapestOfOracle * PREMIUM_PRINT_MIN_RATIO
-          ) {
-            collectorCandidateIds.add(p.scryfall_id);
-          }
+          if (values.length < 2) return null;
+          values.sort((a, b) => a - b);
+          const mid = Math.floor(values.length / 2);
+          return values.length % 2 === 0 ? (values[mid - 1] + values[mid]) / 2 : values[mid];
         }
-        console.log(`コレクター候補プリント: ${collectorCandidateIds.size}件`);
-
-        // コレクターが実際に買うのはFoilや希少プリントなので、そのプリントのusd_foilを
-        // 優先する（_build_collector_frameと同じ扱い）。ただし日によってusd/usd_foilの
-        // どちらか片方しか記録されていない日があり、単純に「無ければusdを代用」すると
-        // ある日はfoil値・別の日は非foil値を跨いで比較してしまい、実際には動いていない
-        // 価格差（foil $233 vs 非foil $0.47等）を暴騰として誤検知した（2026-08-27判明）。
-        // 両日でfoil値が揃っていればfoil同士、揃わなければ非foil同士でのみ比較する。
-        const collectorChanges = [];
-        for (const r of printRows) {
-          if (r.date !== latestPrintDate || !collectorCandidateIds.has(r.scryfall_id)) continue;
-          const past = pastByPrint.get(r.scryfall_id);
-          if (!past) continue;
-          let usd;
-          let pastUsd;
-          if (r.usd_foil != null && past.usd_foil != null) {
-            usd = Number(r.usd_foil);
-            pastUsd = Number(past.usd_foil);
-          } else if (r.usd != null && past.usd != null) {
-            usd = Number(r.usd);
-            pastUsd = Number(past.usd);
-          } else {
-            continue; // 仕上げが揃わない＝比較不能
-          }
-          if (pastUsd === 0) continue;
-          const pct = ((usd - pastUsd) / pastUsd) * 100;
-          if (pct <= 0) continue;
-          const oracleId = oracleByScryfallId.get(r.scryfall_id);
-          if (!oracleId) continue;
-          collectorChanges.push({ scryfallId: r.scryfall_id, oracleId, pct, jpyEst: usd * usdToJpy });
-        }
-        collectorChanges.sort((a, b) => b.pct - a.pct);
-        collectorChanges.slice(0, TOP_N).forEach((c, i) => {
-          rows.push({
-            oracle_id: c.oracleId,
-            scryfall_id: c.scryfallId,
-            category: "collector",
-            format: null,
-            finish: null,
-            change_value: clampChange(c.pct),
-            change_value_jpy: clampChange(c.jpyEst),
-            rank: i + 1,
-            calculated_date: todayStr,
-          });
-        });
 
         // ── 全プリントTop300（オラクル単位の最安値ではなく、プリント単位・仕上げ単位で
         // 素直に集計する。ユーザー要望: 「安い版は別にあるのに特定版だけ動いた」を
         // 見たい。foilと非foilは別の市場（別の買い手）なので、同じプリントでも両方
         // 独立に候補にする（1プリントにつき最大2件、finish列で区別）。2026-08-27） ──
         const allPrintChanges = [];
-        for (const r of printRows) {
-          if (r.date !== latestPrintDate) continue;
-          const past = pastByPrint.get(r.scryfall_id);
-          if (!past) continue;
-          const oracleId = oracleByScryfallId.get(r.scryfall_id);
+        for (const [scryfallId, printRowsForId] of rowsByPrint) {
+          const oracleId = oracleByScryfallId.get(scryfallId);
           if (!oracleId) continue;
           for (const finish of ["nonfoil", "foil"]) {
-            const cur = finish === "foil" ? r.usd_foil : r.usd;
-            const prev = finish === "foil" ? past.usd_foil : past.usd;
-            if (cur == null || prev == null || Number(prev) === 0) continue;
-            const pct = ((Number(cur) - Number(prev)) / Number(prev)) * 100;
+            const cur = robustPriceAt(printRowsForId, latestPrintDate, finish);
+            const prev = robustPriceAt(printRowsForId, pastPrintDate, finish);
+            if (cur == null || prev == null || prev === 0) continue;
+            const pct = ((cur - prev) / prev) * 100;
             if (pct <= 0) continue;
-            const jpyEst = Number(cur) * usdToJpy;
-            const jpyDiff = (Number(cur) - Number(prev)) * usdToJpy;
-            allPrintChanges.push({ scryfallId: r.scryfall_id, oracleId, finish, pct, jpyEst, jpyDiff });
+            const jpyEst = cur * usdToJpy;
+            const jpyDiff = (cur - prev) * usdToJpy;
+            allPrintChanges.push({ scryfallId, oracleId, finish, pct, jpyEst, jpyDiff });
           }
         }
         const allPrintByPct = [...allPrintChanges].sort((a, b) => b.pct - a.pct);

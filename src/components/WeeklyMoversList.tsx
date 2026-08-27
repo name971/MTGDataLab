@@ -159,9 +159,13 @@ function MoverRow({
   priceMetric: "pct" | "jpy";
 }) {
   const useJpy = (category === "price" || category === "print") && priceMetric === "jpy";
+  // priceMetric/print等は値上がりのみ扱うため常に正だが、採用率下降ランキングは
+  // change_valueが負になる。符号は数値側にすでに乗っているので、正の時だけ"+"を足す
+  // （toFixedは負数ならそのまま"-"付きの文字列になる）。
+  const sign = row.changeValue >= 0 ? "+" : "";
   const changeText = useJpy
-    ? `+¥${Math.round(row.changeValue).toLocaleString()}`
-    : `+${row.changeValue.toFixed(1)}${category === "usage" ? "pt" : "%"}`;
+    ? `${sign}¥${Math.round(row.changeValue).toLocaleString()}`
+    : `${sign}${row.changeValue.toFixed(1)}${category === "usage" ? "pt" : "%"}`;
   // TrendingRankingList.tsxの「採用率(Format) +X.Xpt」表記に揃える
   const formatLabel = row.format
     ? (isFormat(row.format) ? formatLabelJa(row.format) : row.format)
@@ -170,10 +174,12 @@ function MoverRow({
       : row.finish === "nonfoil"
         ? "通常"
         : null;
-  const href = row.scryfallId ? `/cards/${row.oracleId}/prints/${row.scryfallId}` : `/cards/${row.oracleId}`;
+  // プリント単位のランキングでも、クリック時はカード詳細ページ（オラクル単位、通常の
+  // カードクリックと同じ遷移先）へ飛ばす。プリント詳細ページは情報量が多く見にくいという
+  // 指摘があったため（2026-08-27）。
   return (
     <Link
-      href={href}
+      href={`/cards/${row.oracleId}`}
       className="flex flex-col overflow-hidden rounded-lg border border-neutral-200 hover:border-neutral-400"
     >
       <Image src={row.imageUrl} alt={row.nameEn} width={223} height={311} className="w-full object-contain" />
@@ -183,7 +189,7 @@ function MoverRow({
           {row.nameJa}
         </p>
         <p className="truncate text-xs text-neutral-500">{row.nameEn}</p>
-        <p className="mt-1 text-sm font-semibold text-teal-800">
+        <p className={`mt-1 text-sm font-semibold ${row.changeValue >= 0 ? "text-teal-800" : "text-red-800"}`}>
           {formatLabel && <span className="mr-1 font-normal text-neutral-500">{formatLabel}</span>}
           {changeText}
         </p>

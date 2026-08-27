@@ -8,16 +8,13 @@ export default function Footer() {
       <div className="mx-auto flex max-w-5xl flex-col gap-4 text-xs text-neutral-500">
         <nav className="flex flex-wrap gap-x-4 gap-y-2">
           <Link href="/rankings/standard" className="hover:text-neutral-700">
-            カードランキング
+            人気カード
           </Link>
           <Link href="/decks" className="hover:text-neutral-700">
-            デッキランキング
+            デッキ
           </Link>
           <Link href="/trending" className="hover:text-neutral-700">
-            週間ランキング
-          </Link>
-          <Link href="/packs" className="hover:text-neutral-700">
-            パックEV
+            ランキング
           </Link>
           <Link href="/banned-cards" className="hover:text-neutral-700">
             歴代禁止カード

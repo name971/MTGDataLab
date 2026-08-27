@@ -9,14 +9,12 @@ export const metadata = { title: "週間ランキング - MTG DataLab" };
 
 const CATEGORIES: { key: MoverCategory; label: string }[] = [
   { key: "price", label: "値上がりランキング" },
-  { key: "usage", label: "採用率上昇ランキング" },
-  { key: "collector", label: "コレクターカード" },
+  { key: "usage", label: "採用率ランキング" },
   { key: "print", label: "全プリント" },
 ];
 
 function resolveCategory(raw: string | undefined): MoverCategory {
   if (raw === "usage") return "usage";
-  if (raw === "collector") return "collector";
   if (raw === "print") return "print";
   return "price";
 }
@@ -25,19 +23,24 @@ function resolveMetric(raw: string | undefined): "pct" | "jpy" {
   return raw === "jpy" ? "jpy" : "pct";
 }
 
+function resolveUsageDirection(raw: string | undefined): "up" | "down" {
+  return raw === "down" ? "down" : "up";
+}
+
 export default async function TrendingRankingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ category?: string; metric?: string }>;
+  searchParams: Promise<{ category?: string; metric?: string; dir?: string }>;
 }) {
   const sp = await searchParams;
   const category = resolveCategory(sp.category);
   const metric = resolveMetric(sp.metric);
+  const usageDirection = resolveUsageDirection(sp.dir);
 
   // フィルター適用後にページが歯抜けにならないよう、Top100を全件まとめて取得し、
   // ページングはWeeklyMoversList.tsx（クライアント側、フィルター後の配列に対して）で行う
   // （MlRankingList.tsxと同じ方式、2026-08-27）。
-  const { rows } = await getWeeklyMovers(category, metric);
+  const { rows } = await getWeeklyMovers(category, metric, usageDirection);
 
   return (
     <div className="flex flex-col gap-4">
@@ -85,6 +88,32 @@ export default async function TrendingRankingPage({
               }`}
             >
               円
+            </Link>
+          </div>
+        )}
+        {category === "usage" && (
+          <div className="flex gap-1">
+            <Link
+              href="/trending?category=usage&dir=up"
+              aria-label="上昇ランキング"
+              className={`rounded-md border px-2.5 py-1.5 text-sm ${
+                usageDirection === "up"
+                  ? "border-neutral-500 bg-neutral-100 text-neutral-900"
+                  : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
+              }`}
+            >
+              上昇
+            </Link>
+            <Link
+              href="/trending?category=usage&dir=down"
+              aria-label="下降ランキング"
+              className={`rounded-md border px-2.5 py-1.5 text-sm ${
+                usageDirection === "down"
+                  ? "border-neutral-500 bg-neutral-100 text-neutral-900"
+                  : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
+              }`}
+            >
+              下降
             </Link>
           </div>
         )}

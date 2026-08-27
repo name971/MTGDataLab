@@ -4,9 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const NAV_ITEMS = [
-  { href: "/rankings/standard", match: "/rankings", label: "カードランキング" },
-  { href: "/decks", match: "/decks", label: "デッキランキング" },
-  { href: "/packs", match: "/packs", label: "パックEV" },
+  { href: "/rankings/standard", match: "/rankings", label: "人気カード" },
+  { href: "/decks", match: "/decks", label: "デッキ" },
+  { href: "/trending", match: "/trending", label: "ランキング" },
 ];
 
 export default function NavLinks() {
