@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { CardPrint } from "@/lib/dbCardPrints";
 import type { PricePoint } from "@/lib/dbPriceHistory";
 import PriceHistoryChart from "./PriceHistoryChart";
@@ -158,6 +158,8 @@ export default function CardHero({
   foilPricesByScryfallId: initialFoilPricesByScryfallId,
   legalities,
   iconUrlBySetCode: initialIconUrlBySetCode,
+  initialSelectedPrint,
+  initialFinish,
   children,
 }: {
   oracleId: string;
@@ -176,6 +178,13 @@ export default function CardHero({
    * 無いset_codeは呼び出し側で`https://svgs.scryfall.io/sets/<code>.svg`の命名規則に
    * フォールバックする（大半のセットはこれで正しいが、Secret Lair Drop等一部は例外）。 */
   iconUrlBySetCode: Record<string, string>;
+  /** 週間ランキング等、「このプリントが動いた」経由で来た場合に最初から選択状態にする
+   * プリント（/cards/[oracleId]?print=scryfallId、ページ側でgetCardPrintByScryfallIdして渡す）。
+   * 未指定・該当なしならデフォルトの集約表示のまま。 */
+  initialSelectedPrint?: CardPrint | null;
+  /** initialSelectedPrint指定時のみ有効。'foil'ならFoil表示で開く（週間ランキングでFoilが
+   * 動いた場合に、非Foilにフォールバックせず正しくFoil表示させるため）。 */
+  initialFinish?: "normal" | "foil" | null;
   /** グラフの下・プリント一覧とは独立した左カラムに差し込む追加コンテンツ（使用デッキ等） */
   children?: ReactNode;
 }) {
@@ -321,12 +330,13 @@ export default function CardHero({
 
   // 特定のプリントを選ぶ（defaultPrintと同じscryfallIdであっても、常にそのプリント自身の
   // 価格推移をAPIから取得する＝集約値と混同しない）。
-  async function selectPrint(p: CardPrint) {
+  async function selectPrint(p: CardPrint, preferredFinish?: "normal" | "foil") {
     setCurrentScryfallId(p.scryfallId);
     setIsAggregateView(false);
-    // Foil価格で一覧を見ているとき（listSortFoil）は、選んだプリントにFoil価格がある限り
-    // Foil表示のまま遷移する。無ければ通常価格にフォールバックする。
-    setFinish(listSortFoil && allFoilPrices[p.scryfallId] !== undefined ? "foil" : "normal");
+    // 呼び出し元が明示的に希望finish（週間ランキングでFoilが動いた場合等）を指定していれば
+    // それを優先する。無指定時は従来通り、Foil価格で一覧を見ているとき（listSortFoil）は
+    // 選んだプリントにFoil価格がある限りFoil表示のまま遷移し、無ければ通常価格にフォールバックする。
+    setFinish(preferredFinish ?? (listSortFoil && allFoilPrices[p.scryfallId] !== undefined ? "foil" : "normal"));
     setSelectedHistory(null);
     setSelectedFoilHistory(null);
     setLoading(true);
@@ -347,6 +357,14 @@ export default function CardHero({
       setLoading(false);
     }
   }
+
+  // 週間ランキング等からinitialSelectedPrint付きで来た場合、マウント時に1回だけ
+  // そのプリントを選択状態にする（クリック時と同じselectPrintを流用し、価格推移も
+  // 実際にそのプリントを選んだ時と同じように取得させる）。
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (initialSelectedPrint) selectPrint(initialSelectedPrint, initialFinish ?? undefined);
+  }, []);
 
   /** 「カードデータ」＝全プリント中の最安値（集約）の表示に戻す */
   function resetToAggregate() {

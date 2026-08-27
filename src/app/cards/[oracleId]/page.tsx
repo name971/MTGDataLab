@@ -19,7 +19,7 @@ import { getArchetypesUsingCard } from "@/lib/sampleDeckDetail";
 import { getFormatUsageCountsForCard } from "@/lib/dbCardUsageByFormat";
 import type { PricePoint } from "@/lib/dbPriceHistory";
 import { getCheapestPriceHistory, getLatestCheapestPrice } from "@/lib/dbCheapestPrice";
-import { getOtherPrintsForCard, getBestCardImage, getIconUrlBySetCodes } from "@/lib/dbCardPrints";
+import { getOtherPrintsForCard, getBestCardImage, getIconUrlBySetCodes, getCardPrintByScryfallId } from "@/lib/dbCardPrints";
 import { getCatalogOracleById } from "@/lib/catalogDb";
 import { getLatestPricesForPrints } from "@/lib/dbCardPrintPrices";
 import { translateTypeLine } from "@/lib/typeGlossary";
@@ -239,14 +239,19 @@ export default async function CardDetailPage({
   searchParams,
 }: {
   params: Promise<{ oracleId: string }>;
-  searchParams: Promise<{ period?: string }>;
+  searchParams: Promise<{ period?: string; print?: string; finish?: string }>;
 }) {
   const { oracleId } = await params;
-  const { period } = await searchParams;
+  const { period, print, finish } = await searchParams;
   const usagePeriodDays = resolveUsagePeriod(period);
 
   const card = await resolveCardByParam(oracleId);
   if (!card) notFound();
+
+  // 週間ランキング等から「このプリントが動いた」経由で来た場合、初期表示から
+  // そのプリントを選択済みにする（?print=scryfallId）。無効なIDでもgetCardPrintByScryfallId
+  // がnullを返すだけで安全（CardHero側は未選択のデフォルト表示にフォールバックする）。
+  const initialSelectedPrint = print ? await getCardPrintByScryfallId(print) : null;
 
   // ヘッダーの現在価格は、スナップショット保存済みのjpy_est（記録日時点のレートで計算済み）を
   // そのまま使う。価格推移グラフの最新点も同じjpy_estを表示しているため、これでヘッダーと
@@ -349,6 +354,8 @@ export default async function CardDetailPage({
         foilPricesByScryfallId={Object.fromEntries(otherPrintPrices.foil)}
         legalities={card.legalities}
         iconUrlBySetCode={iconUrlBySetCode}
+        initialSelectedPrint={initialSelectedPrint}
+        initialFinish={finish === "foil" ? "foil" : "normal"}
       >
         <div className="rounded-lg border border-neutral-200 p-4">
           {/* 見出しと期間ボタンを同じ行にまとめる。フォーマットリーガル欄と行数を揃えるために

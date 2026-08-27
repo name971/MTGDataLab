@@ -86,7 +86,10 @@ export async function getWeeklyMovers(
       category === "usage"
         ? supabase.from("card_current_prices").select("oracle_id, jpy_est").in("oracle_id", oracleIds)
         : Promise.resolve({ data: [] as { oracle_id: string; jpy_est: number | null }[] }),
-      getBestCardImages(oracleIds),
+      // priceカテゴリは全行がscryfallIdを持っており下のcard_prints取得だけで画像が決まるため、
+      // 全オラクル分の代表プリント選定（全プリント走査＋価格照会、300件規模だと非常に重い）は
+      // usageカテゴリの時だけ行う（2026-08-27、ページが重いというユーザー指摘で判明）。
+      category === "usage" ? getBestCardImages(oracleIds) : Promise.resolve(new Map<string, string>()),
       getFormatsByOracle(oracleIds),
       // priceのみ、その特定プリントの画像・レアリティを使う（オラクルの代表プリントとは
       // 別物 — 値動きしているのはまさにこの版なので、代表画像に差し替わってしまうと
