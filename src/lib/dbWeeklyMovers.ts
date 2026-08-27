@@ -2,17 +2,18 @@ import { supabase } from "./supabase";
 import { getBestCardImages } from "./dbCardPrints";
 import { colorsFromManaCost } from "./manaColors";
 
-export type MoverCategory = "price" | "usage" | "print";
+export type MoverCategory = "price" | "usage";
 
 export const WEEKLY_MOVERS_PAGE_SIZE = 20;
 export const WEEKLY_MOVERS_TOP_N = 300;
 
 export interface WeeklyMoverRow {
   oracleId: string;
-  /** printのみ、値動きの対象プリント。カード詳細ページの画像はこのプリントのものを使う
-   * （オラクルの代表プリントとは別物 — 値動きしているのはまさにこの版なので） */
+  /** priceのみ、値動きの対象プリント（プリント×仕上げ単位で集計しているため）。
+   * カード詳細ページの画像はこのプリントのものを使う（オラクルの代表プリントとは
+   * 別物 — 値動きしているのはまさにこの版なので） */
   scryfallId: string | null;
-  /** printのみ、'foil' | 'nonfoil' */
+  /** priceのみ、'foil' | 'nonfoil' */
   finish: string | null;
   rank: number;
   nameJa: string;
@@ -20,7 +21,7 @@ export interface WeeklyMoverRow {
   imageUrl: string;
   colors: string[];
   rarity: string | null;
-  changeValue: number; // price: %／price_jpy: 円／usage: pt／print: %／print_jpy: 円
+  changeValue: number; // price: %／price_jpy: 円／usage: pt
   /** usageのみ、この変化幅の元になった代表フォーマット（英語のFormat値そのまま、表示バッジ用） */
   format: string | null;
   /** フォーマットフィルター用。直近のcard_usage_statsに採用実績がある全フォーマット
@@ -51,8 +52,8 @@ export async function getWeeklyMovers(
   usageDirection: "up" | "down" = "up",
 ): Promise<{ rows: WeeklyMoverRow[] }> {
   const storedCategory =
-    priceMetric === "jpy" && (category === "price" || category === "print")
-      ? `${category}_jpy`
+    category === "price" && priceMetric === "jpy"
+      ? "price_jpy"
       : category === "usage" && usageDirection === "down"
         ? "usage_down"
         : category;
@@ -81,10 +82,13 @@ export async function getWeeklyMovers(
     await Promise.all([
       supabase.from("card_oracles").select("oracle_id, name, printed_name_ja").in("oracle_id", oracleIds),
       supabase.from("cards").select("oracle_id, mana_cost, rarity").eq("lang", "en").in("oracle_id", oracleIds),
-      supabase.from("card_current_prices").select("oracle_id, jpy_est").in("oracle_id", oracleIds),
+      // usageのみ、priceJpy表示用（priceカテゴリはプリント単位のchange_value_jpyを使うため不要）
+      category === "usage"
+        ? supabase.from("card_current_prices").select("oracle_id, jpy_est").in("oracle_id", oracleIds)
+        : Promise.resolve({ data: [] as { oracle_id: string; jpy_est: number | null }[] }),
       getBestCardImages(oracleIds),
       getFormatsByOracle(oracleIds),
-      // printのみ、その特定プリントの画像・レアリティを使う（オラクルの代表プリントとは
+      // priceのみ、その特定プリントの画像・レアリティを使う（オラクルの代表プリントとは
       // 別物 — 値動きしているのはまさにこの版なので、代表画像に差し替わってしまうと
       // 何が値上がりしたのか分からなくなる）
       scryfallIds.length > 0
@@ -127,9 +131,9 @@ export async function getWeeklyMovers(
         format: m.format,
         formats: formatsByOracle.get(m.oracle_id) ?? [],
         priceJpy:
-          category === "print"
-            ? (m.change_value_jpy != null ? Number(m.change_value_jpy) : null)
-            : (priceByOracle.get(m.oracle_id) ?? null),
+          category === "usage"
+            ? (priceByOracle.get(m.oracle_id) ?? null)
+            : (m.change_value_jpy != null ? Number(m.change_value_jpy) : null),
       } satisfies WeeklyMoverRow;
     })
     .filter((r): r is WeeklyMoverRow => r !== null);

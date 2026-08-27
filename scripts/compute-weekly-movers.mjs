@@ -9,7 +9,7 @@
  *      node scripts/compute-weekly-movers.mjs
  */
 
-import { monthsBetween, readOraclePriceMonths, readPrintPriceMonths } from "./lib/r2PriceArchive.mjs";
+import { monthsBetween, readPrintPriceMonths } from "./lib/r2PriceArchive.mjs";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -86,14 +86,6 @@ async function findLatestDateAtOrBefore(table, dateColumn, extraFilter, targetDa
   return rows[0]?.[dateColumn] ?? null;
 }
 
-// 価格履歴はR2（price-history、月次NDJSON.gz）にしか無い（compute-trending-scores.mjsと同じ理由）
-async function loadRecentOraclePriceRows(todayStr) {
-  const twoMonthsAgo = new Date(`${todayStr}T00:00:00Z`);
-  twoMonthsAgo.setUTCMonth(twoMonthsAgo.getUTCMonth() - 1);
-  const months = monthsBetween(isoDate(twoMonthsAgo), todayStr);
-  return readOraclePriceMonths(months);
-}
-
 async function loadRecentPrintPriceRows(todayStr) {
   const twoMonthsAgo = new Date(`${todayStr}T00:00:00Z`);
   twoMonthsAgo.setUTCMonth(twoMonthsAgo.getUTCMonth() - 1);
@@ -108,81 +100,15 @@ async function main() {
   pastDate.setDate(pastDate.getDate() - LOOKBACK_DAYS);
   const pastStr = isoDate(pastDate);
 
-  const priceRows = await loadRecentOraclePriceRows(todayStr);
-  let latestPriceDate = null;
-  let pastPriceDate = null;
-  for (const r of priceRows) {
-    if (r.date <= todayStr && (!latestPriceDate || r.date > latestPriceDate)) latestPriceDate = r.date;
-    if (r.date <= pastStr && (!pastPriceDate || r.date > pastPriceDate)) pastPriceDate = r.date;
-  }
-
   const resolvedTodayUsageDate = await findLatestDateAtOrBefore("card_usage_stats", "calculated_at", "", todayStr);
   const resolvedPastUsageDate = await findLatestDateAtOrBefore("card_usage_stats", "calculated_at", "", pastStr);
 
   const rows = [];
 
-  // ── 値上がりTop100（フォーマット非依存、オラクル単位の最安値ベース） ──
-  if (latestPriceDate && pastPriceDate) {
-    const pastByOracle = new Map(); // oracle_id -> { jpy, scryfallId }
-    for (const r of priceRows) {
-      if (r.date === pastPriceDate && r.jpy_est != null) {
-        pastByOracle.set(r.oracle_id, { jpy: Number(r.jpy_est), scryfallId: r.scryfall_id ?? null });
-      }
-    }
-    // Black Lotus等、プリント間の価格差が極端なオラクルは、一番安いプリントが品切れ等で
-    // 買えなくなっただけで「最安値」が別の（ずっと高い）プリントに切り替わり、実際には
-    // 誰も高く買っていないのにオラクル価格が跳ね上がって見えることがある。R2価格履歴の
-    // scryfall_id（その日どのプリントが最安だったかの監査用カラム、docs/spec.md参照）を
-    // 突き合わせ、最安プリントが変わった かつ 変化幅が尋常でない（PRINT_SWAP_PCT_THRESHOLD超）
-    // 場合だけ「プリント切り替えの疑いあり」として除外する（同じプリントのままの値上がりや、
-    // プリントが変わっても小幅な差は本物の値動きとして許容する）。
-    const PRINT_SWAP_PCT_THRESHOLD = 100;
-    const changes = [];
-    for (const r of priceRows) {
-      if (r.date !== latestPriceDate || r.jpy_est == null) continue;
-      const past = pastByOracle.get(r.oracle_id);
-      if (!past || past.jpy === 0) continue;
-      const pct = ((Number(r.jpy_est) - past.jpy) / past.jpy) * 100;
-      if (pct <= 0) continue; // 値上がりのみ対象（値下がりは別軸なので今回は扱わない）
-      const scryfallId = r.scryfall_id ?? null;
-      const printSwapped = scryfallId != null && past.scryfallId != null && scryfallId !== past.scryfallId;
-      if (printSwapped && pct >= PRINT_SWAP_PCT_THRESHOLD) continue;
-      changes.push({ oracleId: r.oracle_id, pct, jpyDiff: Number(r.jpy_est) - past.jpy });
-    }
-    // %ランキング（value上昇率）とは別に、金額差（円）そのもので順位付けした
-    // 別ランキングも保存する（「金額差で表示」ボタンは表示の単位切り替えではなく、
-    // 順位そのものが入れ替わる別ランキングを見せてほしいという要望、2026-08-27）。
-    const byPct = [...changes].sort((a, b) => b.pct - a.pct);
-    byPct.slice(0, TOP_N).forEach((c, i) => {
-      rows.push({
-        oracle_id: c.oracleId,
-        scryfall_id: null,
-        category: "price",
-        format: null,
-        finish: null,
-        change_value: clampChange(c.pct),
-        change_value_jpy: clampChange(c.jpyDiff),
-        rank: i + 1,
-        calculated_date: todayStr,
-      });
-    });
-    const byJpy = [...changes].sort((a, b) => b.jpyDiff - a.jpyDiff);
-    byJpy.slice(0, TOP_N).forEach((c, i) => {
-      rows.push({
-        oracle_id: c.oracleId,
-        scryfall_id: null,
-        category: "price_jpy",
-        format: null,
-        finish: null,
-        change_value: clampChange(c.jpyDiff),
-        change_value_jpy: clampChange(c.jpyDiff),
-        rank: i + 1,
-        calculated_date: todayStr,
-      });
-    });
-  } else {
-    console.log(`価格履歴に${pastStr}以前のデータがありません。値上がりランキングをスキップします。`);
-  }
+  // 値上がりランキング（category="price"/"price_jpy"）は、2026-08-27以前はオラクル単位
+  // （最安値）で計算していたが、「安い版は別にあるのに特定版だけ動いた」が見えない問題が
+  // あったため、プリント×仕上げ単位の集計（旧「全プリント」カテゴリ）に一本化した
+  // （ユーザー要望）。実際の計算は下のプリント単位ブロックで行う。
 
   // ── 採用率ランキングTop300（上昇/下降、全フォーマット横断、オラクルごとに一番変化幅が
   // 大きいフォーマットを採用）。下降版は2026-08-27追加、ユーザー要望で上昇/下降を
@@ -264,11 +190,11 @@ async function main() {
     console.log(`card_usage_statsに${pastStr}以前のデータがありません。採用率上昇ランキングをスキップします。`);
   }
 
-  // ── 全プリントTop300（プリント×仕上げ単位で素直に集計する。オラクル単位の最安値だと
-  // 「安い版は別にあるのに特定版だけ動いた」が見えないため。foilと非foilは別の市場
-  // （別の買い手）として独立に候補にする。2026-08-27。
-  // コレクターカード（プレミアム版だけに絞る旧カテゴリ）は「全プリント」と役割が
-  // 重複するため2026-08-27に廃止した。 ──
+  // ── 値上がりランキングTop300（プリント×仕上げ単位で素直に集計する。オラクル単位の
+  // 最安値だと「安い版は別にあるのに特定版だけ動いた」が見えないため。foilと非foilは
+  // 別の市場（別の買い手）として独立に候補にする。2026-08-27。
+  // コレクターカード（プレミアム版だけに絞る旧カテゴリ）は役割が重複するため
+  // 2026-08-27に廃止した。 ──
   {
     const [currentPrices, rateRows] = await Promise.all([
       supabaseGet(`card_print_current_prices?select=scryfall_id,oracle_id,usd,usd_foil`),
@@ -314,10 +240,8 @@ async function main() {
           return values.length % 2 === 0 ? (values[mid - 1] + values[mid]) / 2 : values[mid];
         }
 
-        // ── 全プリントTop300（オラクル単位の最安値ではなく、プリント単位・仕上げ単位で
-        // 素直に集計する。ユーザー要望: 「安い版は別にあるのに特定版だけ動いた」を
-        // 見たい。foilと非foilは別の市場（別の買い手）なので、同じプリントでも両方
-        // 独立に候補にする（1プリントにつき最大2件、finish列で区別）。2026-08-27） ──
+        // 1プリントにつき最大2件（finish列で区別）、値上がりランキング（category="price"）
+        // として保存する。
         const allPrintChanges = [];
         for (const [scryfallId, printRowsForId] of rowsByPrint) {
           const oracleId = oracleByScryfallId.get(scryfallId);
@@ -338,7 +262,7 @@ async function main() {
           rows.push({
             oracle_id: c.oracleId,
             scryfall_id: c.scryfallId,
-            category: "print",
+            category: "price",
             format: null,
             finish: c.finish,
             change_value: clampChange(c.pct),
@@ -352,12 +276,12 @@ async function main() {
           rows.push({
             oracle_id: c.oracleId,
             scryfall_id: c.scryfallId,
-            category: "print_jpy",
+            category: "price_jpy",
             format: null,
             finish: c.finish,
-            // print/print_jpyはcollectorと同じくchange_value_jpyを「現在価格」の表示に使う
-            // （オラクル単位のcard_current_pricesに相当するプリント単位の別ソースが無いため）。
-            // change_valueの方はランキング指標そのもの（pctではなく円建て変化額）を持つ。
+            // change_value_jpyを「現在価格」の表示に使う（オラクル単位のcard_current_prices
+            // に相当するプリント単位の別ソースが無いため）。change_valueの方はランキング
+            // 指標そのもの（pctではなく円建て変化額）を持つ。
             change_value: clampChange(c.jpyDiff),
             change_value_jpy: clampChange(c.jpyEst),
             rank: i + 1,

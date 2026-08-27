@@ -158,7 +158,7 @@ function MoverRow({
   category: MoverCategory;
   priceMetric: "pct" | "jpy";
 }) {
-  const useJpy = (category === "price" || category === "print") && priceMetric === "jpy";
+  const useJpy = category === "price" && priceMetric === "jpy";
   // priceMetric/print等は値上がりのみ扱うため常に正だが、採用率下降ランキングは
   // change_valueが負になる。符号は数値側にすでに乗っているので、正の時だけ"+"を足す
   // （toFixedは負数ならそのまま"-"付きの文字列になる）。
@@ -174,15 +174,27 @@ function MoverRow({
       : row.finish === "nonfoil"
         ? "通常"
         : null;
-  // プリント単位のランキングでも、クリック時はカード詳細ページ（オラクル単位、通常の
-  // カードクリックと同じ遷移先）へ飛ばす。プリント詳細ページは情報量が多く見にくいという
-  // 指摘があったため（2026-08-27）。
+  // カード詳細ページの版一覧でその版をクリックした時と同じ遷移先にする（2026-08-27）。
+  const href = row.scryfallId ? `/cards/${row.oracleId}/prints/${row.scryfallId}` : `/cards/${row.oracleId}`;
   return (
     <Link
-      href={`/cards/${row.oracleId}`}
+      href={href}
       className="flex flex-col overflow-hidden rounded-lg border border-neutral-200 hover:border-neutral-400"
     >
-      <Image src={row.imageUrl} alt={row.nameEn} width={223} height={311} className="w-full object-contain" />
+      <div className="relative">
+        <Image src={row.imageUrl} alt={row.nameEn} width={223} height={311} className="w-full object-contain" />
+        {row.finish === "foil" && (
+          // CardHero.tsxと同じ虹色ホログラム風テクスチャ（実物のFoilカードの質感を模した演出）
+          <div
+            className="pointer-events-none absolute inset-0 opacity-50 mix-blend-overlay"
+            style={{
+              background:
+                "repeating-linear-gradient(115deg, #ff0080 0%, #ff8c00 14%, #ffed00 28%, #00ff8c 42%, #00c8ff 56%, #8c00ff 70%, #ff0080 84%)",
+              backgroundSize: "200% 200%",
+            }}
+          />
+        )}
+      </div>
       <div className="flex flex-col gap-1 p-2">
         <p className="truncate text-sm font-medium">
           <span className="mr-1.5 text-neutral-400">{row.rank}</span>

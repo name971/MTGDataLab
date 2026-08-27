@@ -10,17 +10,15 @@ export const metadata = { title: "週間ランキング - MTG DataLab" };
 const CATEGORIES: { key: MoverCategory; label: string }[] = [
   { key: "price", label: "値上がりランキング" },
   { key: "usage", label: "採用率ランキング" },
-  { key: "print", label: "全プリント" },
 ];
 
 function resolveCategory(raw: string | undefined): MoverCategory {
-  if (raw === "usage") return "usage";
-  if (raw === "print") return "print";
-  return "price";
+  return raw === "usage" ? "usage" : "price";
 }
 
+// ユーザー要望（2026-08-27）: 標準で円（金額差）ランキングを選ぶ
 function resolveMetric(raw: string | undefined): "pct" | "jpy" {
-  return raw === "jpy" ? "jpy" : "pct";
+  return raw === "pct" ? "pct" : "jpy";
 }
 
 function resolveUsageDirection(raw: string | undefined): "up" | "down" {
@@ -65,7 +63,7 @@ export default async function TrendingRankingPage({
             </Link>
           ))}
         </div>
-        {(category === "price" || category === "print") && (
+        {category === "price" && (
           <div className="flex gap-1">
             <Link
               href={`/trending?category=${category}&metric=pct`}
