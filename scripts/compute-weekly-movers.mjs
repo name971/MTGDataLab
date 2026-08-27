@@ -9,7 +9,7 @@
  *      node scripts/compute-weekly-movers.mjs
  */
 
-import { monthsBetween, readOraclePriceMonths } from "./lib/r2PriceArchive.mjs";
+import { monthsBetween, readOraclePriceMonths, readPrintPriceMonths } from "./lib/r2PriceArchive.mjs";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -94,6 +94,13 @@ async function loadRecentOraclePriceRows(todayStr) {
   return readOraclePriceMonths(months);
 }
 
+async function loadRecentPrintPriceRows(todayStr) {
+  const twoMonthsAgo = new Date(`${todayStr}T00:00:00Z`);
+  twoMonthsAgo.setUTCMonth(twoMonthsAgo.getUTCMonth() - 1);
+  const months = monthsBetween(isoDate(twoMonthsAgo), todayStr);
+  return readPrintPriceMonths(months);
+}
+
 async function main() {
   const today = new Date();
   const todayStr = isoDate(today);
@@ -149,8 +156,10 @@ async function main() {
     byPct.slice(0, TOP_N).forEach((c, i) => {
       rows.push({
         oracle_id: c.oracleId,
+        scryfall_id: null,
         category: "price",
         format: null,
+        finish: null,
         change_value: clampChange(c.pct),
         change_value_jpy: clampChange(c.jpyDiff),
         rank: i + 1,
@@ -161,8 +170,10 @@ async function main() {
     byJpy.slice(0, TOP_N).forEach((c, i) => {
       rows.push({
         oracle_id: c.oracleId,
+        scryfall_id: null,
         category: "price_jpy",
         format: null,
+        finish: null,
         change_value: clampChange(c.jpyDiff),
         change_value_jpy: clampChange(c.jpyDiff),
         rank: i + 1,
@@ -214,8 +225,10 @@ async function main() {
     changes.slice(0, TOP_N).forEach((c, i) => {
       rows.push({
         oracle_id: c.oracleId,
+        scryfall_id: null,
         category: "usage",
         format: c.format,
+        finish: null,
         change_value: clampChange(c.pt),
         change_value_jpy: null,
         rank: i + 1,
@@ -226,8 +239,172 @@ async function main() {
     console.log(`card_usage_statsに${pastStr}以前のデータがありません。採用率上昇ランキングをスキップします。`);
   }
 
+  // ── プリント単位の価格データを共通で用意（コレクターカード・全プリントランキングで共有） ──
+  {
+    const [reservedOrSerialized, currentPrices, rateRows] = await Promise.all([
+      supabaseGet(`card_oracles?select=oracle_id&or=(is_reserved.eq.true,is_serialized.eq.true)`),
+      supabaseGet(`card_print_current_prices?select=scryfall_id,oracle_id,usd,usd_foil`),
+      supabaseGet(`exchange_rates?select=usd_to_jpy&order=date.desc&limit=1`),
+    ]);
+    const usdToJpy = Number(rateRows[0]?.usd_to_jpy ?? 0);
+    if (usdToJpy > 0 && currentPrices.length > 0) {
+      const oracleByScryfallId = new Map();
+      for (const p of currentPrices) oracleByScryfallId.set(p.scryfall_id, p.oracle_id);
+
+      const printRows = await loadRecentPrintPriceRows(todayStr);
+      let latestPrintDate = null;
+      let pastPrintDate = null;
+      for (const r of printRows) {
+        if (r.date <= todayStr && (!latestPrintDate || r.date > latestPrintDate)) latestPrintDate = r.date;
+        if (r.date <= pastStr && (!pastPrintDate || r.date > pastPrintDate)) pastPrintDate = r.date;
+      }
+
+      if (latestPrintDate && pastPrintDate) {
+        const pastByPrint = new Map();
+        for (const r of printRows) {
+          if (r.date !== pastPrintDate) continue;
+          pastByPrint.set(r.scryfall_id, r);
+        }
+
+        // ── コレクターカードTop300（ml/features.pyのidentify_premium_prints/
+        // _build_collector_frameと同じ判定基準をJS側に移植: is_reserved/is_serializedオラクルの
+        // 全プリント、またはそのオラクル内で価格が突出したプリント。2026-08-27） ──
+        const PREMIUM_PRINT_MIN_RATIO = 5;
+        const PREMIUM_PRINT_MIN_JPY = 3000;
+        const cheapestByOracle = new Map();
+        for (const p of currentPrices) {
+          const cheapest = Math.min(p.usd ?? Infinity, p.usd_foil ?? Infinity);
+          if (!Number.isFinite(cheapest)) continue;
+          const cur = cheapestByOracle.get(p.oracle_id);
+          if (cur == null || cheapest < cur) cheapestByOracle.set(p.oracle_id, cheapest);
+        }
+        const reservedSerializedOracleIds = new Set(reservedOrSerialized.map((o) => o.oracle_id));
+        const collectorCandidateIds = new Set();
+        for (const p of currentPrices) {
+          if (reservedSerializedOracleIds.has(p.oracle_id)) {
+            collectorCandidateIds.add(p.scryfall_id);
+            continue;
+          }
+          const priciest = Math.max(p.usd ?? -Infinity, p.usd_foil ?? -Infinity);
+          const cheapestOfOracle = cheapestByOracle.get(p.oracle_id);
+          if (
+            Number.isFinite(priciest) &&
+            cheapestOfOracle != null &&
+            priciest * usdToJpy >= PREMIUM_PRINT_MIN_JPY &&
+            priciest >= cheapestOfOracle * PREMIUM_PRINT_MIN_RATIO
+          ) {
+            collectorCandidateIds.add(p.scryfall_id);
+          }
+        }
+        console.log(`コレクター候補プリント: ${collectorCandidateIds.size}件`);
+
+        // コレクターが実際に買うのはFoilや希少プリントなので、そのプリントのusd_foilを
+        // 優先する（_build_collector_frameと同じ扱い）。ただし日によってusd/usd_foilの
+        // どちらか片方しか記録されていない日があり、単純に「無ければusdを代用」すると
+        // ある日はfoil値・別の日は非foil値を跨いで比較してしまい、実際には動いていない
+        // 価格差（foil $233 vs 非foil $0.47等）を暴騰として誤検知した（2026-08-27判明）。
+        // 両日でfoil値が揃っていればfoil同士、揃わなければ非foil同士でのみ比較する。
+        const collectorChanges = [];
+        for (const r of printRows) {
+          if (r.date !== latestPrintDate || !collectorCandidateIds.has(r.scryfall_id)) continue;
+          const past = pastByPrint.get(r.scryfall_id);
+          if (!past) continue;
+          let usd;
+          let pastUsd;
+          if (r.usd_foil != null && past.usd_foil != null) {
+            usd = Number(r.usd_foil);
+            pastUsd = Number(past.usd_foil);
+          } else if (r.usd != null && past.usd != null) {
+            usd = Number(r.usd);
+            pastUsd = Number(past.usd);
+          } else {
+            continue; // 仕上げが揃わない＝比較不能
+          }
+          if (pastUsd === 0) continue;
+          const pct = ((usd - pastUsd) / pastUsd) * 100;
+          if (pct <= 0) continue;
+          const oracleId = oracleByScryfallId.get(r.scryfall_id);
+          if (!oracleId) continue;
+          collectorChanges.push({ scryfallId: r.scryfall_id, oracleId, pct, jpyEst: usd * usdToJpy });
+        }
+        collectorChanges.sort((a, b) => b.pct - a.pct);
+        collectorChanges.slice(0, TOP_N).forEach((c, i) => {
+          rows.push({
+            oracle_id: c.oracleId,
+            scryfall_id: c.scryfallId,
+            category: "collector",
+            format: null,
+            finish: null,
+            change_value: clampChange(c.pct),
+            change_value_jpy: clampChange(c.jpyEst),
+            rank: i + 1,
+            calculated_date: todayStr,
+          });
+        });
+
+        // ── 全プリントTop300（オラクル単位の最安値ではなく、プリント単位・仕上げ単位で
+        // 素直に集計する。ユーザー要望: 「安い版は別にあるのに特定版だけ動いた」を
+        // 見たい。foilと非foilは別の市場（別の買い手）なので、同じプリントでも両方
+        // 独立に候補にする（1プリントにつき最大2件、finish列で区別）。2026-08-27） ──
+        const allPrintChanges = [];
+        for (const r of printRows) {
+          if (r.date !== latestPrintDate) continue;
+          const past = pastByPrint.get(r.scryfall_id);
+          if (!past) continue;
+          const oracleId = oracleByScryfallId.get(r.scryfall_id);
+          if (!oracleId) continue;
+          for (const finish of ["nonfoil", "foil"]) {
+            const cur = finish === "foil" ? r.usd_foil : r.usd;
+            const prev = finish === "foil" ? past.usd_foil : past.usd;
+            if (cur == null || prev == null || Number(prev) === 0) continue;
+            const pct = ((Number(cur) - Number(prev)) / Number(prev)) * 100;
+            if (pct <= 0) continue;
+            const jpyEst = Number(cur) * usdToJpy;
+            const jpyDiff = (Number(cur) - Number(prev)) * usdToJpy;
+            allPrintChanges.push({ scryfallId: r.scryfall_id, oracleId, finish, pct, jpyEst, jpyDiff });
+          }
+        }
+        const allPrintByPct = [...allPrintChanges].sort((a, b) => b.pct - a.pct);
+        allPrintByPct.slice(0, TOP_N).forEach((c, i) => {
+          rows.push({
+            oracle_id: c.oracleId,
+            scryfall_id: c.scryfallId,
+            category: "print",
+            format: null,
+            finish: c.finish,
+            change_value: clampChange(c.pct),
+            change_value_jpy: clampChange(c.jpyEst),
+            rank: i + 1,
+            calculated_date: todayStr,
+          });
+        });
+        const allPrintByJpy = [...allPrintChanges].sort((a, b) => b.jpyDiff - a.jpyDiff);
+        allPrintByJpy.slice(0, TOP_N).forEach((c, i) => {
+          rows.push({
+            oracle_id: c.oracleId,
+            scryfall_id: c.scryfallId,
+            category: "print_jpy",
+            format: null,
+            finish: c.finish,
+            // print/print_jpyはcollectorと同じくchange_value_jpyを「現在価格」の表示に使う
+            // （オラクル単位のcard_current_pricesに相当するプリント単位の別ソースが無いため）。
+            // change_valueの方はランキング指標そのもの（pctではなく円建て変化額）を持つ。
+            change_value: clampChange(c.jpyDiff),
+            change_value_jpy: clampChange(c.jpyEst),
+            rank: i + 1,
+            calculated_date: todayStr,
+          });
+        });
+      } else {
+        console.log(`プリント価格履歴に${pastStr}以前のデータがありません。プリント単位のランキングをスキップします。`);
+      }
+    } else {
+      console.log("為替レートまたはプリント現在価格が無いため、プリント単位のランキングをスキップします。");
+    }
+  }
+
   await supabaseDelete(`weekly_movers?calculated_date=eq.${todayStr}`);
-  await supabaseUpsert("weekly_movers", rows, "oracle_id,category,calculated_date");
+  await supabaseUpsert("weekly_movers", rows, "category,calculated_date,rank");
   console.log(`weekly_movers 保存: ${rows.length}件`);
 
   // 保持ポリシー: アプリは最新calculated_date分しか読まないため、それより古い行は不要

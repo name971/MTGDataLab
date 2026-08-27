@@ -2,20 +2,24 @@ import { supabase } from "./supabase";
 import { getBestCardImages } from "./dbCardPrints";
 import { colorsFromManaCost } from "./manaColors";
 
-export type MoverCategory = "price" | "usage";
+export type MoverCategory = "price" | "usage" | "collector" | "print";
 
 export const WEEKLY_MOVERS_PAGE_SIZE = 20;
 export const WEEKLY_MOVERS_TOP_N = 300;
 
 export interface WeeklyMoverRow {
   oracleId: string;
+  /** collector/printのみ、対象プリント。リンク先を/cards/[oracleId]/prints/[scryfallId]にするため */
+  scryfallId: string | null;
+  /** printのみ、'foil' | 'nonfoil' */
+  finish: string | null;
   rank: number;
   nameJa: string;
   nameEn: string;
   imageUrl: string;
   colors: string[];
   rarity: string | null;
-  changeValue: number; // price: %／price_jpy: 円／usage: pt
+  changeValue: number; // price: %／price_jpy: 円／usage: pt／collector: %
   /** usageのみ、この変化幅の元になった代表フォーマット（英語のFormat値そのまま、表示バッジ用） */
   format: string | null;
   /** フォーマットフィルター用。直近のcard_usage_statsに採用実績がある全フォーマット
@@ -25,7 +29,7 @@ export interface WeeklyMoverRow {
 }
 
 export function formatChangeUnit(category: MoverCategory): string {
-  return category === "price" ? "%" : "pt";
+  return category === "usage" ? "pt" : "%";
 }
 
 /**
@@ -42,7 +46,8 @@ export async function getWeeklyMovers(
    * 見たい」という要望だった）。weekly_movers.categoryは"price_jpy"として別行で保存されている。 */
   priceMetric: "pct" | "jpy" = "pct",
 ): Promise<{ rows: WeeklyMoverRow[] }> {
-  const storedCategory = category === "price" && priceMetric === "jpy" ? "price_jpy" : category;
+  const storedCategory =
+    priceMetric === "jpy" && (category === "price" || category === "print") ? `${category}_jpy` : category;
 
   const { data: latestRow } = await supabase
     .from("weekly_movers")
@@ -54,7 +59,7 @@ export async function getWeeklyMovers(
 
   const { data: moverRows } = await supabase
     .from("weekly_movers")
-    .select("oracle_id, format, change_value, rank")
+    .select("oracle_id, scryfall_id, finish, format, change_value, change_value_jpy, rank")
     .eq("calculated_date", latestRow.calculated_date)
     .eq("category", storedCategory)
     .order("rank", { ascending: true })
@@ -62,13 +67,24 @@ export async function getWeeklyMovers(
   if (!moverRows || moverRows.length === 0) return { rows: [] };
 
   const oracleIds = moverRows.map((r) => r.oracle_id);
-  const [{ data: oracles }, { data: cardRows }, { data: priceRows }, bestImageByOracle, formatsByOracle] =
+  const scryfallIds = moverRows.map((r) => r.scryfall_id).filter((id): id is string => id !== null);
+
+  const [{ data: oracles }, { data: cardRows }, { data: priceRows }, bestImageByOracle, formatsByOracle, printRows] =
     await Promise.all([
       supabase.from("card_oracles").select("oracle_id, name, printed_name_ja").in("oracle_id", oracleIds),
       supabase.from("cards").select("oracle_id, mana_cost, rarity").eq("lang", "en").in("oracle_id", oracleIds),
       supabase.from("card_current_prices").select("oracle_id, jpy_est").in("oracle_id", oracleIds),
       getBestCardImages(oracleIds),
       getFormatsByOracle(oracleIds),
+      // collectorのみ、その特定プリントの画像・レアリティを使う（オラクルの代表プリントとは
+      // 別物 — 値動きしているのはまさにこの特殊版なので、代表画像に差し替わってしまうと
+      // 何が値上がりしたのか分からなくなる）
+      scryfallIds.length > 0
+        ? supabase
+            .from("card_prints")
+            .select("scryfall_id, image_uri_normal, image_uri_normal_ja, rarity")
+            .in("scryfall_id", scryfallIds)
+        : Promise.resolve({ data: [] as { scryfall_id: string; image_uri_normal: string | null; image_uri_normal_ja: string | null; rarity: string | null }[] }),
     ]);
 
   const nameByOracle = new Map((oracles ?? []).map((o) => [o.oracle_id, o]));
@@ -78,24 +94,34 @@ export async function getWeeklyMovers(
   for (const p of priceRows ?? []) {
     if (!priceByOracle.has(p.oracle_id) && p.jpy_est !== null) priceByOracle.set(p.oracle_id, Number(p.jpy_est));
   }
+  const printByScryfallId = new Map((printRows.data ?? []).map((p) => [p.scryfall_id, p]));
 
   const rows = moverRows
     .map((m) => {
       const oracle = nameByOracle.get(m.oracle_id);
-      const imageUrl = bestImageByOracle.get(m.oracle_id);
-      if (!oracle || !imageUrl) return null;
+      if (!oracle) return null;
+      const print = m.scryfall_id ? printByScryfallId.get(m.scryfall_id) : null;
+      const imageUrl = print
+        ? (print.image_uri_normal_ja ?? print.image_uri_normal)
+        : bestImageByOracle.get(m.oracle_id);
+      if (!imageUrl) return null;
       return {
         oracleId: m.oracle_id,
+        scryfallId: m.scryfall_id,
+        finish: m.finish,
         rank: m.rank,
         nameJa: oracle.printed_name_ja ?? oracle.name,
         nameEn: oracle.name,
         imageUrl,
         colors: colorsFromManaCost(manaCostByOracle.get(m.oracle_id)),
-        rarity: rarityByOracle.get(m.oracle_id) ?? null,
+        rarity: print ? (print.rarity ?? rarityByOracle.get(m.oracle_id) ?? null) : (rarityByOracle.get(m.oracle_id) ?? null),
         changeValue: Number(m.change_value),
         format: m.format,
         formats: formatsByOracle.get(m.oracle_id) ?? [],
-        priceJpy: priceByOracle.get(m.oracle_id) ?? null,
+        priceJpy:
+          category === "collector" || category === "print"
+            ? (m.change_value_jpy != null ? Number(m.change_value_jpy) : null)
+            : (priceByOracle.get(m.oracle_id) ?? null),
       } satisfies WeeklyMoverRow;
     })
     .filter((r): r is WeeklyMoverRow => r !== null);

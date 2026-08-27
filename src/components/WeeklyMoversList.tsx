@@ -2,7 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useMemo, useState } from "react";
 import type { WeeklyMoverRow, MoverCategory } from "@/lib/dbWeeklyMovers";
 import { formatLabelJa, FORMATS } from "@/lib/formats";
 import RankingFilterPanel, {
@@ -23,6 +24,30 @@ function isFormat(v: string | null): v is (typeof FORMATS)[number] {
 // 1ページ5×4枚（グリッドの最大列数lg:grid-cols-5に合わせる）
 const PAGE_SIZE = 20;
 
+/** フィルター/ページの状態をURLクエリに持たせる（MlRankingList.tsxと同じ理由）。
+ * カード詳細ページに遷移してブラウザで戻ると、この状態がuseStateだけだと初期化されて
+ * しまう（この画面自体がアンマウントされるため）。URLに乗せておけば、戻った時に同じURLへ
+ * 戻ってくることで状態が復元される（2026-08-27、ユーザー指摘）。 */
+function parseFiltersFromParams(sp: URLSearchParams): RankingFilters {
+  const csv = (key: string) => {
+    const v = sp.get(key);
+    return v ? v.split(",").filter(Boolean) : [];
+  };
+  const num = (key: string) => {
+    const v = sp.get(key);
+    if (v === null) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  return {
+    formats: csv("wmFormats"),
+    colors: csv("wmColors"),
+    rarities: csv("wmRarities"),
+    priceMin: num("wmPriceMin"),
+    priceMax: num("wmPriceMax"),
+  };
+}
+
 export default function WeeklyMoversList({
   rows,
   category,
@@ -32,9 +57,31 @@ export default function WeeklyMoversList({
   category: MoverCategory;
   priceMetric: "pct" | "jpy";
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [showFilters, setShowFilters] = useState(false);
-  const [filters, setFilters] = useState<RankingFilters>(EMPTY_RANKING_FILTERS);
-  const [page, setPage] = useState(0);
+
+  const filters = useMemo(() => parseFiltersFromParams(searchParams), [searchParams]);
+  const page = Math.max(0, Number(searchParams.get("wmPage") ?? "0") || 0);
+
+  function updateParams(next: { filters?: RankingFilters; page?: number }) {
+    const params = new URLSearchParams(searchParams.toString());
+    const nextFilters = next.filters ?? filters;
+    const setOrDelete = (key: string, value: string) => (value ? params.set(key, value) : params.delete(key));
+    setOrDelete("wmFormats", nextFilters.formats.join(","));
+    setOrDelete("wmColors", nextFilters.colors.join(","));
+    setOrDelete("wmRarities", nextFilters.rarities.join(","));
+    setOrDelete("wmPriceMin", nextFilters.priceMin != null ? String(nextFilters.priceMin) : "");
+    setOrDelete("wmPriceMax", nextFilters.priceMax != null ? String(nextFilters.priceMax) : "");
+    // フィルターを変更したら1ページ目に戻す（そうしないと、ページ数が減った状態で
+    // 空のページを表示し続けてしまう）
+    const nextPage = next.page ?? (next.filters ? 0 : page);
+    if (nextPage === 0) params.delete("wmPage");
+    else params.set("wmPage", String(nextPage));
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }
 
   const filtered = useMemo(
     () =>
@@ -43,9 +90,6 @@ export default function WeeklyMoversList({
       ),
     [rows, filters],
   );
-  // フィルター/タブ切り替えで対象件数が変わったら1ページ目に戻す
-  // （そうしないと、ページ数が減った状態で空のページを表示し続けてしまう）
-  useEffect(() => setPage(0), [rows, filters]);
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
 
@@ -64,7 +108,7 @@ export default function WeeklyMoversList({
           {showFilters && (
             <RankingFilterPanel
               filters={filters}
-              onChange={setFilters}
+              onChange={(next) => updateParams({ filters: next })}
               onClose={() => setShowFilters(false)}
               overrideLocked={UNLOCK_FILTERS ? false : undefined}
             />
@@ -74,7 +118,7 @@ export default function WeeklyMoversList({
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4 lg:grid-cols-5">
         {pageRows.map((row) => (
-          <MoverRow key={row.oracleId} row={row} category={category} priceMetric={priceMetric} />
+          <MoverRow key={row.scryfallId ?? row.oracleId} row={row} category={category} priceMetric={priceMetric} />
         ))}
       </div>
       {filtered.length === 0 && (
@@ -89,7 +133,7 @@ export default function WeeklyMoversList({
             <button
               key={p}
               type="button"
-              onClick={() => setPage(p)}
+              onClick={() => updateParams({ page: p })}
               className={`rounded-md border px-3 py-1.5 text-sm ${
                 p === page
                   ? "border-neutral-500 bg-neutral-100 text-neutral-900"
@@ -114,15 +158,22 @@ function MoverRow({
   category: MoverCategory;
   priceMetric: "pct" | "jpy";
 }) {
-  const useJpy = category === "price" && priceMetric === "jpy";
+  const useJpy = (category === "price" || category === "print") && priceMetric === "jpy";
   const changeText = useJpy
     ? `+¥${Math.round(row.changeValue).toLocaleString()}`
-    : `+${row.changeValue.toFixed(1)}${category === "price" ? "%" : "pt"}`;
+    : `+${row.changeValue.toFixed(1)}${category === "usage" ? "pt" : "%"}`;
   // TrendingRankingList.tsxの「採用率(Format) +X.Xpt」表記に揃える
-  const formatLabel = row.format ? (isFormat(row.format) ? formatLabelJa(row.format) : row.format) : null;
+  const formatLabel = row.format
+    ? (isFormat(row.format) ? formatLabelJa(row.format) : row.format)
+    : row.finish === "foil"
+      ? "Foil"
+      : row.finish === "nonfoil"
+        ? "通常"
+        : null;
+  const href = row.scryfallId ? `/cards/${row.oracleId}/prints/${row.scryfallId}` : `/cards/${row.oracleId}`;
   return (
     <Link
-      href={`/cards/${row.oracleId}`}
+      href={href}
       className="flex flex-col overflow-hidden rounded-lg border border-neutral-200 hover:border-neutral-400"
     >
       <Image src={row.imageUrl} alt={row.nameEn} width={223} height={311} className="w-full object-contain" />

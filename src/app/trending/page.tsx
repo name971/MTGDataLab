@@ -10,10 +10,15 @@ export const metadata = { title: "週間ランキング - MTG DataLab" };
 const CATEGORIES: { key: MoverCategory; label: string }[] = [
   { key: "price", label: "値上がりランキング" },
   { key: "usage", label: "採用率上昇ランキング" },
+  { key: "collector", label: "コレクターカード" },
+  { key: "print", label: "全プリント" },
 ];
 
 function resolveCategory(raw: string | undefined): MoverCategory {
-  return raw === "usage" ? "usage" : "price";
+  if (raw === "usage") return "usage";
+  if (raw === "collector") return "collector";
+  if (raw === "print") return "print";
+  return "price";
 }
 
 function resolveMetric(raw: string | undefined): "pct" | "jpy" {
@@ -57,10 +62,10 @@ export default async function TrendingRankingPage({
             </Link>
           ))}
         </div>
-        {category === "price" && (
+        {(category === "price" || category === "print") && (
           <div className="flex gap-1">
             <Link
-              href="/trending?category=price&metric=pct"
+              href={`/trending?category=${category}&metric=pct`}
               aria-label="%ランキング"
               className={`rounded-md border px-2.5 py-1.5 text-sm ${
                 metric === "pct"
@@ -71,7 +76,7 @@ export default async function TrendingRankingPage({
               %
             </Link>
             <Link
-              href="/trending?category=price&metric=jpy"
+              href={`/trending?category=${category}&metric=jpy`}
               aria-label="金額差ランキング"
               className={`rounded-md border px-2.5 py-1.5 text-sm ${
                 metric === "jpy"
@@ -79,7 +84,7 @@ export default async function TrendingRankingPage({
                   : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
               }`}
             >
-              💰
+              円
             </Link>
           </div>
         )}

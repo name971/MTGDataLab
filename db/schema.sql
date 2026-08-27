@@ -445,18 +445,27 @@ CREATE TABLE trending_scores (
 -- price: フォーマット非依存（オラクル単位の最安値）なのでformatは常にNULL。
 -- usage: フォーマットごとに別値なので、オラクルごとに一番変化幅が大きかったフォーマットを
 -- 代表として1件だけ保存する（全フォーマット横断で1本化）。
--- change_value_jpy: priceのみ、金額差表示切り替えボタン用（円、値上がり額の絶対値）。
--- usageはNULL（2026-08-27追加）。
+-- change_value_jpy: price/collectorのみ、円建ての値（priceは金額差表示切り替えボタン用の
+-- 変化額、collectorは現在価格）。usageはNULL（2026-08-27追加）。
+-- collector: プリント単位（scryfall_id）の値上がり追跡（オラクル単位の最安値だけでは
+-- 「安いプリントは別にあるのに特定版だけ高騰した」というコレクター需要のパターンが
+-- 見えないため、ml/features.pyのidentify_premium_prints/_build_collector_frameと
+-- 同じ判定基準をJS側に移植して対象プリントを選ぶ、2026-08-27）。1オラクルに複数の
+-- 対象プリントがありうるため、UNIQUE制約はoracle_idではなくrankを軸にする。
+-- print: 全プリント・全仕上げを素直に集計する版（コレクター候補への絞り込みをせず、
+-- foil/非foilも別候補として扱う。1プリントにつき最大2件、finish列で区別。2026-08-27）。
 CREATE TABLE weekly_movers (
   id              BIGSERIAL PRIMARY KEY,
   oracle_id       UUID NOT NULL REFERENCES card_oracles (oracle_id),
-  category        TEXT NOT NULL,  -- 'price' | 'usage'
+  scryfall_id     UUID REFERENCES card_prints (scryfall_id),  -- collector/printのみ、対象プリント
+  finish          TEXT,  -- printのみ、'foil' | 'nonfoil'
+  category        TEXT NOT NULL,  -- 'price' | 'price_jpy' | 'usage' | 'collector' | 'print'
   format          TEXT,           -- usageのみ、そのオラクルで採用した代表フォーマット
-  change_value    NUMERIC(8, 2) NOT NULL,  -- price: %／usage: pt
-  change_value_jpy NUMERIC(10, 2),  -- priceのみ、円建ての変化額
+  change_value    NUMERIC(8, 2) NOT NULL,  -- price/collector: %／price_jpy: 円／usage: pt
+  change_value_jpy NUMERIC(10, 2),  -- price: 円建ての変化額／collector: 現在価格（円）
   rank            INT NOT NULL,
   calculated_date DATE NOT NULL,
-  UNIQUE (oracle_id, category, calculated_date)
+  UNIQUE (category, calculated_date, rank)
 );
 
 CREATE INDEX idx_weekly_movers_lookup ON weekly_movers (calculated_date, category, rank);
