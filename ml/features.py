@@ -2,7 +2,16 @@
 ml/fetch_data.py が保存したParquetから、学習用の特徴量データフレームを組み立てる。
 
 データリーク厳禁: すべての特徴量は「その日時点で分かっている情報」だけから計算する。
-目的変数（7日後の対数リターン）を計算するshift(-7)以外は、過去方向のshift/rollingのみ使う。
+目的変数（7日以内のどこかで到達した最大の対数リターン、log_return_7d_max）を計算する
+shift(-1)〜shift(-7)以外は、過去方向のshift/rollingのみ使う。
+
+【2026-08-27、目的変数をlog_return_7dからlog_return_7d_maxへ変更】
+「7日後ちょうどの瞬間値」は、日3で跳ねて日7には落ち着いているような実際に当てたい
+値動きを取りこぼすノイズの多い目的変数だった（ユーザー提案の検証で判明）。
+「7日以内のどこかで一度でも閾値を超えたか」に変えたところ、分類モデルのF1が
+競技勢0.077→0.273（対策無し）、コレクター勢0.126→0.219と大幅に改善した
+（docs/price-prediction-plan.md参照）。UIの説明文（「7日以内に一定以上値上がり
+する確率」）とも整合する。log_return_7dは回帰の目的変数比較用に残してある。
 """
 
 from __future__ import annotations
@@ -91,6 +100,20 @@ def build_time_series_features(price_history: pd.DataFrame, id_column: str = "or
     # 目的変数: 7日後の対数リターン（先読みなので学習直前に必ず末尾を切り捨てる側で使う）
     future_price = grouped.shift(-TARGET_HORIZON_DAYS)
     df["log_return_7d"] = np.log(future_price / df["jpy_est"])
+
+    # 目的変数（ablation用、2026-08-27）: 「7日後ちょうど」ではなく「7日以内のどこかで
+    # 一度でも閾値を超えたか」。ユーザー提案: 実運用で知りたいのは「ちょうど7日後の
+    # 価格」ではなく「その週のうちに一度でも跳ねたか」のはずなので、7日後の1点よりも
+    # 有効かもしれないという仮説の検証用。1〜7日後それぞれの対数リターンの最大値を取る
+    # （下落側はmin値、is_up=Falseで使う想定）。
+    future_log_returns = [np.log(grouped.shift(-h) / df["jpy_est"]) for h in range(1, TARGET_HORIZON_DAYS + 1)]
+    # .max(axis=1)はデフォルトでNaNを無視するため、末尾付近の行（未来7日分の一部しか
+    # 無い）でも「見えている範囲だけの最大値」を返してしまい、本来NaN（先読み不能）に
+    # すべき行を誤って学習可能な行として扱ってしまう。7日分全て揃っている行だけを対象にする。
+    future_returns_df = pd.concat(future_log_returns, axis=1)
+    complete_window = future_returns_df.notna().all(axis=1)
+    df["log_return_7d_max"] = future_returns_df.max(axis=1).where(complete_window)
+    df["log_return_7d_min"] = future_returns_df.min(axis=1).where(complete_window)
 
     return df
 
@@ -616,7 +639,17 @@ FEATURE_COLUMNS = [
     f"is_{c.lower()}" for c in TYPE_CATEGORIES
 ]
 
-TARGET_COLUMN = "log_return_7d"
+TARGET_COLUMN = "log_return_7d_max"
+
+
+def target_column_for_direction(direction: str) -> str:
+    """up（急騰）はlog_return_7d_max（7日以内のどこかで最大どれだけ上がったか）、
+    down（急落）はlog_return_7d_min（同、最大どれだけ下がったか）を使う。TARGET_COLUMN
+    （up側のデフォルト）を閾値判定にそのまま流用すると、急落側は「7日間の最大上昇率が
+    下限を下回るか」という意味の通らない判定になってしまうため分離した（2026-08-27）。
+    どちらも同じ7日完全窓（complete_window）でNaN化されるため、行の絞り込み
+    （dropna(subset=[TARGET_COLUMN])）自体はup側のTARGET_COLUMNのままで問題ない。"""
+    return "log_return_7d_max" if direction == "up" else "log_return_7d_min"
 
 
 if __name__ == "__main__":

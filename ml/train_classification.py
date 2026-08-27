@@ -32,7 +32,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import f1_score, precision_score, recall_score
 
-from features import FEATURE_COLUMNS, SEGMENTS, TARGET_COLUMN, build_training_frame
+from features import FEATURE_COLUMNS, SEGMENTS, TARGET_COLUMN, build_training_frame, target_column_for_direction
 from train_baseline import walk_forward_folds
 
 RANDOM_SEED = 42
@@ -103,20 +103,21 @@ def train_and_evaluate_fold(
     if len(train_df) < 50 or len(test_df) < 10:
         return (None, None) if return_model else None
 
+    target_col = target_column_for_direction(direction)
     if fixed_threshold_pct is not None:
         magnitude = np.log(1 + fixed_threshold_pct / 100)
         threshold = -magnitude if direction == "down" else magnitude
     else:
         # 閾値は訓練データの分布からのみ決める（テストデータを覗き見しない）
         q = (1 - soar_quantile) if direction == "down" else soar_quantile
-        threshold = train_df[TARGET_COLUMN].quantile(q)
+        threshold = train_df[target_col].quantile(q)
 
     if direction == "up":
-        train_label = (train_df[TARGET_COLUMN] >= threshold).astype(int)
-        test_label = (test_df[TARGET_COLUMN] >= threshold).astype(int)
+        train_label = (train_df[target_col] >= threshold).astype(int)
+        test_label = (test_df[target_col] >= threshold).astype(int)
     else:
-        train_label = (train_df[TARGET_COLUMN] <= threshold).astype(int)
-        test_label = (test_df[TARGET_COLUMN] <= threshold).astype(int)
+        train_label = (train_df[target_col] <= threshold).astype(int)
+        test_label = (test_df[target_col] <= threshold).astype(int)
 
     if train_label.sum() < 5 or test_label.sum() < 3:
         # 急騰/急落サンプルが少なすぎるフォールドは評価が不安定になるためスキップ
@@ -142,16 +143,17 @@ def _compute_labels(
     train_df: pd.DataFrame, test_df: pd.DataFrame, *,
     soar_quantile: float, fixed_threshold_pct: float | None, direction: str,
 ) -> tuple[pd.Series, pd.Series]:
+    target_col = target_column_for_direction(direction)
     if fixed_threshold_pct is not None:
         magnitude = np.log(1 + fixed_threshold_pct / 100)
         threshold = -magnitude if direction == "down" else magnitude
     else:
         q = (1 - soar_quantile) if direction == "down" else soar_quantile
-        threshold = train_df[TARGET_COLUMN].quantile(q)
+        threshold = train_df[target_col].quantile(q)
 
     if direction == "up":
-        return (train_df[TARGET_COLUMN] >= threshold).astype(int), (test_df[TARGET_COLUMN] >= threshold).astype(int)
-    return (train_df[TARGET_COLUMN] <= threshold).astype(int), (test_df[TARGET_COLUMN] <= threshold).astype(int)
+        return (train_df[target_col] >= threshold).astype(int), (test_df[target_col] >= threshold).astype(int)
+    return (train_df[target_col] <= threshold).astype(int), (test_df[target_col] <= threshold).astype(int)
 
 
 def evaluate_top_n(

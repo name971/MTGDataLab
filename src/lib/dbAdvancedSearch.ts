@@ -240,15 +240,33 @@ export async function advancedSearchCards(
     if (usageOracleIds.length === 0) return { results: [], totalCount: 0, capped: false };
   }
 
-  // textOracleIds・usageOracleIdsはどちらも「事前にoracle_id候補を絞る」フィルタなので、
-  // 両方指定されていれば積集合（AND）を取る
+  // 価格帯フィルタは、他の条件が無いと数万件あるcardsテーブルを無条件に先頭から走査して
+  // CANDIDATE_CAP（500件）で打ち切ってしまい、その中に高額カードがたまたま少数しか
+  // 含まれず「1万円以上を検索しても数枚しか出ない」事故になっていた（2026-08-27判明）。
+  // card_current_prices.jpy_estは直接gte/lteで絞り込めるので、text/usageと同じく
+  // 事前にoracle_id候補を絞るフィルタとして使う。
+  let priceOracleIds: string[] | null = null;
+  if (filters.priceMin !== undefined || filters.priceMax !== undefined) {
+    let query = supabase.from("card_current_prices").select("oracle_id").limit(ID_LOOKUP_LIMIT);
+    if (filters.priceMin !== undefined) query = query.gte("jpy_est", filters.priceMin);
+    if (filters.priceMax !== undefined) query = query.lte("jpy_est", filters.priceMax);
+    const { data } = await query;
+    priceOracleIds = (data ?? []).map((r) => r.oracle_id);
+    if (priceOracleIds.length === 0) return { results: [], totalCount: 0, capped: false };
+  }
+
+  // textOracleIds・usageOracleIds・priceOracleIdsはどれも「事前にoracle_id候補を絞る」
+  // フィルタなので、指定されている分だけ積集合（AND）を取る
+  const restrictionLists = [textOracleIds, usageOracleIds, priceOracleIds].filter(
+    (ids): ids is string[] => ids !== null,
+  );
   let restrictOracleIds: string[] | null = null;
-  if (textOracleIds && usageOracleIds) {
-    const usageSet = new Set(usageOracleIds);
-    restrictOracleIds = textOracleIds.filter((id) => usageSet.has(id));
+  if (restrictionLists.length > 0) {
+    restrictOracleIds = restrictionLists.reduce((acc, ids) => {
+      const set = new Set(ids);
+      return acc.filter((id) => set.has(id));
+    });
     if (restrictOracleIds.length === 0) return { results: [], totalCount: 0, capped: false };
-  } else {
-    restrictOracleIds = textOracleIds ?? usageOracleIds;
   }
 
   // name/type/rarity/フォーマット適正の絞り込みを、渡されたクエリビルダーに適用する。

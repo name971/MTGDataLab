@@ -212,6 +212,7 @@ def run_segment(segment: str) -> None:
         return
 
     results = []
+    importances = []  # 特徴量重要度検証用（2026-08-27）: 各フォールドのmodel_midの重要度を集計
     for train_start, train_end, test_end in folds:
         result = train_and_evaluate_fold(frame, train_start, train_end, test_end)
         if result:
@@ -224,6 +225,11 @@ def run_segment(segment: str) -> None:
                 f"区間カバレッジ={result.interval_coverage:.1%} "
                 f"区間幅={result.mean_interval_width:.4f}"
             )
+            train_df = frame[(frame["date"] >= train_start) & (frame["date"] < train_end)].dropna(
+                subset=[TARGET_COLUMN]
+            )
+            model_mid = _fit_quantile_model(train_df, 0.5)
+            importances.append(model_mid.feature_importances_)
 
     if not results:
         print("全フォールドでサンプル数不足のため評価できませんでした。")
@@ -236,6 +242,13 @@ def run_segment(segment: str) -> None:
     print(f"区間カバレッジ（alpha=0.1〜0.9、理想は80%前後）: {np.mean([r.interval_coverage for r in results]):.1%}")
     print(f"平均区間幅（対数リターン）: {np.mean([r.mean_interval_width for r in results]):.4f}")
     print(f"フォールド数: {len(results)}")
+
+    if importances:
+        avg_importance = np.mean(importances, axis=0)
+        ranked = sorted(zip(FEATURE_COLUMNS, avg_importance), key=lambda x: -x[1])
+        print(f"\n=== {segment} 特徴量重要度（全フォールド平均、model_mid） ===")
+        for i, (name, imp) in enumerate(ranked, start=1):
+            print(f"  {i:2d}. {name}: {imp:.1f}")
 
     print_top_movers(frame, frame)
 
