@@ -91,7 +91,12 @@ export default function WeeklyMoversList({
     [rows, filters],
   );
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const pageRows = filtered.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+  // カテゴリ/指標タブの切り替えはwmPageを更新せずURLごと差し替えるため、切り替え先の
+  // 件数が現在のページ番号より少ないと範囲外になりうる。範囲外でも「該当カードなし」には
+  // 該当しない（filtered.length>0のため）ので、無言で空白のグリッドになってしまう
+  // （2026-08-27、ユーザー指摘の「％タブでバグる」の原因）。表示直前でクランプする。
+  const clampedPage = Math.min(page, pageCount - 1);
+  const pageRows = filtered.slice(clampedPage * PAGE_SIZE, clampedPage * PAGE_SIZE + PAGE_SIZE);
 
   return (
     <div className="flex flex-col gap-3">
@@ -135,7 +140,7 @@ export default function WeeklyMoversList({
               type="button"
               onClick={() => updateParams({ page: p })}
               className={`rounded-md border px-3 py-1.5 text-sm ${
-                p === page
+                p === clampedPage
                   ? "border-neutral-500 bg-neutral-100 text-neutral-900"
                   : "border-neutral-300 text-neutral-600 hover:border-neutral-500"
               }`}
