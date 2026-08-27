@@ -13,22 +13,54 @@ db/schema.sql参照）。それまでは最新1回分だけを保持しており
 グリッドサーチ（docs/price-prediction-plan.md 12-4章）で、閾値を緩めた方が
 実際のPrecision@Nが高かったことに合わせている。
 
-2026-08-21、.github/workflows/daily-data-pipeline.ymlに組み込み、日次自動実行になった
-（それまでは手動実行のみだった）。
+【重要・手動実行専用】一時期.github/workflows/daily-data-pipeline.ymlに組み込んで日次
+自動実行していたが、ml-ranking.ymlごと「運用しないため」削除済み（2026-08-XX、git log
+参照）。以前のこのdocstringは削除を反映せず「自動実行になった」という嘘の記述のまま
+残っており、それを信じて手動実行時にml/fetch_data.pyでのキャッシュ更新を省略し、
+2日前のデータのまま本番へ予測を書き込んでしまった事故があった（2026-08-27、
+docs/incident-log.md参照）。**このスクリプトを実行する前に、必ずml/fetch_data.pyを
+先に実行してキャッシュ（ml/data/*.parquet）を更新すること。** 下のensure_fresh_data()
+がキャッシュの鮮度をmtimeで機械的にチェックし、古すぎれば実行を中断する。
 
 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... \
-      python ml/predict_and_publish.py
+      R2_BUCKET_NAME=... R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=... R2_ENDPOINT_URL=... \
+      python ml/fetch_data.py && python ml/predict_and_publish.py
 """
 
 from __future__ import annotations
 
 import os
+import time
 from datetime import timedelta
+from pathlib import Path
 
 import requests
 
 from features import TARGET_COLUMN, build_training_frame
 from predict_magnitude_ladder import THRESHOLDS_PCT, fit_calibrated_ladder, predict_ladder
+
+# ml/fetch_data.pyが書き込むキャッシュのうち、予測に直接使うもの（features.pyの
+# build_training_frame参照）。これらのファイルの更新時刻が古すぎたら実行を中断する。
+FRESHNESS_CHECK_FILES = ["price_history.parquet", "usage_stats.parquet", "exchange_rates.parquet"]
+MAX_DATA_AGE_HOURS = 20  # 日次1回の運用を想定した猶予（当日中に手動実行すれば必ず通る）
+
+
+def ensure_fresh_data() -> None:
+    data_dir = Path(__file__).parent / "data"
+    for filename in FRESHNESS_CHECK_FILES:
+        path = data_dir / filename
+        if not path.exists():
+            raise SystemExit(
+                f"{path} が存在しません。先に `python ml/fetch_data.py` を実行してください。"
+            )
+        age_hours = (time.time() - path.stat().st_mtime) / 3600
+        if age_hours > MAX_DATA_AGE_HOURS:
+            raise SystemExit(
+                f"{path} の更新から{age_hours:.1f}時間経過しています"
+                f"（許容={MAX_DATA_AGE_HOURS}時間）。古いデータのまま本番へ予測を書き込む"
+                f"事故が実際に起きたため（2026-08-27）、先に `python ml/fetch_data.py` を"
+                f"実行してキャッシュを更新してください。"
+            )
 
 SUPABASE_URL = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
 SUPABASE_ANON_KEY = os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
@@ -102,6 +134,7 @@ def _build_rows(frame, latest_date, latest, direction: str) -> list[dict]:
 
 def main() -> None:
     _require_supabase_env()
+    ensure_fresh_data()
 
     print("特徴量データフレームを構築中（competitive）...")
     frame = build_training_frame("competitive")
