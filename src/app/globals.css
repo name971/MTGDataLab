@@ -24,9 +24,9 @@
   --color-accent-soft: var(--accent-soft);
   --color-accent-text: var(--accent-text);
   --font-sans: var(--font-zen-kaku-gothic-new);
-  /* ui-monospace(SF Mono相当)を試したが「微妙」と不評だったため撤回（2026-08-29）、
-     IBM Plex Monoに戻す。 */
-  --font-numeric: var(--font-ibm-plex-mono);
+  /* ui-monospace→IBM Plex Monoと試したがどちらも本文（Zen Kaku Gothic New）で
+     良いという結論になった（2026-08-29）。 */
+  --font-numeric: var(--font-zen-kaku-gothic-new);
 }
 
 /* 白配色で統一する方針のため、create-next-app由来のダークモード切替は行わない */
