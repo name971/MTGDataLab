@@ -99,23 +99,28 @@ async function supabaseDelete(path) {
 }
 
 /**
- * date -> value のMapと基準日（today）を受け取り、todayから暦日で1日ずつ遡りながら
- * 「前日比プラスが何日連続しているか」を数える。配列のインデックスではなく実際の日付で
- * 隣を判定するため、途中の日付が欠測していれば即座にそこで打ち切る（誤って連続とみなさない）。
+ * date -> value のMapと基準日（today）を受け取り、実際にデータがある観測日を新しい方から
+ * 遡りながら「前の観測比プラスが何回連続しているか」を数える。
+ *
+ * 【変遷】以前は暦日で1日ずつ遡り、途中の日付が欠測していれば即座に打ち切っていた
+ * （誤って連続とみなさないための安全策のつもりだった）。しかし2026-08-25/26のように
+ * GitHub Actionsのtimeoutで日次バッチ自体が丸ごと欠測した日があると、それ以降ずっと
+ * streakが0のままになってしまい、「データはあるのに連続性チェックのせいで出ない」という
+ * 状態が続いた（ユーザー指摘、2026-08-27）。欠測日に何が起きたか分からない以上、
+ * その日を無かったことにして前後の実データだけで判断する方が実態に近いと判断し、
+ * 暦日の連続性チェックをやめ、観測データの並びだけで数えるように変更した。
  */
 function computeStreak(valueByDate, todayStr) {
   const todayValue = valueByDate.get(todayStr);
   if (todayValue == null) return null;
 
+  const observedDates = [...valueByDate.keys()].filter((d) => d <= todayStr).sort();
   let days = 0;
-  let cursorDate = todayStr;
   let cursorValue = todayValue;
-  for (;;) {
-    const prevDate = addDays(cursorDate, -1);
-    const prevValue = valueByDate.get(prevDate);
-    if (prevValue == null || !(cursorValue > prevValue)) break;
+  for (let i = observedDates.length - 2; i >= 0; i--) {
+    const prevValue = valueByDate.get(observedDates[i]);
+    if (!(cursorValue > prevValue)) break;
     days++;
-    cursorDate = prevDate;
     cursorValue = prevValue;
   }
   if (days === 0) return null;
