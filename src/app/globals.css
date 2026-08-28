@@ -3,13 +3,19 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* デザイン刷新（2026-08-29）: ミニマル方向の一点差し色。テラコッタ、rank数字・
+     アクティブなタブ/リンクにだけ使う（採用率上昇=緑/下降=赤の意味色とは別物）。
+     text-accent / bg-accent / border-accent 等のユーティリティとして使える。 */
+  --accent: #bf5b34;
+  --accent-soft: #f4e6dd;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --font-sans: var(--font-zen-kaku-gothic-new);
 }
 
 /* 白配色で統一する方針のため、create-next-app由来のダークモード切替は行わない */
@@ -18,7 +24,7 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family:
-    var(--font-geist-sans),
+    var(--font-zen-kaku-gothic-new),
     -apple-system,
     "Hiragino Kaku Gothic ProN",
     "Yu Gothic",
