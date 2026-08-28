@@ -210,8 +210,9 @@ function MlRankingCard({
               >
                 {Math.round(row[key] * 100)}%
               </div>
-              {/* 薄すぎて読めないという指摘（2026-08-29）を受け、text-neutral-400→600に */}
-              <div className="font-numeric text-[10px] text-neutral-600">
+              {/* 薄すぎて読めないという指摘（2026-08-29）を受けneutral-400→600、続けて
+                  日本の相場表記に合わせ上昇=赤・下降=青に（同日） */}
+              <div className={`font-numeric text-[10px] ${direction === "up" ? "text-red-700" : "text-blue-700"}`}>
                 {direction === "up" ? "+" : "-"}
                 {pct}%{direction === "up" ? "↑" : "↓"}
               </div>
