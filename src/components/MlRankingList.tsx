@@ -88,7 +88,7 @@ export default function MlRankingList({
             onClick={() => updateParams({ direction: "down" })}
             className={`rounded-md border px-3 py-1.5 text-sm font-medium ${
               direction === "down"
-                ? "border-accent bg-accent-soft text-accent-text"
+                ? "border-blue-600 bg-blue-50 text-blue-700"
                 : "border-neutral-300 text-neutral-700 hover:border-neutral-500"
             }`}
           >

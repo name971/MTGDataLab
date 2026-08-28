@@ -229,13 +229,13 @@ function CardListRow({ card, arenaMode }: { card: DeckCardDisplay; arenaMode: bo
       </span>
       {unitPriceJpy !== null ? (
         <>
-          <span className="whitespace-nowrap border-b border-neutral-100 py-1 text-right text-neutral-400 tabular-nums">
+          <span className="whitespace-nowrap border-b border-neutral-100 py-1 text-right text-neutral-400 font-numeric tabular-nums">
             ¥{unitPriceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
           </span>
-          <span className="whitespace-nowrap border-b border-neutral-100 py-1 text-right text-neutral-400 tabular-nums">
+          <span className="whitespace-nowrap border-b border-neutral-100 py-1 text-right text-neutral-400 font-numeric tabular-nums">
             ×{card.quantity}
           </span>
-          <span className="whitespace-nowrap border-b border-neutral-100 py-1 text-right text-neutral-600 tabular-nums">
+          <span className="whitespace-nowrap border-b border-neutral-100 py-1 text-right text-neutral-600 font-numeric tabular-nums">
             ¥{(unitPriceJpy * card.quantity).toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
           </span>
         </>

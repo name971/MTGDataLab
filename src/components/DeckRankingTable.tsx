@@ -206,7 +206,7 @@ function ArchetypeCard({
                     : ""
               }
             >
-              ¥{displayPriceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
+              <span className="font-numeric">¥{displayPriceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}</span>
             </span>
           </span>
         </div>

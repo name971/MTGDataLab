@@ -110,14 +110,14 @@ export default async function CardPrintDetailPage({
             )}
             {jpyPrice !== null ? (
               <>
-                <p className="mt-4 text-2xl font-medium">{jpyPrice.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}円</p>
+                <p className="font-numeric mt-4 text-2xl font-medium">{jpyPrice.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}円</p>
                 <p className="text-xs text-neutral-400">{latest?.date}時点の参考値</p>
               </>
             ) : (
               <p className="mt-4 text-sm text-neutral-500">価格データなし</p>
             )}
             {jpyPriceFoil !== null && (
-              <p className="text-sm text-neutral-500">
+              <p className="font-numeric text-sm text-neutral-500">
                 Foil ¥{jpyPriceFoil.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}（{latestFoil?.date}時点）
               </p>
             )}

@@ -25,8 +25,10 @@
   --color-accent-text: var(--accent-text);
   --font-sans: var(--font-zen-kaku-gothic-new);
   /* ui-monospace→IBM Plex Mono→Zen Kaku Gothic Newと試した末、7書体比較で
-     Interに決定（2026-08-29）。 */
-  --font-numeric: var(--font-inter);
+     Interに決定（2026-08-29）。日本語グリフを含まないため、数字と日本語が
+     混在するテキストでも安全なようZen Kaku Gothic Newを後段に必ず残す
+     （文字単位でのフォールバックなので日本語部分だけそちらに落ちる）。 */
+  --font-numeric: var(--font-inter), var(--font-zen-kaku-gothic-new), sans-serif;
 }
 
 /* 白配色で統一する方針のため、create-next-app由来のダークモード切替は行わない */

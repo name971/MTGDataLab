@@ -89,7 +89,7 @@ export default async function CardDecksPage({
         <ul className="flex flex-col gap-1.5 text-sm">
           {decks.map((deck) => (
             <li key={deck.deckId} className="flex items-baseline gap-2">
-              <span className="shrink-0 tabular-nums text-neutral-400">
+              <span className="shrink-0 font-numeric tabular-nums text-neutral-400">
                 {formatDateShort(deck.eventDate)}
               </span>
               <span className="min-w-0">

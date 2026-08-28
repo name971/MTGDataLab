@@ -202,7 +202,7 @@ function CardRankRow({
           </span>
         </div>
         <p
-          className={`text-right text-sm ${
+          className={`font-numeric text-right text-sm ${
             priceHighlight === "max"
               ? "font-semibold text-red-600"
               : priceHighlight === "min"

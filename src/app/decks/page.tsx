@@ -69,7 +69,7 @@ export default async function DeckRankingPage({
           <div className="flex flex-col items-start gap-0.5 sm:items-end">
             <p className="whitespace-nowrap text-sm text-neutral-600">
               上位{top10.length}デッキ平均:{" "}
-              <span className="text-lg font-semibold text-neutral-900">
+              <span className="font-numeric text-lg font-semibold text-neutral-900">
                 ¥{top10AvgPriceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
               </span>
             </p>
@@ -79,7 +79,7 @@ export default async function DeckRankingPage({
                 className="cursor-help whitespace-nowrap text-xs text-neutral-500"
               >
                 MTG Arena換算平均:{" "}
-                <span className="font-medium text-neutral-700">
+                <span className="font-numeric font-medium text-neutral-700">
                   ¥{top10ArenaAvgPriceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
                 </span>
               </p>

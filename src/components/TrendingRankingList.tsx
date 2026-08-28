@@ -2,8 +2,9 @@ import Image from "next/image";
 import Link from "next/link";
 import type { TrendingRankingRow } from "@/lib/dbTrendingRanking";
 
+// 日本の相場表記に合わせ、上昇=赤・下降=青（2026-08-29、デザイン刷新）
 function changeClass(value: number) {
-  return value >= 0 ? "text-teal-800" : "text-red-800";
+  return `font-numeric ${value >= 0 ? "text-red-700" : "text-blue-700"}`;
 }
 
 export default function TrendingRankingList({ rows }: { rows: TrendingRankingRow[] }) {
@@ -67,7 +68,7 @@ function TrendingRankRow({ row, rank }: { row: TrendingRankingRow; rank: number 
             </span>
           )}
         </div>
-        <p className="text-right text-sm">
+        <p className="font-numeric text-right text-sm">
           ¥{row.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
         </p>
       </div>

@@ -152,20 +152,20 @@ function ChartSvg({
           y2={HEIGHT - PADDING.bottom}
           className="stroke-neutral-200"
         />
-        <text x={4} y={yFor(maxPrice) + 4} className="fill-neutral-400 text-[10px]">
+        <text x={4} y={yFor(maxPrice) + 4} className="fill-neutral-400 font-numeric text-[10px]">
           ¥{maxPrice.toLocaleString("ja-JP")}
         </text>
-        <text x={4} y={yFor(minPrice) + 4} className="fill-neutral-400 text-[10px]">
+        <text x={4} y={yFor(minPrice) + 4} className="fill-neutral-400 font-numeric text-[10px]">
           ¥{minPrice.toLocaleString("ja-JP")}
         </text>
-        <path d={linePath} fill="none" className={diff >= 0 ? "stroke-teal-700" : "stroke-red-700"} strokeWidth={2} />
+        <path d={linePath} fill="none" className={diff >= 0 ? "stroke-red-700" : "stroke-blue-700"} strokeWidth={2} />
         {points.map((p, i) => (
           <circle
             key={`dot-${p.date}`}
             cx={xFor(i)}
             cy={yFor(p.jpy)}
             r={hoverIndex === i ? 4 : 2.5}
-            className={diff >= 0 ? "fill-teal-700" : "fill-red-700"}
+            className={diff >= 0 ? "fill-red-700" : "fill-blue-700"}
           />
         ))}
         {points.map((p, i) => {
@@ -241,7 +241,7 @@ function ChartSvg({
                       </text>
                     </>
                   )}
-                  <text x={10} y={hovered.setCode ? 40 : 17} className="fill-white text-[13px] font-medium">
+                  <text x={10} y={hovered.setCode ? 40 : 17} className="fill-white font-numeric text-[13px] font-medium">
                     ¥{hovered.jpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
                   </text>
                   <text x={10} y={hovered.setCode ? 53 : 33} className="fill-neutral-300 text-[11px]">

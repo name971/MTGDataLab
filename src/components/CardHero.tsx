@@ -552,7 +552,7 @@ export default function CardHero({
             )}
 
             {jpyPrice !== null ? (
-              <p className="mt-4 text-2xl font-medium">
+              <p className="font-numeric mt-4 text-2xl font-medium">
                 ¥{jpyPrice.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
               </p>
             ) : (
@@ -773,7 +773,7 @@ export default function CardHero({
                           )}
                         </button>
                       </td>
-                      <td className="overflow-hidden py-2 text-right tabular-nums text-neutral-700">
+                      <td className="overflow-hidden py-2 text-right font-numeric tabular-nums text-neutral-700">
                         {/* 行の並び・行数は常に固定（通常行が上、Foil行が下）にし、切り替えボタンでは
                             太字/小さい文字のスタイルだけを入れ替える。値が無い方は"-"を出して行数を
                             揃えることで、切り替え時に他の行のテキストや高さがずれないようにしている。
@@ -965,7 +965,7 @@ export default function CardHero({
                     />
                     <span className="min-w-0 truncate">{p.setName}</span>
                   </div>
-                  <p className="text-xs tabular-nums text-neutral-500">{priceLabel}</p>
+                  <p className="text-xs font-numeric tabular-nums text-neutral-500">{priceLabel}</p>
                 </button>
               );
             })}

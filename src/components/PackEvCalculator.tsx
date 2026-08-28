@@ -142,11 +142,11 @@ function PackCard({
         <div className="mt-1 flex items-start justify-between text-sm">
           <span className="flex flex-col">
             <span className="text-xs text-neutral-400">パック価格</span>
-            <span>¥{set.packPriceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}</span>
+            <span className="font-numeric">¥{set.packPriceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}</span>
           </span>
           <span className="flex flex-col items-end">
             <span className="text-xs text-neutral-400">期待値</span>
-            <span>¥{ev.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}</span>
+            <span className="font-numeric">¥{ev.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}</span>
           </span>
         </div>
 
@@ -157,12 +157,14 @@ function PackCard({
               : diffHighlight === "min"
                 ? "font-semibold text-blue-600"
                 : diff >= 0
-                  ? "text-teal-800"
-                  : "text-red-800"
+                  ? "text-red-700"
+                  : "text-blue-700"
           }`}
         >
-          お得度 {diff >= 0 ? "+" : ""}
-          ¥{diff.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
+          お得度{" "}
+          <span className="font-numeric">
+            {diff >= 0 ? "+" : ""}¥{diff.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
+          </span>
         </p>
 
         <button
