@@ -166,7 +166,8 @@ function MlRankingCard({
   // カードそのものを見分けられることが重要なので、アートクロップではなくカード全体の画像を使う。
   // Scryfallの画像URLは/<バリエーション>/front/<...>.jpgという共通構造なので置換で導出できる。
   const normalImageUrl = row.artCropUrl.replace("/art_crop/", "/normal/");
-  const barColor = direction === "up" ? "bg-emerald-500" : "bg-blue-500";
+  // 日本の相場表記に合わせ、上昇=赤・下降=青（2026-08-29、ユーザー指摘）
+  const barColor = direction === "up" ? "bg-red-500" : "bg-blue-500";
   const emphasisColor = direction === "up" ? "text-neutral-900" : "text-neutral-900";
 
   return (
@@ -213,7 +214,7 @@ function MlRankingCard({
               {/* 薄すぎて読めないという指摘（2026-08-29）を受け、text-neutral-400→600に */}
               <div className="font-numeric text-[10px] text-neutral-600">
                 {direction === "up" ? "+" : "-"}
-                {pct}%{direction === "up" ? "↑" : "↓"}
+                {pct}%{direction === "up" ? "▲" : "▼"}
               </div>
             </div>
           ))}

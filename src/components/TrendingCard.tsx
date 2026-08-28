@@ -53,9 +53,10 @@ export default function TrendingCard({ card }: { card: TrendingCardData }) {
         <p className="mt-1 truncate text-sm font-medium">{card.nameJa}</p>
         <p className="font-numeric text-sm">
           ¥{card.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}{" "}
+          {/* 日本の相場表記に合わせ、上昇=赤・下降=青（2026-08-29、ユーザー指摘） */}
           <span
             className={`text-xs ${
-              card.changeLabel.startsWith("-") ? "text-red-800" : "text-teal-800"
+              card.changeLabel.startsWith("-") ? "text-blue-700" : "text-red-700"
             }`}
           >
             {card.changeLabel}

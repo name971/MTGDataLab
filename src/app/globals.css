@@ -24,7 +24,11 @@
   --color-accent-soft: var(--accent-soft);
   --color-accent-text: var(--accent-text);
   --font-sans: var(--font-zen-kaku-gothic-new);
-  --font-numeric: var(--font-ibm-plex-mono);
+  /* Appleと同じ書体を使いたいという要望（2026-08-29）。SF Monoはライセンス配布できないが、
+     ui-monospaceはCSSの汎用キーワードで、Appleデバイスでは実際にSF Monoへ解決される
+     （Windows等では代わりにConsolas等になるため、その場合の受け皿としてIBM Plex Monoを
+     後段に残す）。 */
+  --font-numeric: ui-monospace, "SF Mono", var(--font-ibm-plex-mono), monospace;
 }
 
 /* 白配色で統一する方針のため、create-next-app由来のダークモード切替は行わない */

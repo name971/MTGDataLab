@@ -148,10 +148,12 @@ export async function getTrendingCardsFromDb(): Promise<TrendingCardData[]> {
       const priceJpy = priceByOracle.get(row.oracle_id);
       const artCropUrl = artCropByOracle.get(row.oracle_id);
       if (!oracle || priceJpy === undefined || !artCropUrl) return null;
+      // 色（赤/青）だけでなく矢印でも上昇/下降を示す（2026-08-29、ユーザー指摘）
+      const arrow = row.change_value >= 0 ? "▲" : "▼";
       const changeLabel =
         row.category === "price"
-          ? `${row.change_value >= 0 ? "+" : ""}${row.change_value}%`
-          : `${row.change_value >= 0 ? "+" : ""}${row.change_value}pt`;
+          ? `${row.change_value >= 0 ? "+" : ""}${row.change_value}%${arrow}`
+          : `${row.change_value >= 0 ? "+" : ""}${row.change_value}pt${arrow}`;
       return {
         oracleId: row.oracle_id,
         nameJa: oracle.printed_name_ja ?? oracle.name,

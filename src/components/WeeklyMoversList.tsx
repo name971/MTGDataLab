@@ -168,9 +168,12 @@ function MoverRow({
   // change_valueが負になる。符号は数値側にすでに乗っているので、正の時だけ"+"を足す
   // （toFixedは負数ならそのまま"-"付きの文字列になる）。
   const sign = row.changeValue >= 0 ? "+" : "";
+  // 色（赤/青）だけでなく矢印でも上昇/下降を示す（2026-08-29、ユーザー指摘。
+  // "UP"/"DOWN"は文字数が揃わず不格好なため、日本の相場表記で馴染みのある▲/▼にした）
+  const arrow = row.changeValue >= 0 ? "▲" : "▼";
   const changeText = useJpy
-    ? `${sign}¥${Math.round(row.changeValue).toLocaleString()}`
-    : `${sign}${row.changeValue.toFixed(1)}${category === "usage" ? "pt" : "%"}`;
+    ? `${sign}¥${Math.round(row.changeValue).toLocaleString()}${arrow}`
+    : `${sign}${row.changeValue.toFixed(1)}${category === "usage" ? "pt" : "%"}${arrow}`;
   // TrendingRankingList.tsxの「採用率(Format) +X.Xpt」表記に揃える
   const formatLabel = row.format
     ? (isFormat(row.format) ? formatLabelJa(row.format) : row.format)
@@ -210,7 +213,8 @@ function MoverRow({
           {row.nameJa}
         </p>
         <p className="truncate text-xs text-neutral-500">{row.nameEn}</p>
-        <p className={`font-numeric mt-1 text-sm font-semibold ${row.changeValue >= 0 ? "text-teal-800" : "text-red-800"}`}>
+        {/* 日本の相場表記に合わせ、上昇=赤・下降=青（2026-08-29、ユーザー指摘） */}
+        <p className={`font-numeric mt-1 text-sm font-semibold ${row.changeValue >= 0 ? "text-red-700" : "text-blue-700"}`}>
           {formatLabel && <span className="font-sans mr-1 font-normal text-neutral-500">{formatLabel}</span>}
           {changeText}
         </p>
