@@ -1,0 +1,40 @@
+name: Daily pipeline watchdog
+
+# daily-data-pipeline.ymlのcron（12:00 JST）が、GitHub Actions側のbest-effort scheduling
+# （長時間ジョブほど起きやすいと見られる、確証は無い）により2026-08-25/27/28と度々未発火に
+# なっていた。気づかず放置すると採用率・価格データが丸ごと1日欠測する
+# （docs/incident-log.md参照）。本来の発火時刻から3時間の余裕を見て、その日まだ1回も
+# 走っていなければworkflow_dispatchで代わりに起動する。
+on:
+  schedule:
+    - cron: "0 6 * * *" # 15:00 JST
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check today's runs, dispatch if missing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TODAY_JST=$(TZ=Asia/Tokyo date +%Y-%m-%d)
+          RUN_DATES=$(gh api "repos/${{ github.repository }}/actions/workflows/daily-data-pipeline.yml/runs?per_page=10" \
+            --jq '.workflow_runs[].created_at')
+          FOUND=0
+          for created_at in $RUN_DATES; do
+            run_jst=$(TZ=Asia/Tokyo date -d "$created_at" +%Y-%m-%d)
+            if [ "$run_jst" = "$TODAY_JST" ]; then
+              FOUND=1
+              break
+            fi
+          done
+          if [ "$FOUND" -eq 0 ]; then
+            echo "本日(${TODAY_JST} JST)分のdaily-data-pipeline実行が見つからないため手動起動します"
+            gh workflow run daily-data-pipeline.yml
+          else
+            echo "本日分は既に実行済み/実行中のためスキップ"
+          fi

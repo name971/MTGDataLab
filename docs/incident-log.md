@@ -13,6 +13,30 @@
 
 ---
 
+## 2026-08-25/27/28 daily-data-pipeline.ymlのcronが度々未発火（遅延ではなく丸ごとスキップ）
+
+**症状**: 12:00 JSTに走るはずのdaily-data-pipeline.ymlの`schedule`実行が、2026-08-25・
+08-27・08-28と繰り返しゼロ件になった（遅延して後から走るのではなく、その日は
+`schedule`イベントのrunが1件も作られない）。同リポジトリの他のcron workflow
+（週次のarchive-price-history.yml/weekly-catalog-refresh.yml）は同じ期間、正常に発火して
+いたため、リポジトリ全体やアカウントの障害ではない。
+
+**原因**: GitHub Actions公式ドキュメントに「high loadの間はscheduled workflowsが
+遅延したり、状況によっては実行されないことがある」と明記されている仕様（best-effort）。
+このパイプラインは1回2.5〜4時間かかる長時間ジョブで、長時間ワークフローほど影響を
+受けやすいのではという推測はあるが、GitHub側の内部スケジューラの挙動はAPI/ログからは
+確認できず確証は無い。
+
+**教訓**: cron自体の信頼性は自分たちでは制御できない前提に立ち、「発火したはず」を
+信じず「発火したことを機械的に確認し、していなければ代わりに起動する」監視層が必要。
+
+**対応**: `daily-pipeline-watchdog.yml`を新設。15:00 JST（本来の発火時刻から3時間後）に
+起動し、その日まだ`daily-data-pipeline.yml`の実行が無ければ`workflow_dispatch`で
+代わりに起動する。watchdog自身のcronも同じbest-effort仕様の影響を受けうるため
+100%の保証にはならないが、単発workflowで実行時間が短く、当たる確率は低いと判断。
+
+---
+
 ## 2026-08-27 日本語版が別セットにしか無いカードで、名前だけ日本語・ルールテキストは
 英語のままの状態が日々増えていた（`backfill-missing-ja-cards.mjs`が手動実行頼み）
 
