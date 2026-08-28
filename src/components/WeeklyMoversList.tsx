@@ -168,12 +168,10 @@ function MoverRow({
   // change_valueが負になる。符号は数値側にすでに乗っているので、正の時だけ"+"を足す
   // （toFixedは負数ならそのまま"-"付きの文字列になる）。
   const sign = row.changeValue >= 0 ? "+" : "";
-  // 色（赤/青）だけでなく矢印でも上昇/下降を示す（2026-08-29、ユーザー指摘。
-  // "UP"/"DOWN"は文字数が揃わず不格好なため、日本の相場表記で馴染みのある▲/▼にした）
-  const arrow = row.changeValue >= 0 ? "▲" : "▼";
+  // 矢印表記は視認性が下がるとの指摘（2026-08-29）で撤回。色（赤/青）だけで示す。
   const changeText = useJpy
-    ? `${sign}¥${Math.round(row.changeValue).toLocaleString()}${arrow}`
-    : `${sign}${row.changeValue.toFixed(1)}${category === "usage" ? "pt" : "%"}${arrow}`;
+    ? `${sign}¥${Math.round(row.changeValue).toLocaleString()}`
+    : `${sign}${row.changeValue.toFixed(1)}${category === "usage" ? "pt" : "%"}`;
   // TrendingRankingList.tsxの「採用率(Format) +X.Xpt」表記に揃える
   const formatLabel = row.format
     ? (isFormat(row.format) ? formatLabelJa(row.format) : row.format)
