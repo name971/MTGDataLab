@@ -55,7 +55,7 @@ export default async function TrendingRankingPage({
               href={`/trending?category=${c.key}`}
               className={`rounded-md border px-3 py-1.5 text-sm ${
                 c.key === category
-                  ? "border-neutral-500 bg-neutral-100 text-neutral-900"
+                  ? "border-accent bg-accent-soft text-accent"
                   : "border-neutral-300 text-neutral-600 hover:border-neutral-500"
               }`}
             >
@@ -70,7 +70,7 @@ export default async function TrendingRankingPage({
               aria-label="%ランキング"
               className={`rounded-md border px-2.5 py-1.5 text-sm ${
                 metric === "pct"
-                  ? "border-neutral-500 bg-neutral-100 text-neutral-900"
+                  ? "border-accent bg-accent-soft text-accent"
                   : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
               }`}
             >
@@ -81,7 +81,7 @@ export default async function TrendingRankingPage({
               aria-label="金額差ランキング"
               className={`rounded-md border px-2.5 py-1.5 text-sm ${
                 metric === "jpy"
-                  ? "border-neutral-500 bg-neutral-100 text-neutral-900"
+                  ? "border-accent bg-accent-soft text-accent"
                   : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
               }`}
             >
@@ -96,7 +96,7 @@ export default async function TrendingRankingPage({
               aria-label="上昇ランキング"
               className={`rounded-md border px-2.5 py-1.5 text-sm ${
                 usageDirection === "up"
-                  ? "border-neutral-500 bg-neutral-100 text-neutral-900"
+                  ? "border-accent bg-accent-soft text-accent"
                   : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
               }`}
             >
@@ -107,7 +107,7 @@ export default async function TrendingRankingPage({
               aria-label="下降ランキング"
               className={`rounded-md border px-2.5 py-1.5 text-sm ${
                 usageDirection === "down"
-                  ? "border-neutral-500 bg-neutral-100 text-neutral-900"
+                  ? "border-accent bg-accent-soft text-accent"
                   : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
               }`}
             >
