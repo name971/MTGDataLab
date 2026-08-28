@@ -75,9 +75,9 @@ export default function MlRankingList({
           <button
             type="button"
             onClick={() => updateParams({ direction: "up" })}
-            className={`rounded-md border px-3 py-1.5 text-sm ${
+            className={`rounded-md border px-3 py-1.5 text-sm font-medium ${
               direction === "up"
-                ? "border-neutral-800 bg-neutral-800 text-white"
+                ? "border-accent bg-accent-soft text-accent"
                 : "border-neutral-300 text-neutral-700 hover:border-neutral-500"
             }`}
           >
@@ -86,9 +86,9 @@ export default function MlRankingList({
           <button
             type="button"
             onClick={() => updateParams({ direction: "down" })}
-            className={`rounded-md border px-3 py-1.5 text-sm ${
+            className={`rounded-md border px-3 py-1.5 text-sm font-medium ${
               direction === "down"
-                ? "border-neutral-800 bg-neutral-800 text-white"
+                ? "border-accent bg-accent-soft text-accent"
                 : "border-neutral-300 text-neutral-700 hover:border-neutral-500"
             }`}
           >
@@ -183,7 +183,7 @@ function MlRankingCard({
       />
       <div className="flex flex-col gap-1 p-2">
         <p className="truncate text-sm font-medium">
-          <span className="mr-1.5 text-neutral-400">{rank}</span>
+          <span className="mr-1.5 text-accent">{rank}</span>
           {row.nameJa}
         </p>
         <p className="truncate text-xs text-neutral-500">{row.nameEn}</p>

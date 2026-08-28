@@ -24,8 +24,8 @@ const CATEGORY_LABEL: Record<TrendingCardData["category"], string> = {
 };
 
 const CATEGORY_BADGE_CLASS: Record<TrendingCardData["category"], string> = {
-  price: "bg-purple-50 text-purple-800",
-  usage: "bg-orange-50 text-orange-800",
+  price: "bg-accent-soft text-accent",
+  usage: "bg-purple-50 text-purple-800",
 };
 
 export default function TrendingCard({ card }: { card: TrendingCardData }) {
