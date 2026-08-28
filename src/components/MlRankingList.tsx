@@ -116,14 +116,6 @@ export default function MlRankingList({
         </div>
       </div>
 
-      {/* 各カードの棒グラフ下にあった「+5%↑」等の閾値ラベルは、全カードで同じ文言が
-          薄い色で繰り返されるだけで視認性・情報量ともに意味が薄かった（ユーザー指摘、
-          2026-08-29）。グリッド全体の見出しとして1回だけ出す形にまとめた。 */}
-      <p className="mb-2 text-xs text-neutral-500">
-        4本の棒は左から{direction === "up" ? "+5% +10% +15% +20%" : "-5% -10% -15% -20%"}
-        以上{direction === "up" ? "値上がり" : "値下がり"}する確率
-      </p>
-
       <div className="grid grid-cols-3 gap-3 sm:gap-4 lg:grid-cols-5">
         {pageRows.map((row, index) => (
           <MlRankingCard
@@ -217,6 +209,11 @@ function MlRankingCard({
                 className={`font-numeric text-xs font-semibold tabular-nums ${row[key] >= 0.4 ? emphasisColor : "text-neutral-500"}`}
               >
                 {Math.round(row[key] * 100)}%
+              </div>
+              {/* 薄すぎて読めないという指摘（2026-08-29）を受け、text-neutral-400→600に */}
+              <div className="font-numeric text-[10px] text-neutral-600">
+                {direction === "up" ? "+" : "-"}
+                {pct}%{direction === "up" ? "↑" : "↓"}
               </div>
             </div>
           ))}
