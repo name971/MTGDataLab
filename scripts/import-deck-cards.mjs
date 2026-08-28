@@ -35,6 +35,10 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 }
 
 const PAGE_SIZE = 1000; // PostgRESTのデフォルト最大行数（db-max-rows）に合わせてページングする
+// card_oracles/cardsへのupsertは1000件だと毎回statement timeoutになる
+// （2026-08-27、oracle_text等サイズの大きい列があり書き込みが重いため）。書き込みは
+// 読み取りページングより小さく刻む。
+const UPSERT_CHUNK_SIZE = 200;
 
 async function supabaseGet(path) {
   const rows = [];
@@ -165,11 +169,11 @@ async function main() {
   const dedupedCardRows = [...new Map(cardRows.map((r) => [r.scryfall_id, r])).values()];
 
   // バルクデータのローカル検索はレート制限が無いため、DB書き込みだけまとめて送る
-  for (let i = 0; i < dedupedOracleRows.length; i += PAGE_SIZE) {
-    await withRetry(() => supabaseUpsert("card_oracles", dedupedOracleRows.slice(i, i + PAGE_SIZE), "oracle_id"));
+  for (let i = 0; i < dedupedOracleRows.length; i += UPSERT_CHUNK_SIZE) {
+    await withRetry(() => supabaseUpsert("card_oracles", dedupedOracleRows.slice(i, i + UPSERT_CHUNK_SIZE), "oracle_id"));
   }
-  for (let i = 0; i < dedupedCardRows.length; i += PAGE_SIZE) {
-    await withRetry(() => supabaseUpsert("cards", dedupedCardRows.slice(i, i + PAGE_SIZE), "scryfall_id"));
+  for (let i = 0; i < dedupedCardRows.length; i += UPSERT_CHUNK_SIZE) {
+    await withRetry(() => supabaseUpsert("cards", dedupedCardRows.slice(i, i + UPSERT_CHUNK_SIZE), "scryfall_id"));
   }
 
   console.log(`\ncard_oracles投入: ${imported}件成功、${notFound}件未検出`);
