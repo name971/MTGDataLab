@@ -22,6 +22,7 @@
   --color-accent-soft: var(--accent-soft);
   --color-accent-text: var(--accent-text);
   --font-sans: var(--font-zen-kaku-gothic-new);
+  --font-numeric: var(--font-ibm-plex-mono);
 }
 
 /* 白配色で統一する方針のため、create-next-app由来のダークモード切替は行わない */

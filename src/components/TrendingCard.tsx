@@ -51,7 +51,7 @@ export default function TrendingCard({ card }: { card: TrendingCardData }) {
           </span>
         </div>
         <p className="mt-1 truncate text-sm font-medium">{card.nameJa}</p>
-        <p className="text-sm">
+        <p className="font-numeric text-sm">
           ¥{card.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}{" "}
           <span
             className={`text-xs ${

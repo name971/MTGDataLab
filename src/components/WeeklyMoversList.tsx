@@ -210,12 +210,12 @@ function MoverRow({
           {row.nameJa}
         </p>
         <p className="truncate text-xs text-neutral-500">{row.nameEn}</p>
-        <p className={`mt-1 text-sm font-semibold ${row.changeValue >= 0 ? "text-teal-800" : "text-red-800"}`}>
-          {formatLabel && <span className="mr-1 font-normal text-neutral-500">{formatLabel}</span>}
+        <p className={`font-numeric mt-1 text-sm font-semibold ${row.changeValue >= 0 ? "text-teal-800" : "text-red-800"}`}>
+          {formatLabel && <span className="font-sans mr-1 font-normal text-neutral-500">{formatLabel}</span>}
           {changeText}
         </p>
         {row.priceJpy != null && row.priceJpy > 0 && (
-          <p className="text-right text-sm">¥{row.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}</p>
+          <p className="font-numeric text-right text-sm">¥{row.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}</p>
         )}
       </div>
     </Link>
