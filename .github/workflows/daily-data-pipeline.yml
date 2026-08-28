@@ -144,6 +144,15 @@ jobs:
         continue-on-error: true
         run: node scripts/import-deck-cards.mjs
 
+      # import-deck-cards.mjsが追加するcards行は「英語の代表プリントと同じセット・コレクター番号の
+      # 日本語版」しか探さないため、日本語版が別セット（再録商品等）にしか無いカードだと日本語行が
+      # 1件も作られない。card_oracles.printed_name_ja側は別のフォールバックで名前だけ拾えてしまう
+      # ため、「名前は日本語なのにルールテキストは英語のまま」というカードが日々増えていた
+      # （手動実行頼みで放置されていた、2026-08-27・雷破の執政/集合した中隊で発覚）。日次で埋める。
+      - name: Backfill missing Japanese card rows
+        continue-on-error: true
+        run: node scripts/backfill-missing-ja-cards.mjs
+
       # classify-decks.ts / classify-decks-commander.mjsはどのワークフローにも組み込まれておらず、
       # 手動実行でしかarchetype_idが更新されていなかった（アーキタイプランキングの分母に
       # 未分類デッキが4〜6割溜まっていた原因）。日次で回して毎日分類する。
