@@ -43,7 +43,7 @@ export default async function TrendingRankingPage({
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h1 className="text-xl font-semibold">週間ランキング</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-neutral-900">週間ランキング</h1>
         <p className="text-sm text-neutral-500">直近7日間の変化でTop300を毎日更新</p>
       </div>
 

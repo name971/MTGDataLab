@@ -116,7 +116,7 @@ export default function MlRankingList({
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-3 sm:gap-4 lg:grid-cols-5">
+      <div className="grid grid-cols-3 gap-4 sm:gap-5 lg:grid-cols-5">
         {pageRows.map((row, index) => (
           <MlRankingCard
             key={row.oracleId}
@@ -172,7 +172,7 @@ function MlRankingCard({
   return (
     <Link
       href={`/cards/${row.oracleId}`}
-      className="flex flex-col overflow-hidden rounded-lg border border-neutral-200 hover:border-neutral-400"
+      className="flex flex-col overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-neutral-200/60"
     >
       <Image
         src={normalImageUrl}

@@ -36,7 +36,7 @@ export default function TrendingCard({ card }: { card: TrendingCardData }) {
   return (
     <Link
       href={`/cards/${card.oracleId}`}
-      className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3 hover:border-neutral-400"
+      className="flex flex-col gap-2 rounded-2xl bg-neutral-50 p-3 transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-neutral-200/60"
     >
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-1">

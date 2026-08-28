@@ -2,7 +2,9 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  /* Apple寄りに調整（2026-08-29）: 純黒ではなくAppleのlabel色に近い、わずかに沈んだ
+     ニュートラル。 */
+  --foreground: #1d1d1f;
   /* デザイン刷新（2026-08-29）: ミニマル方向の一点差し色。テラコッタ、rank数字・
      アクティブなタブ/リンクにだけ使う（採用率上昇=緑/下降=赤の意味色とは別物）。
      text-accent / bg-accent / border-accent 等のユーティリティとして使える。 */
@@ -30,10 +32,15 @@
 body {
   background: var(--background);
   color: var(--foreground);
+  /* -apple-systemを最優先にし、AppleデバイスではSF Proそのものが表示されるようにする。
+     日本語グリフはSF Proに無いため、文字単位で自動的にZen Kaku Gothic Newへフォール
+     バックする（Latin/数字と日本語で書体が混在しても破綻しない）。2026-08-29。 */
   font-family:
-    var(--font-zen-kaku-gothic-new),
     -apple-system,
+    BlinkMacSystemFont,
+    var(--font-zen-kaku-gothic-new),
     "Hiragino Kaku Gothic ProN",
     "Yu Gothic",
     sans-serif;
+  letter-spacing: -0.006em;
 }

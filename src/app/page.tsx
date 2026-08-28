@@ -88,13 +88,13 @@ export default async function TopPage() {
       : await applyDbPrices(SAMPLE_TRENDING_CARDS);
 
   return (
-    <div className="flex flex-col gap-10">
+    <div className="flex flex-col gap-16">
       {dbDown && <MaintenanceBanner />}
 
       {trendingCards.length > 0 && (
         <section>
-          <h2 className="mb-3 text-sm font-medium text-neutral-500">継続注目カード</h2>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <h2 className="mb-5 text-2xl font-bold tracking-tight text-neutral-900">継続注目カード</h2>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 sm:gap-5">
             {trendingCards.map((card) => (
               <TrendingCard key={card.oracleId} card={card} />
             ))}
@@ -104,7 +104,7 @@ export default async function TopPage() {
 
       {(mlRankingUp.length > 0 || mlRankingDown.length > 0) && (
         <section>
-          <h2 className="mb-3 flex items-center gap-1.5 text-sm font-medium text-neutral-500">
+          <h2 className="mb-5 flex items-center gap-1.5 text-2xl font-bold tracking-tight text-neutral-900">
             注目カードランキング
             <InfoTooltip text="7日以内に一定以上値上がり・値下がりする確率を機械学習モデルで予測し、確率が高い順に並べています（トーナメントで使用実績のあるカードが対象）。過去のTop10的中率: 高騰予想は約73%、暴落予想は約95%。" />
           </h2>
