@@ -77,7 +77,7 @@ export default function MlRankingList({
             onClick={() => updateParams({ direction: "up" })}
             className={`rounded-md border px-3 py-1.5 text-sm font-medium ${
               direction === "up"
-                ? "border-accent bg-accent-soft text-accent"
+                ? "border-accent bg-accent-soft text-accent-text"
                 : "border-neutral-300 text-neutral-700 hover:border-neutral-500"
             }`}
           >
@@ -88,7 +88,7 @@ export default function MlRankingList({
             onClick={() => updateParams({ direction: "down" })}
             className={`rounded-md border px-3 py-1.5 text-sm font-medium ${
               direction === "down"
-                ? "border-accent bg-accent-soft text-accent"
+                ? "border-accent bg-accent-soft text-accent-text"
                 : "border-neutral-300 text-neutral-700 hover:border-neutral-500"
             }`}
           >
@@ -183,7 +183,7 @@ function MlRankingCard({
       />
       <div className="flex flex-col gap-1 p-2">
         <p className="truncate text-sm font-medium">
-          <span className="mr-1.5 text-accent">{rank}</span>
+          <span className="mr-1.5 text-accent-text">{rank}</span>
           {row.nameJa}
         </p>
         <p className="truncate text-xs text-neutral-500">{row.nameEn}</p>

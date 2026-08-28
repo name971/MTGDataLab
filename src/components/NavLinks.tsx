@@ -22,7 +22,7 @@ export default function NavLinks() {
             href={item.href}
             className={
               active
-                ? "font-bold text-accent"
+                ? "font-bold text-accent-text"
                 : "text-neutral-600 hover:text-neutral-900"
             }
           >

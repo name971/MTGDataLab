@@ -8,6 +8,11 @@
      text-accent / bg-accent / border-accent 等のユーティリティとして使える。 */
   --accent: #bf5b34;
   --accent-soft: #f4e6dd;
+  /* accentは白背景でのコントラスト比が4.41:1でAA本文基準(4.5:1)にわずかに届かない
+     （2026-08-29、ユーザー指摘「数字の視認性悪い」）。rank数字・価格差など小さい文字は
+     こちらを使う（6.28:1、AA余裕クリア）。ボタンの縁取り・背景等のUI部品は3:1基準で
+     足りているのでaccentのままでよい。 */
+  --accent-text: #9c4726;
 }
 
 @theme inline {
@@ -15,6 +20,7 @@
   --color-foreground: var(--foreground);
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
+  --color-accent-text: var(--accent-text);
   --font-sans: var(--font-zen-kaku-gothic-new);
 }
 

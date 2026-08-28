@@ -141,7 +141,7 @@ export default function WeeklyMoversList({
               onClick={() => updateParams({ page: p })}
               className={`rounded-md border px-3 py-1.5 text-sm ${
                 p === clampedPage
-                  ? "border-accent bg-accent-soft text-accent"
+                  ? "border-accent bg-accent-soft text-accent-text"
                   : "border-neutral-300 text-neutral-600 hover:border-neutral-500"
               }`}
             >
@@ -206,7 +206,7 @@ function MoverRow({
       </div>
       <div className="flex flex-col gap-1 p-2">
         <p className="truncate text-sm font-medium">
-          <span className="mr-1.5 text-accent">{row.rank}</span>
+          <span className="mr-1.5 text-accent-text">{row.rank}</span>
           {row.nameJa}
         </p>
         <p className="truncate text-xs text-neutral-500">{row.nameEn}</p>

@@ -24,7 +24,7 @@ const CATEGORY_LABEL: Record<TrendingCardData["category"], string> = {
 };
 
 const CATEGORY_BADGE_CLASS: Record<TrendingCardData["category"], string> = {
-  price: "bg-accent-soft text-accent",
+  price: "bg-accent-soft text-accent-text",
   usage: "bg-purple-50 text-purple-800",
 };
 
