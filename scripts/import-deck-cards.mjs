@@ -166,10 +166,10 @@ async function main() {
 
   // バルクデータのローカル検索はレート制限が無いため、DB書き込みだけまとめて送る
   for (let i = 0; i < dedupedOracleRows.length; i += PAGE_SIZE) {
-    await supabaseUpsert("card_oracles", dedupedOracleRows.slice(i, i + PAGE_SIZE), "oracle_id");
+    await withRetry(() => supabaseUpsert("card_oracles", dedupedOracleRows.slice(i, i + PAGE_SIZE), "oracle_id"));
   }
   for (let i = 0; i < dedupedCardRows.length; i += PAGE_SIZE) {
-    await supabaseUpsert("cards", dedupedCardRows.slice(i, i + PAGE_SIZE), "scryfall_id");
+    await withRetry(() => supabaseUpsert("cards", dedupedCardRows.slice(i, i + PAGE_SIZE), "scryfall_id"));
   }
 
   console.log(`\ncard_oracles投入: ${imported}件成功、${notFound}件未検出`);
