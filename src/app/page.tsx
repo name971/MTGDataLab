@@ -76,7 +76,10 @@ export default async function TopPage() {
       getMlRankingFromDb("up"),
       getMlRankingFromDb("down"),
     ]);
-  } catch {
+  } catch (err) {
+    // 原因調査に使えるよう、握りつぶさずCloudflareのログに残す（2026-08-29、
+    // DB接続失敗の実際の原因が分からず調査が難航したため）
+    console.error("TopPage: DB接続失敗", err);
     dbDown = true;
   }
   // dbDown中はサンプルへのフォールバックもしない（本物のデータのように見えてしまうため）。

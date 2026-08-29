@@ -116,7 +116,10 @@ export default function MlRankingList({
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-4 sm:gap-5 lg:grid-cols-5">
+      {/* モバイルでgrid-cols-3だと1カード116px程度まで狭まり、確率ラダーの4本の棒と
+          ラベルが潰れて読めなくなっていた（2026-08-29、ユーザー指摘）。他のカードグリッド
+          （継続注目カード等）と同じくモバイルは2列にする。 */}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-5 lg:grid-cols-5">
         {pageRows.map((row, index) => (
           <MlRankingCard
             key={row.oracleId}
