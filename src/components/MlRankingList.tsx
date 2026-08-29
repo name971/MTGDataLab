@@ -166,6 +166,30 @@ export default function MlRankingList({
   );
 }
 
+// 変化率バッジの色。符号で赤(上昇)/青(下降)、変化幅の大きさでテキストの濃さを段階的に変える
+// （2026-08-29、ユーザー提案: 「マイナスやプラスの大きさで色の濃さ変えてもいいかも」）。
+// MAXバッジは常に現在値バッジより2段階濃い配列を使い、「MAXの方が予測の主役」という
+// 強弱を保ったまま両方に変化幅を反映する。
+const MAGNITUDE_STEPS = [3, 8, 15, 30]; // %の閾値、この配列のindex+1段階目に上がる
+function magnitudeTier(pct: number): number {
+  const abs = Math.abs(pct);
+  return MAGNITUDE_STEPS.filter((t) => abs >= t).length; // 0〜4
+}
+// Tailwindはビルド時に静的な文字列しかクラスとして拾えないため、テンプレートリテラルで
+// text-red-${shade}のように組み立てると本番でスタイルが当たらない。ルックアップテーブルに
+// 全パターンを書き出す。
+const CURRENT_BADGE_CLASS = {
+  up: ["bg-red-50 text-red-300", "bg-red-50 text-red-400", "bg-red-50 text-red-500", "bg-red-50 text-red-600", "bg-red-50 text-red-700"],
+  down: ["bg-blue-50 text-blue-300", "bg-blue-50 text-blue-400", "bg-blue-50 text-blue-500", "bg-blue-50 text-blue-600", "bg-blue-50 text-blue-700"],
+};
+const MAX_BADGE_CLASS = {
+  up: ["bg-red-50 text-red-500", "bg-red-50 text-red-600", "bg-red-50 text-red-700", "bg-red-50 text-red-800", "bg-red-50 text-red-900"],
+  down: ["bg-blue-50 text-blue-500", "bg-blue-50 text-blue-600", "bg-blue-50 text-blue-700", "bg-blue-50 text-blue-800", "bg-blue-50 text-blue-900"],
+};
+function pctBadgeClass(pct: number, table: typeof CURRENT_BADGE_CLASS): string {
+  return table[pct >= 0 ? "up" : "down"][magnitudeTier(pct)];
+}
+
 function MlRankingCard({
   row,
   rank,
@@ -246,10 +270,13 @@ function MlRankingCard({
               指摘のため（2026-08-29）。現在値はラベル無しでも「価格の直後」という
               位置で読み取れ、MAXは"MAX"という接頭辞自体が自明なので、この順なら
               曖昧さが出ない。 */}
+          {/* MAXより2段階薄い色調で赤/青に。無彩色のグレーだとプラス/マイナスの方向が
+              伝わらないという指摘のため（2026-08-29）。さらに変化幅が大きいほど濃くなる
+              （ユーザー提案、同日） */}
           {row.currentPctChange != null && (
             <span
               title="予測時点からの現時点での変化率"
-              className="font-numeric shrink-0 rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px] font-bold text-neutral-500"
+              className={`font-numeric shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${pctBadgeClass(row.currentPctChange, CURRENT_BADGE_CLASS)}`}
             >
               {row.currentPctChange >= 0 ? "+" : ""}
               {row.currentPctChange.toFixed(1)}%
@@ -258,9 +285,7 @@ function MlRankingCard({
           {row.extremePctChange != null && (
             <span
               title="予測時点から今日までの間で一番良かった結果（モデルが予測している指標）"
-              className={`font-numeric shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-                row.extremePctChange >= 0 ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700"
-              }`}
+              className={`font-numeric shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${pctBadgeClass(row.extremePctChange, MAX_BADGE_CLASS)}`}
             >
               MAX{row.extremePctChange >= 0 ? "+" : ""}
               {row.extremePctChange.toFixed(1)}%
