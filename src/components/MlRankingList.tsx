@@ -240,24 +240,28 @@ function MlRankingCard({
           <span className="font-numeric shrink-0 text-sm font-semibold">
             ¥{row.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
           </span>
-          {row.currentPctChange != null && (
-            <span
-              title="予測時点からの現時点での変化率"
-              className={`font-numeric shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-                row.currentPctChange >= 0 ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700"
-              }`}
-            >
-              {row.currentPctChange >= 0 ? "+" : ""}
-              {row.currentPctChange.toFixed(1)}%
-            </span>
-          )}
+          {/* モデルが予測しているのは「7日以内のどこかでピークに達するか」（MAX側、
+              ml/features.pyのlog_return_7d_max/min）なので、予測との対応が分かるよう
+              MAXを色付きで強調し、現在値は参考情報としてグレーに控えめる
+              （2026-08-29、ユーザー指摘: 現在値の方を目立たせてしまっていた） */}
           {row.extremePctChange != null && (
             <span
-              title="予測時点から今日までの間で一番良かった結果"
-              className="font-numeric shrink-0 rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px] font-bold text-neutral-500"
+              title="予測時点から今日までの間で一番良かった結果（モデルが予測している指標）"
+              className={`font-numeric shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                row.extremePctChange >= 0 ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700"
+              }`}
             >
               MAX{row.extremePctChange >= 0 ? "+" : ""}
               {row.extremePctChange.toFixed(1)}%
+            </span>
+          )}
+          {row.currentPctChange != null && (
+            <span
+              title="予測時点からの現時点での変化率"
+              className="font-numeric shrink-0 rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px] font-bold text-neutral-500"
+            >
+              {row.currentPctChange >= 0 ? "+" : ""}
+              {row.currentPctChange.toFixed(1)}%
             </span>
           )}
         </div>
