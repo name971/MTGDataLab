@@ -211,12 +211,19 @@ jobs:
       - name: Compute card streaks
         run: node scripts/compute-card-streaks.mjs
 
-      # MLランキング（注目カード価格予測）の学習・生成ステップは、失敗時に他ステップまで
-      # まとめてconclusion: successに見えてしまい何日も気づけなかった事故
-      # （docs/incident-log.md参照）を受けて、単独でテスト・監視しやすい独立ワークフロー
-      # ml-ranking.yml（daily-data-pipelineの3時間後に独立スケジュール実行）へ切り出した
-      # （2026-08-22）。このpipelineが集計するcard_usage_stats/デッキ分類結果に依存するため、
-      # 十分な間隔を空けて後から走らせる。
+      # 注目カードランキングのカードに「予測時点(calculated_at)から今どれだけ動いたか」を
+      # 表示する機能（2026-08-29、ユーザー要望）。予測自体（ml/predict_and_publish.py）は
+      # 依然手動実行のみだが、既にある最新予測分の価格追跡はこのpipelineの価格履歴更新後に
+      # 日次で行う（予測が更新されなくても、動きの追跡は毎日更新したいため）。
+      - name: Update ML prediction outcomes
+        continue-on-error: true
+        run: node scripts/update-ml-prediction-outcomes.mjs
+
+      # MLランキング（注目カード価格予測）自体の学習・生成は手動実行のみ（ml/predict_and_publish.py
+      # のdocstring参照）。かつてdaily-data-pipelineに組み込んでいたが、失敗時に他ステップまで
+      # まとめてconclusion: successに見えてしまい何日も気づけなかった事故（docs/incident-log.md
+      # 参照）を受けて2026-08-22に切り出し、その後「運用しないため」独立ワークフロー自体も
+      # 削除した（古いコメントに残っていた「ml-ranking.yml」は既に存在しない、2026-08-27発覚）。
 
       # Supabase無料枠（500MB）超過に日次で気づけるよう、パイプラインの最後にDB容量を
       # チェックする。VACUUM自体はPostgRESTから実行できない（トランザクション内で使えない

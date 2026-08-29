@@ -25,6 +25,11 @@ export interface MlRankingRow {
   colors: string[];
   /** レアリティフィルター用（RankingFilterPanel.tsx参照）。EN版のcards.rarityから取得。 */
   rarity: string | null;
+  /** 予測時点(calculated_at)から直近までの実績変化率(%)。scripts/update-ml-prediction-
+   * outcomes.mjsが日次で埋める。バッチ未実行分・価格履歴が無い分はnull。 */
+  currentPctChange: number | null;
+  /** 予測時点〜直近までの間で一番良かった結果(%、direction沿い)。同スクリプトが埋める。 */
+  extremePctChange: number | null;
 }
 
 /**
@@ -59,7 +64,7 @@ export async function getMlRankingFromDb(
 
   const { data: rows, error } = await supabase
     .from("card_price_predictions")
-    .select("oracle_id, rank, p_5, p_10, p_15, p_20, jpy_est")
+    .select("oracle_id, rank, p_5, p_10, p_15, p_20, jpy_est, current_pct_change, extreme_pct_change")
     .eq("direction", direction)
     .eq("calculated_at", latestRow.calculated_at)
     .order("rank", { ascending: true })
@@ -117,6 +122,8 @@ export async function getMlRankingFromDb(
         formats: formatsByOracle.get(row.oracle_id) ?? [],
         colors: colorsFromManaCost(manaCostByOracle.get(row.oracle_id)),
         rarity: rarityByOracle.get(row.oracle_id) ?? null,
+        currentPctChange: row.current_pct_change == null ? null : Number(row.current_pct_change),
+        extremePctChange: row.extreme_pct_change == null ? null : Number(row.extreme_pct_change),
       } satisfies MlRankingRow;
     })
     .filter((r): r is MlRankingRow => r !== null);

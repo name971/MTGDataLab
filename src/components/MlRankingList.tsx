@@ -223,9 +223,35 @@ function MlRankingCard({
           ))}
         </div>
 
-        <p className="font-numeric text-right text-sm">
-          ¥{row.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
-        </p>
+        {/* 予測時点(calculated_at)から今どれだけ動いたか。バッチ
+            （scripts/update-ml-prediction-outcomes.mjs）が未実行/価格履歴が無い分はnull
+            になるため、その場合はバッジを出さず価格だけ表示する（ArtifactモックのC9案、
+            2026-08-29採用）。 */}
+        <div className="flex items-baseline justify-end gap-1 overflow-hidden">
+          <span className="font-numeric shrink-0 text-sm font-semibold">
+            ¥{row.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
+          </span>
+          {row.currentPctChange != null && (
+            <span
+              title="予測時点からの現時点での変化率"
+              className={`font-numeric shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                row.currentPctChange >= 0 ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700"
+              }`}
+            >
+              {row.currentPctChange >= 0 ? "+" : ""}
+              {row.currentPctChange.toFixed(1)}%
+            </span>
+          )}
+          {row.extremePctChange != null && (
+            <span
+              title="予測時点から今日までの間で一番良かった結果"
+              className="font-numeric shrink-0 rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px] font-bold text-neutral-500"
+            >
+              MAX{row.extremePctChange >= 0 ? "+" : ""}
+              {row.extremePctChange.toFixed(1)}%
+            </span>
+          )}
+        </div>
       </div>
     </Link>
   );

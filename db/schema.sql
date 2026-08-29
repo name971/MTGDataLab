@@ -519,6 +519,14 @@ CREATE TABLE card_price_predictions (
   p_20            NUMERIC(5, 4) NOT NULL,
   jpy_est         NUMERIC(12, 2) NOT NULL,
   calculated_at   DATE NOT NULL,
+  -- 2026-08-29、注目カードランキングのカードに「予測時点から今どれだけ動いたか」を
+  -- 表示したいというユーザー要望で追加。scripts/update-ml-prediction-outcomes.mjsが
+  -- 日次でcalculated_at〜今日の価格履歴（R2）を見て埋め直す（ライブ算出だと最大100件
+  -- ×2方向分の履歴読み込みが毎リクエスト走ってしまうため、バッチで事前計算する）。
+  current_pct_change NUMERIC(8, 2), -- (今日の価格 - jpy_est) / jpy_est * 100
+  -- directionに沿った「一番良い結果」を採用する（up予測でマイナスの最大＝実は下落、を
+  -- 拾わないようにするため）。upはcalculated_at〜今日の変化率の最大値、downは最小値。
+  extreme_pct_change NUMERIC(8, 2),
   PRIMARY KEY (oracle_id, direction, calculated_at)
 );
 
