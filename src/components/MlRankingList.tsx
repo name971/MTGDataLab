@@ -193,6 +193,14 @@ function pctBadgeClass(pct: number, table: typeof CURRENT_BADGE_CLASS): string {
   return table[pct >= 0 ? "up" : "down"][magnitudeTier(pct)];
 }
 
+// 0.0%は上昇/下降どちらでもない「動きなし」だが、暴落予想側のMAXバッジで"+0.0%"と
+// 出ると符号が逆に見えて紛らわしい（ユーザー指摘、2026-08-29）。0の時だけdirectionに
+// 沿った符号にする（up→+0.0%、down→-0.0%）。0以外は実際の値の符号をそのまま使う。
+function pctSign(pct: number, direction: "up" | "down"): string {
+  if (pct === 0) return direction === "down" ? "-" : "+";
+  return pct >= 0 ? "+" : "";
+}
+
 function MlRankingCard({
   row,
   rank,
@@ -290,7 +298,7 @@ function MlRankingCard({
               title="予測時点から今日までの間で一番良かった結果（モデルが予測している指標）"
               className={`font-numeric shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${pctBadgeClass(row.extremePctChange, MAX_BADGE_CLASS)}`}
             >
-              MAX{row.extremePctChange >= 0 ? "+" : ""}
+              MAX{pctSign(row.extremePctChange, direction)}
               {row.extremePctChange.toFixed(1)}%
             </span>
           )}
