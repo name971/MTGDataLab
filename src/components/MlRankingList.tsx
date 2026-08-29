@@ -96,23 +96,32 @@ export default function MlRankingList({
           </button>
         </div>
 
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setShowFilters((v) => !v)}
-            aria-label="フィルター"
-            className="flex h-8 w-8 items-center justify-center rounded-md border border-neutral-300 text-neutral-500 hover:border-neutral-500 hover:text-neutral-700"
-          >
-            <GearIcon />
-          </button>
-          {showFilters && (
-            <RankingFilterPanel
-              filters={filters}
-              onChange={setFilters}
-              onClose={() => setShowFilters(false)}
-              overrideLocked={UNLOCK_FILTERS ? false : undefined}
-            />
+        <div className="flex items-center gap-2">
+          {/* 価格の横に出している変化率バッジが「いつからの変化か」を示す予想日
+              （2026-08-29、ユーザー指摘: 歯車の左に予想日があった方が親切） */}
+          {allRows[0] && (
+            <span className="font-numeric whitespace-nowrap text-xs text-neutral-500">
+              予想日 {allRows[0].calculatedAt}
+            </span>
           )}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowFilters((v) => !v)}
+              aria-label="フィルター"
+              className="flex h-8 w-8 items-center justify-center rounded-md border border-neutral-300 text-neutral-500 hover:border-neutral-500 hover:text-neutral-700"
+            >
+              <GearIcon />
+            </button>
+            {showFilters && (
+              <RankingFilterPanel
+                filters={filters}
+                onChange={setFilters}
+                onClose={() => setShowFilters(false)}
+                overrideLocked={UNLOCK_FILTERS ? false : undefined}
+              />
+            )}
+          </div>
         </div>
       </div>
 

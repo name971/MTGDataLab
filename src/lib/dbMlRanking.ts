@@ -30,6 +30,8 @@ export interface MlRankingRow {
   currentPctChange: number | null;
   /** 予測時点〜直近までの間で一番良かった結果(%、direction沿い)。同スクリプトが埋める。 */
   extremePctChange: number | null;
+  /** この予測が計算された日（YYYY-MM-DD）。全行同じ値（1回のバッチ実行分のみ返すため）。 */
+  calculatedAt: string;
 }
 
 /**
@@ -124,6 +126,7 @@ export async function getMlRankingFromDb(
         rarity: rarityByOracle.get(row.oracle_id) ?? null,
         currentPctChange: row.current_pct_change == null ? null : Number(row.current_pct_change),
         extremePctChange: row.extreme_pct_change == null ? null : Number(row.extreme_pct_change),
+        calculatedAt: latestRow.calculated_at,
       } satisfies MlRankingRow;
     })
     .filter((r): r is MlRankingRow => r !== null);
