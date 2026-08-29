@@ -186,7 +186,10 @@ const MAX_BADGE_CLASS = {
   up: ["bg-red-50 text-red-500", "bg-red-50 text-red-600", "bg-red-50 text-red-700", "bg-red-50 text-red-800", "bg-red-50 text-red-900"],
   down: ["bg-blue-50 text-blue-500", "bg-blue-50 text-blue-600", "bg-blue-50 text-blue-700", "bg-blue-50 text-blue-800", "bg-blue-50 text-blue-900"],
 };
+// 0%は「動いていない」であって上昇でも下降でもないため、pct>=0の判定に含めて
+// 赤くしてしまわないよう別扱いにする（ユーザー指摘: 暴落予想でMAX0%が赤いのは変）
 function pctBadgeClass(pct: number, table: typeof CURRENT_BADGE_CLASS): string {
+  if (pct === 0) return "bg-neutral-100 text-neutral-500";
   return table[pct >= 0 ? "up" : "down"][magnitudeTier(pct)];
 }
 
