@@ -278,7 +278,7 @@ function MlRankingCard({
             文字サイズ自体を自動縮小し、狭くても1行に収める。 */}
         <div className="[container-type:inline-size]">
           <div className="flex flex-nowrap items-baseline justify-end gap-x-1">
-            <span className="font-numeric shrink-0 text-[clamp(11px,7cqw,14px)] font-semibold">
+            <span className="font-numeric shrink-0 text-[clamp(12px,7cqw,14px)] font-semibold">
               ¥{row.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
             </span>
           {/* 色の強弱はMAX優先（モデルが予測しているのはMAX側、ml/features.pyの
@@ -293,7 +293,7 @@ function MlRankingCard({
           {row.currentPctChange != null && (
             <span
               title="予測時点からの現時点での変化率"
-              className={`font-numeric shrink-0 whitespace-nowrap rounded-full px-[1.2cqw] py-[0.5cqw] text-[clamp(7px,4.2cqw,10px)] font-bold ${pctBadgeClass(row.currentPctChange, CURRENT_BADGE_CLASS)}`}
+              className={`font-numeric shrink-0 whitespace-nowrap rounded-full px-[1.2cqw] py-[0.5cqw] text-[clamp(8px,4.2cqw,10px)] font-bold ${pctBadgeClass(row.currentPctChange, CURRENT_BADGE_CLASS)}`}
             >
               {row.currentPctChange >= 0 ? "+" : ""}
               {row.currentPctChange.toFixed(1)}%
@@ -302,7 +302,7 @@ function MlRankingCard({
           {row.extremePctChange != null && (
             <span
               title="予測時点から今日までの間で一番良かった結果（モデルが予測している指標）"
-              className={`font-numeric shrink-0 whitespace-nowrap rounded-full px-[1.2cqw] py-[0.5cqw] text-[clamp(7px,4.2cqw,10px)] font-bold ${pctBadgeClass(row.extremePctChange, MAX_BADGE_CLASS)}`}
+              className={`font-numeric shrink-0 whitespace-nowrap rounded-full px-[1.2cqw] py-[0.5cqw] text-[clamp(8px,4.2cqw,10px)] font-bold ${pctBadgeClass(row.extremePctChange, MAX_BADGE_CLASS)}`}
             >
               MAX{pctSign(row.extremePctChange, direction)}
               {row.extremePctChange.toFixed(1)}%
