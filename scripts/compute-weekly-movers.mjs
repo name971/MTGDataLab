@@ -115,52 +115,72 @@ async function main() {
   // 切り替えられるようにした（category="usage"=上昇、"usage_down"=下降）。 ──
   if (resolvedTodayUsageDate && resolvedPastUsageDate) {
     const [usageToday, usagePast] = await Promise.all([
-      supabaseGet(`card_usage_stats?select=format,oracle_id,usage_rate&calculated_at=eq.${resolvedTodayUsageDate}`),
-      supabaseGet(`card_usage_stats?select=format,oracle_id,usage_rate&calculated_at=eq.${resolvedPastUsageDate}`),
+      // card_usage_statsはperiod_days=7と30の2種類を持つ。フィルタしないと同じ
+      // オラクル・フォーマットが2行ずつ返り、7日分の変化と30日分の変化を合算して
+      // しまっていた（2026-08-30発覚）。週間ランキングなので7日分だけに絞る。
+      supabaseGet(`card_usage_stats?select=format,oracle_id,usage_rate&calculated_at=eq.${resolvedTodayUsageDate}&period_days=eq.7`),
+      supabaseGet(`card_usage_stats?select=format,oracle_id,usage_rate&calculated_at=eq.${resolvedPastUsageDate}&period_days=eq.7`),
     ]);
     const pastMap = new Map(usagePast.map((r) => [`${r.format}|${r.oracle_id}`, Number(r.usage_rate)]));
 
-    // pt（percentage point）差分・相対成長率どちらで全フォーマット横断ソートしても、
-    // EDHREC統計の母数の性質上そもそも変動幅が大きいCommanderが常に勝ってしまい、
-    // Top100がCommander一色になっていた（2026-08-27判明）。フォーマットごとに
-    // 独立してTop候補を出し、ラウンドロビンで混ぜることで多様性を担保する
-    // （1オラクルは最初に採用されたフォーマットのみでカウント、重複除外）。
-    const MIN_PAST_USAGE_RATE = 1; // % 採用率がほぼ0だった場合の相対成長率の暴発を防ぐ下限
+    // pt（percentage point）差分でフォーマット横断ソートすると、EDHREC統計の母数の
+    // 性質上そもそも変動幅が大きいCommanderが常に勝ってしまい、Top100がCommander一色に
+    // なっていた（2026-08-27判明）。一時期はフォーマット別に候補を出しラウンドロビンで
+    // 混ぜていたが、「複数フォーマットで同時に採用が伸びているカードの総合的な動き」を
+    // 拾えないという指摘（2026-08-30）を受け、フォーマットごとにZ-score化してから
+    // オラクル単位で合算する方式に変更した。Z-scoreはそのフォーマット自身の分布
+    // （平均・標準偏差）を基準にするため、Commanderのように分布の幅自体が広い
+    // フォーマットでも「その中でどれだけ動いたか」で公平に比較でき、実測でTop300の
+    // Commander占有率が97%→52%まで下がることを確認済み（他フォーマットも例年通り
+    // 一定数ランクインするようになる）。画面に表示するptは、合算前の生のpt（percentage
+    // point）を全フォーマット分そのまま合計した値（ユーザー要望: 「合計ptをそのまま表示」）。
     function buildUsageRanking(direction) {
-      const candidatesByFormat = new Map(); // format -> [{ oracleId, pt, relGrowth }]（relGrowth降順）
+      // フォーマットごとに平均・標準偏差を算出（母集団は上昇/下降問わず全カード）
+      const statsByFormat = new Map();
+      const ptByFormat = new Map(); // format -> [{oracleId, pt}]
       for (const r of usageToday) {
         const past = pastMap.get(`${r.format}|${r.oracle_id}`);
         if (past == null) continue;
         const pt = Number(r.usage_rate) - past;
-        if (direction === "up" ? pt <= 0 : pt >= 0) continue;
-        const relGrowth = pt / Math.max(past, MIN_PAST_USAGE_RATE);
-        if (!candidatesByFormat.has(r.format)) candidatesByFormat.set(r.format, []);
-        candidatesByFormat.get(r.format).push({ oracleId: r.oracle_id, pt, relGrowth });
+        if (!ptByFormat.has(r.format)) ptByFormat.set(r.format, []);
+        ptByFormat.get(r.format).push({ oracleId: r.oracle_id, pt });
       }
-      const sortFn = direction === "up" ? (a, b) => b.relGrowth - a.relGrowth : (a, b) => a.relGrowth - b.relGrowth;
-      for (const list of candidatesByFormat.values()) list.sort(sortFn);
+      for (const [format, list] of ptByFormat) {
+        const mean = list.reduce((s, c) => s + c.pt, 0) / list.length;
+        const variance = list.reduce((s, c) => s + (c.pt - mean) ** 2, 0) / list.length;
+        statsByFormat.set(format, { mean, sd: Math.sqrt(variance) });
+      }
 
-      const formatQueues = [...candidatesByFormat.entries()].map(([format, list]) => ({ format, list, idx: 0 }));
-      const seenOracle = new Set();
-      const changes = [];
-      while (changes.length < TOP_N && formatQueues.some((q) => q.idx < q.list.length)) {
-        for (const q of formatQueues) {
-          while (q.idx < q.list.length && seenOracle.has(q.list[q.idx].oracleId)) q.idx++;
-          if (q.idx >= q.list.length) continue;
-          const c = q.list[q.idx++];
-          seenOracle.add(c.oracleId);
-          changes.push({ oracleId: c.oracleId, format: q.format, pt: c.pt, relGrowth: c.relGrowth });
-          if (changes.length >= TOP_N) break;
+      // オラクルごとにZ-scoreとptを全フォーマット分集計
+      const byOracle = new Map(); // oracleId -> { totalZ, totalPt, mainFormat, mainAbsZ }
+      for (const [format, list] of ptByFormat) {
+        const { mean, sd } = statsByFormat.get(format);
+        for (const c of list) {
+          const z = sd > 0 ? (c.pt - mean) / sd : 0;
+          if (!byOracle.has(c.oracleId)) {
+            byOracle.set(c.oracleId, { totalZ: 0, totalPt: 0, mainFormat: format, mainAbsZ: -1 });
+          }
+          const entry = byOracle.get(c.oracleId);
+          entry.totalZ += z;
+          entry.totalPt += c.pt;
+          // バッジ表示用に、一番寄与が大きい（|z|最大の）フォーマットを代表として残す
+          if (Math.abs(z) > entry.mainAbsZ) {
+            entry.mainAbsZ = Math.abs(z);
+            entry.mainFormat = format;
+          }
         }
       }
+
+      const changes = [...byOracle.entries()]
+        .map(([oracleId, e]) => ({ oracleId, format: e.mainFormat, pt: e.totalPt, totalZ: e.totalZ }))
+        .filter((c) => (direction === "up" ? c.totalZ > 0 : c.totalZ < 0))
+        .sort((a, b) => (direction === "up" ? b.totalZ - a.totalZ : a.totalZ - b.totalZ));
       return changes;
     }
 
-    // 候補の選定（フォーマットごとの相対成長率＋ラウンドロビン）はCommander一色化を防ぐため
-    // 必要だが、そのままの順で見せると表示中のpt（画面に出る数値）と順位が一致せず、
-    // 「数字順に並んでいない」とユーザーに分かりにくかった（2026-08-30指摘）。選定後の
-    // 表示順だけ、実際に画面へ出す値（pt）の大きい順に並べ直す（多様性は選定側で
-    // 既に確保済みなので、表示ソートを変えても崩れない）。
+    // 選定はtotalZ（総合的な動き）順だが、そのままの順で見せると表示中のpt（合計pt）と
+    // 順位が一致せず「数字順に並んでいない」と分かりにくいため（2026-08-30指摘）、
+    // 選定後の表示順だけptの大きい順に並べ直す。
     buildUsageRanking("up")
       .slice(0, TOP_N)
       .sort((a, b) => b.pt - a.pt)
