@@ -154,6 +154,13 @@ CREATE TABLE card_prints (
   -- オラクルとしては合法でも、この物理プリント自体はどのフォーマットでも使用不可
   -- （border_colorが標準の黒/白以外、またはset_typeが非トーナメント区分）。
   not_tournament_legal BOOLEAN NOT NULL DEFAULT false,
+  -- promo/full_art/textless/showcase/extendedart/borderless等の特殊版ではない、
+  -- いわゆる「通常版」の見た目かどうか。歴代禁止カード等「初版の通常イラスト」を
+  -- 出したい場面で、同日発売の複数バリアントからどれを選ぶか判定するために使う
+  -- （rebuild-card-prints.mjs参照。以前はreleased_at最古+collector_number最小という
+  -- ヒューリスティックだったが、The One Ringのシリアル版のように通し番号が
+  -- 小さいほど特殊版という逆パターンがあり不十分だった）。
+  is_normal_frame      BOOLEAN NOT NULL DEFAULT true,
   updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

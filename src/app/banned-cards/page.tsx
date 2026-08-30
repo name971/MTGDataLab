@@ -33,7 +33,7 @@ function matchesColorFilter(cardColors: string[], selected: ColorFilter[]): bool
 function ColorFilterRow({ selected, buildColorHref }: { selected: ColorFilter[]; buildColorHref: (colors: ColorFilter[]) => string }) {
   const toggle = (c: ColorFilter) => (selected.includes(c) ? selected.filter((x) => x !== c) : [...selected, c]);
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
+    <div className="flex flex-wrap items-center justify-end gap-1.5">
       {COLOR_ORDER.map((c) => (
         <Link
           key={c}

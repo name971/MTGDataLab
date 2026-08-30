@@ -761,3 +761,37 @@ mtimeが20時間より古ければ`SystemExit`で実行そのものを中断す�
 「docstringを読む」ではなく、スクリプト自体が古いデータでの実行を機械的に拒否する
 ようにした（2026-08-15/08-17/08-20の教訓「文章に書くだけの再発防止策は次に活かされる
 保証が無い」と同じ理由）。
+
+---
+
+## 2026-08-31 歴代禁止カード等の「初版画像」選定が、同日発売の特殊バージョン
+（プロモ・showcase・シリアル版）を誤って選んでいた
+
+**症状**: 禁止カードページの「初版の通常イラスト」表示（`getEarliestCardImages`、
+`dbCardPrints.ts`）で、Roxi・迷える黒魔道士ビビ・The One Ring等、通常版ではなく
+showcase版/シリアル番号版/プロモ版の画像が選ばれるケースが多数見つかった
+（ユーザー指摘で複数件発覚）。
+
+**原因**: `card_prints`テーブルにScryfallのpromo/full_art/textless/frame_effects/
+border_colorといった「特殊版かどうか」を示すフラグを一切保存しておらず、
+`released_at`（発売日）とset_code・collector_numberの命名慣習だけで通常版を
+推測するヒューリスティックを組んでいた。最初は「プロモ専用セットはset_codeが
+"p"始まり」で対処したが、judge促進版(`j16`)等prefixに従わない例で漏れた。
+次に「同日タイなら通し番号が小さい方」で対処したが、The One Ringのシリアル版
+（`collector_number: "0"`）のように通し番号が小さいほど特殊版という逆パターンが
+あり、根本的に不十分だった。ヒューリスティックを重ねるたびに新しい反例が
+見つかる、という典型的な「間接的な代理指標で本来のフラグを推測しようとする」
+アンチパターンだった。
+
+**教訓**: 判定に必要な一次情報（Scryfallの`promo`/`full_art`/`textless`/
+`frame_effects`/`border_color`）がDBに無いなら、命名規則からの推測を重ねるのではなく、
+その一次情報自体をスキーマに追加して取り込むべき。代理指標のヒューリスティックは
+「今見つかっている反例」にしか対処できず、次の反例が来るまで気づけない。
+
+**対応（機械的対策）**: `card_prints`に`is_normal_frame`列を追加し、
+`rebuild-card-prints.mjs`でScryfallの生データから直接
+`!promo && !full_art && !textless && border_color !== "borderless" &&
+!frame_effects.includes(showcase/extendedart/etched)`として計算・保存するように変更。
+`getEarliestCardImages`はこの列を見るだけになり、推測ロジックを完全に排除した。
+本番の`card_prints`全件（103,320件）を再構築し、全禁止カード（275件）を対象に
+検証スクリプトで反例が0件になったことを確認済み。

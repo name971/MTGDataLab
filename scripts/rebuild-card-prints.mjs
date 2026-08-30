@@ -44,6 +44,19 @@ function isNotTournamentLegal(raw) {
   return raw.border_color === "gold" || raw.border_color === "silver" || NON_TOURNAMENT_SET_TYPES.has(raw.set_type);
 }
 
+// 「通常版」の見た目かどうか。歴代禁止カード等で「初版の通常イラスト」を選びたい場面向け
+// （dbCardPrints.tsのgetEarliestCardImages参照）。以前はreleased_at最古+collector_number最小
+// というヒューリスティックだったが、The One Ringのシリアル版（collector_number "0"）のように
+// 通し番号が小さいほど特殊版という逆パターンがあり、Scryfall自身が持つフラグで判定するよう
+// 修正した（2026-08-31）。
+const SPECIAL_FRAME_EFFECTS = new Set(["showcase", "extendedart", "etched"]);
+function isNormalFrame(raw) {
+  if (raw.promo || raw.full_art || raw.textless) return false;
+  if (raw.border_color === "borderless") return false;
+  if ((raw.frame_effects ?? []).some((f) => SPECIAL_FRAME_EFFECTS.has(f))) return false;
+  return true;
+}
+
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -146,6 +159,7 @@ async function main() {
       image_uri_normal_ja: jaImageByPrintKey.get(key) ?? null,
       rarity: raw.rarity ?? null,
       not_tournament_legal: isNotTournamentLegal(raw),
+      is_normal_frame: isNormalFrame(raw),
     };
   });
   console.log(
