@@ -34,7 +34,10 @@ jobs:
           done
           if [ "$FOUND" -eq 0 ]; then
             echo "本日(${TODAY_JST} JST)分のdaily-data-pipeline実行が見つからないため手動起動します"
-            gh workflow run daily-data-pipeline.yml
+            # actions/checkoutをしていないためgh workflow runがリポジトリを特定できず
+            # 「not a git repository」で失敗していた（2026-08-30発覚）。--repoを明示して
+            # checkout無しでも動くようにする。
+            gh workflow run daily-data-pipeline.yml --repo "${{ github.repository }}"
           else
             echo "本日分は既に実行済み/実行中のためスキップ"
           fi

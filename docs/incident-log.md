@@ -13,6 +13,32 @@
 
 ---
 
+## 2026-08-30 daily-pipeline-watchdog.ymlがgh workflow run実行時にリポジトリを
+特定できず失敗していた
+
+**症状**: watchdog自体が`completed failure`になっていた（ユーザー指摘「パイプライン
+失敗している」）。ログを見ると`Check today's runs, dispatch if missing`ステップで
+「本日分の実行が見つからないため手動起動します」まで出た直後、
+`failed to run git: fatal: not a git repository (or any of the parent directories): .git`
+で落ちていた。
+
+**原因**: `daily-pipeline-watchdog.yml`に`actions/checkout`ステップが無く、
+`gh workflow run daily-data-pipeline.yml`（リポジトリ指定なし）を実行した際、
+`gh` CLIがカレントディレクトリのgitリモートからリポジトリを推測しようとして
+失敗していた。皮肉にも「watchdogが検知した『今日まだ実行されていない』」自体は
+正しく機能していたのに、代打の起動コマンドだけが落ちて何もできていなかった
+（07:00 JSTへの前倒し変更の初日にこれが起きたため、実質today分が起動されない
+まま気づかれるところだった）。
+
+**教訓**: `gh` CLI系のコマンドをGitHub Actions上で使う場合、`actions/checkout`が
+無いワークフローでは必ず`--repo`でリポジトリを明示する（または`GH_REPO`環境変数
+を設定する）。ローカルの動作確認だけでは気づけない、CI環境特有の前提の違い。
+
+**対応**: `gh workflow run daily-data-pipeline.yml --repo "${{ github.repository }}"`
+に変更。実際に今日(08-30)分が未起動だったため、手動でdaily-data-pipelineを起動した。
+
+---
+
 ## 2026-08-25/27/28 daily-data-pipeline.ymlのcronが度々未発火（遅延ではなく丸ごとスキップ）
 
 **症状**: 12:00 JSTに走るはずのdaily-data-pipeline.ymlの`schedule`実行が、2026-08-25・
