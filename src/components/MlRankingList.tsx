@@ -271,16 +271,15 @@ function MlRankingCard({
             （scripts/update-ml-prediction-outcomes.mjs）が未実行/価格履歴が無い分はnull
             になるため、その場合はバッジを出さず価格だけ表示する（ArtifactモックのC9案、
             2026-08-29採用）。 */}
-        {/* 3つ（価格・現在値バッジ・MAXバッジ）が狭いカード幅に収まらないと
-            overflow-hiddenで価格の¥記号ごと見切れ、flex-wrapだとバッジだけ孤立して
-            2行目に落ちるカードとそうでないカードが混在し不揃いになっていた
-            （ユーザー指摘、2026-08-30）。containerクエリ（cqw単位）でカード幅に応じて
-            文字サイズ自体を自動縮小し、狭くても1行に収める。 */}
-        <div className="[container-type:inline-size]">
-          <div className="flex flex-nowrap items-baseline justify-end gap-x-1">
-            <span className="font-numeric shrink-0 text-[clamp(12px,7cqw,14px)] font-semibold">
-              ¥{row.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
-            </span>
+        {/* サイズは元の固定値（text-sm/text-[10px]）に戻した——container query版は
+            狭いカードで常に文字が小さくなり不評だった（ユーザー指摘、2026-08-30:
+            「文字のサイズ戻した？」「このサイズに戻したい」とスクリーンショット添付）。
+            ほとんどのカードはこのサイズで1行に収まる。長い数字（¥6桁等）で収まらない
+            稀なケースだけ、見切れではなく折り返しで受ける（flex-wrap）。 */}
+        <div className="flex flex-wrap items-baseline justify-end gap-x-1 gap-y-0.5">
+          <span className="font-numeric shrink-0 text-sm font-semibold">
+            ¥{row.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
+          </span>
           {/* 色の強弱はMAX優先（モデルが予測しているのはMAX側、ml/features.pyの
               log_return_7d_max/min）。ただし並び順は現在値→MAXに戻した——MAXを先に
               出すと、後ろのラベル無し「-n%」が何に対する数字か分かりにくいという
@@ -293,7 +292,7 @@ function MlRankingCard({
           {row.currentPctChange != null && (
             <span
               title="予測時点からの現時点での変化率"
-              className={`font-numeric shrink-0 whitespace-nowrap rounded-full px-[1.2cqw] py-[0.5cqw] text-[clamp(8px,4.2cqw,10px)] font-bold ${pctBadgeClass(row.currentPctChange, CURRENT_BADGE_CLASS)}`}
+              className={`font-numeric shrink-0 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-bold ${pctBadgeClass(row.currentPctChange, CURRENT_BADGE_CLASS)}`}
             >
               {row.currentPctChange >= 0 ? "+" : ""}
               {row.currentPctChange.toFixed(1)}%
@@ -302,13 +301,12 @@ function MlRankingCard({
           {row.extremePctChange != null && (
             <span
               title="予測時点から今日までの間で一番良かった結果（モデルが予測している指標）"
-              className={`font-numeric shrink-0 whitespace-nowrap rounded-full px-[1.2cqw] py-[0.5cqw] text-[clamp(8px,4.2cqw,10px)] font-bold ${pctBadgeClass(row.extremePctChange, MAX_BADGE_CLASS)}`}
+              className={`font-numeric shrink-0 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-bold ${pctBadgeClass(row.extremePctChange, MAX_BADGE_CLASS)}`}
             >
               MAX{pctSign(row.extremePctChange, direction)}
               {row.extremePctChange.toFixed(1)}%
             </span>
           )}
-          </div>
         </div>
       </div>
     </Link>
