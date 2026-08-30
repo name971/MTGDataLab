@@ -3,6 +3,7 @@ import { getEarliestCardImages, getBestCardImages } from "./dbCardPrints";
 import { getCatalogOraclesByNames } from "./catalogDb";
 import { BANNED_CARDS, type BannedCardEntry } from "./bannedCards";
 import { formatSlug, type Format } from "./formats";
+import { colorsFromManaCost } from "./manaColors";
 
 export interface BannedCardWithCard extends Omit<BannedCardEntry, "imageUrl"> {
   oracleId: string;
@@ -82,6 +83,7 @@ export interface CurrentBannedCard {
   imageUrl: string | null;
   status: "banned" | "restricted";
   releasedAt: string | null;
+  colors: string[];
 }
 
 /**
@@ -94,7 +96,9 @@ export async function getCurrentlyBannedCards(format: Format): Promise<CurrentBa
   const key = formatSlug(format);
   const { data } = await supabase
     .from("cards")
-    .select("oracle_id, name, legalities, released_at, image_uri_normal, type_line, card_oracles(printed_name_ja)")
+    .select(
+      "oracle_id, name, legalities, released_at, image_uri_normal, type_line, mana_cost, card_oracles(printed_name_ja)",
+    )
     .eq("lang", "en")
     .or(`legalities->>${key}.eq.banned,legalities->>${key}.eq.restricted`);
 
@@ -115,6 +119,7 @@ export async function getCurrentlyBannedCards(format: Format): Promise<CurrentBa
       imageUrl: null,
       status,
       releasedAt: row.released_at,
+      colors: colorsFromManaCost(row.mana_cost),
     });
   }
 
@@ -144,6 +149,7 @@ export interface ReservedListCard {
   name: string;
   imageUrl: string | null;
   priceJpy: number | null;
+  colors: string[];
 }
 
 /** 「再録禁止カード」タブ用。card_oracles.is_reservedはimport-deck-cards.mjs等が
@@ -175,11 +181,21 @@ export async function getReservedListCards(): Promise<ReservedListCard[]> {
       .in("oracle_id", chunk);
     if (data) priceRows.push(...data);
   }
-  const [imageByOracle, { data: fxRows }] = await Promise.all([
+  const [imageByOracle, { data: fxRows }, manaCostRows] = await Promise.all([
     getBestCardImages(oracleIds),
     supabase.from("exchange_rates").select("usd_to_jpy").order("date", { ascending: false }).limit(1),
+    (async () => {
+      const rows: { oracle_id: string; mana_cost: string | null }[] = [];
+      for (let i = 0; i < oracleIds.length; i += ORACLE_ID_CHUNK) {
+        const chunk = oracleIds.slice(i, i + ORACLE_ID_CHUNK);
+        const { data } = await supabase.from("cards").select("oracle_id, mana_cost").eq("lang", "en").in("oracle_id", chunk);
+        if (data) rows.push(...data);
+      }
+      return rows;
+    })(),
   ]);
   const usdToJpy = fxRows?.[0]?.usd_to_jpy != null ? Number(fxRows[0].usd_to_jpy) : 150;
+  const manaCostByOracle = new Map(manaCostRows.map((r) => [r.oracle_id, r.mana_cost]));
 
   const cheapestUsdByOracle = new Map<string, number>();
   for (const p of priceRows ?? []) {
@@ -199,6 +215,7 @@ export async function getReservedListCards(): Promise<ReservedListCard[]> {
         name: o.name,
         imageUrl: imageByOracle.get(o.oracle_id) ?? null,
         priceJpy: usd != null ? Math.round(usd * usdToJpy) : null,
+        colors: colorsFromManaCost(manaCostByOracle.get(o.oracle_id)),
       } satisfies ReservedListCard;
     })
     .sort((a, b) => (b.priceJpy ?? -1) - (a.priceJpy ?? -1));

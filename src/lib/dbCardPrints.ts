@@ -238,14 +238,15 @@ export async function getEarliestCardImages(
 ): Promise<Map<string, { imageUrl: string; releasedAt: string | null }>> {
   if (oracleIds.length === 0) return new Map();
 
-  const rows: { oracle_id: string; released_at: string | null; image_uri_normal: string | null }[] = [];
+  const rows: { oracle_id: string; set_code: string; released_at: string | null; image_uri_normal: string | null }[] =
+    [];
   const PAGE_SIZE = 1000;
   for (let i = 0; i < oracleIds.length; i += ORACLE_ID_CHUNK) {
     const chunk = oracleIds.slice(i, i + ORACLE_ID_CHUNK);
     for (let offset = 0; ; offset += PAGE_SIZE) {
       const { data: page, error } = await supabase
         .from("card_prints")
-        .select("oracle_id, released_at, image_uri_normal")
+        .select("oracle_id, set_code, released_at, image_uri_normal")
         .in("oracle_id", chunk)
         .not("image_uri_normal", "is", null)
         .order("released_at", { ascending: true })
@@ -257,9 +258,22 @@ export async function getEarliestCardImages(
     }
   }
 
+  // Scryfallの命名規則上、プロモ専用セットのset_codeはほぼ必ず"p"始まり（例: pw25=Wizards Play
+  // Network、plst=The List等）。プレリリース配布のプロモは実際のセット発売より前に
+  // released_atが付くことがあり（例: 「ばあば」はpw25が2025-11-01、本セットtlaが
+  // 2025-11-21）、素直に最古のreleased_atを採用すると「初版の通常イラスト」ではなく
+  // プロモ版の絵柄が選ばれてしまう。まず非プロモ内で最古を探し、非プロモが1件も無い
+  // オラクル（＝プロモでしか存在しないカード）だけ全体の最古にフォールバックする。
+  const isPromoSet = (setCode: string) => setCode.startsWith("p");
+
   const result = new Map<string, { imageUrl: string; releasedAt: string | null }>();
   for (const r of rows) {
     // released_at昇順で取得しているので、oracleIdごとに最初に出てきた行が最古のプリント
+    if (!result.has(r.oracle_id) && r.image_uri_normal && !isPromoSet(r.set_code)) {
+      result.set(r.oracle_id, { imageUrl: r.image_uri_normal, releasedAt: r.released_at });
+    }
+  }
+  for (const r of rows) {
     if (!result.has(r.oracle_id) && r.image_uri_normal) {
       result.set(r.oracle_id, { imageUrl: r.image_uri_normal, releasedAt: r.released_at });
     }

@@ -1,12 +1,68 @@
 import Image from "next/image";
 import Link from "next/link";
 import { FORMATS, formatLabelJa, type Format } from "@/lib/formats";
+import { COLOR_ORDER } from "@/lib/manaColors";
 import {
   getBannedCardsByYear,
   getCurrentlyBannedCards,
   getReservedListCards,
   type BannedCardWithCard,
 } from "@/lib/dbBannedCards";
+
+// 色フィルタの選択肢。"C"は無色（mana_costにWUBRGどれも含まれないカード）を表す特別扱いで、
+// COLOR_ORDER（W/U/B/R/G）そのものには含まれない。
+const COLOR_FILTER_OPTIONS = [...COLOR_ORDER, "C"] as const;
+type ColorFilter = (typeof COLOR_FILTER_OPTIONS)[number];
+
+function isColorFilter(v: string): v is ColorFilter {
+  return (COLOR_FILTER_OPTIONS as readonly string[]).includes(v);
+}
+
+function parseColors(v: string | undefined): ColorFilter[] {
+  if (!v) return [];
+  return v.split(",").filter(isColorFilter);
+}
+
+/** cardのcolorsが指定の色フィルタ集合に一致するか（フィルタ未選択なら常に一致） */
+function matchesColorFilter(cardColors: string[], selected: ColorFilter[]): boolean {
+  if (selected.length === 0) return true;
+  if (cardColors.length === 0) return selected.includes("C");
+  return cardColors.some((c) => selected.includes(c as ColorFilter));
+}
+
+function ColorFilterRow({ selected, buildColorHref }: { selected: ColorFilter[]; buildColorHref: (colors: ColorFilter[]) => string }) {
+  const toggle = (c: ColorFilter) => (selected.includes(c) ? selected.filter((x) => x !== c) : [...selected, c]);
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {COLOR_ORDER.map((c) => (
+        <Link
+          key={c}
+          href={buildColorHref(toggle(c))}
+          aria-pressed={selected.includes(c)}
+          className={`rounded-full p-0.5 ${selected.includes(c) ? "bg-neutral-200 ring-2 ring-neutral-400" : "opacity-50 hover:opacity-100"}`}
+        >
+          <Image src={`/mana/${c}.svg`} alt={c} width={22} height={22} className="h-[22px] w-[22px]" />
+        </Link>
+      ))}
+      <Link
+        href={buildColorHref(toggle("C"))}
+        aria-pressed={selected.includes("C")}
+        className={`rounded-full border px-2 py-0.5 text-xs ${
+          selected.includes("C")
+            ? "border-neutral-500 bg-neutral-200 text-neutral-900"
+            : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
+        }`}
+      >
+        無色
+      </Link>
+      {selected.length > 0 && (
+        <Link href={buildColorHref([])} className="text-xs text-neutral-400 underline hover:text-neutral-600">
+          クリア
+        </Link>
+      )}
+    </div>
+  );
+}
 
 export const metadata = { title: "禁止カード - MTG DataLab" };
 
@@ -164,7 +220,7 @@ function planCompactColumns(
 export default async function BannedCardsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; format?: string; sort?: string; fillGaps?: string; view?: string }>;
+  searchParams: Promise<{ tab?: string; format?: string; sort?: string; fillGaps?: string; view?: string; colors?: string }>;
 }) {
   const sp = await searchParams;
   const tab: TabKey = isTab(sp.tab) ? sp.tab : "current";
@@ -172,6 +228,7 @@ export default async function BannedCardsPage({
   const sortDir: "asc" | "desc" = sp.sort === "asc" ? "asc" : "desc";
   const fillGaps = sp.fillGaps === "1";
   const view: "list" | "compact" = sp.view === "compact" ? "compact" : "list";
+  const colors = parseColors(sp.colors);
 
   return (
     <div className="flex flex-col gap-4">
@@ -193,8 +250,8 @@ export default async function BannedCardsPage({
         ))}
       </div>
 
-      {tab === "current" && <CurrentBannedTab format={format} />}
-      {tab === "reserved" && <ReservedListTab />}
+      {tab === "current" && <CurrentBannedTab format={format} colors={colors} />}
+      {tab === "reserved" && <ReservedListTab colors={colors} />}
       {tab === "history" && (
         <HistoryTab tab={tab} format={format} sortDir={sortDir} fillGaps={fillGaps} view={view} />
       )}
@@ -202,8 +259,16 @@ export default async function BannedCardsPage({
   );
 }
 
-async function CurrentBannedTab({ format }: { format: Format }) {
-  const cards = await getCurrentlyBannedCards(format);
+async function CurrentBannedTab({ format, colors }: { format: Format; colors: ColorFilter[] }) {
+  const allCards = await getCurrentlyBannedCards(format);
+  const cards = allCards.filter((c) => matchesColorFilter(c.colors, colors));
+  const buildColorHref = (next: ColorFilter[]) => {
+    const params = new URLSearchParams();
+    if (format !== "Standard") params.set("format", format);
+    if (next.length > 0) params.set("colors", next.join(","));
+    const qs = params.toString();
+    return qs ? `/banned-cards?${qs}` : "/banned-cards";
+  };
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap gap-1.5">
@@ -221,8 +286,13 @@ async function CurrentBannedTab({ format }: { format: Format }) {
           </Link>
         ))}
       </div>
+      <ColorFilterRow selected={colors} buildColorHref={buildColorHref} />
       {cards.length === 0 ? (
-        <p className="text-sm text-neutral-500">{formatLabelJa(format)}に現在禁止/制限中のカードはありません。</p>
+        <p className="text-sm text-neutral-500">
+          {colors.length > 0
+            ? "選択した色に一致するカードはありません。"
+            : `${formatLabelJa(format)}に現在禁止/制限中のカードはありません。`}
+        </p>
       ) : (
         <div className="grid grid-cols-3 gap-3 sm:grid-cols-5 lg:grid-cols-8">
           {cards.map((card) => (
@@ -258,14 +328,25 @@ async function CurrentBannedTab({ format }: { format: Format }) {
   );
 }
 
-async function ReservedListTab() {
-  const cards = await getReservedListCards();
+async function ReservedListTab({ colors }: { colors: ColorFilter[] }) {
+  const allCards = await getReservedListCards();
+  const cards = allCards.filter((c) => matchesColorFilter(c.colors, colors));
+  const buildColorHref = (next: ColorFilter[]) => {
+    const params = new URLSearchParams();
+    params.set("tab", "reserved");
+    if (next.length > 0) params.set("colors", next.join(","));
+    return `/banned-cards?${params.toString()}`;
+  };
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-neutral-500">
-        {cards.length.toLocaleString()}枚（価格が高い順）。Wizards of the Coastが将来的にも再録しないと
+        {allCards.length.toLocaleString()}枚（価格が高い順）。Wizards of the Coastが将来的にも再録しないと
         約束しているカード一覧。
       </p>
+      <ColorFilterRow selected={colors} buildColorHref={buildColorHref} />
+      {cards.length === 0 && (
+        <p className="text-sm text-neutral-500">選択した色に一致するカードはありません。</p>
+      )}
       <div className="grid grid-cols-3 gap-3 sm:grid-cols-5 lg:grid-cols-8">
         {cards.map((card) => (
           <Link
