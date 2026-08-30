@@ -123,6 +123,16 @@ async function main() {
   console.log(`本日の価格スナップショット: ${priceByOracle.size}件`);
 
   // ── card_usage_stats: フォーマット別・オラクルID別の採用率（7/30/90日それぞれ） ──
+  //
+  // 【設計変更・2026-08-30】以前は期間内の全デッキをまとめて1つの塊にして
+  // count/totalDecksを計算していた。TopDeck.gg由来のCommanderは「週1回、その日だけ
+  // 1000件超のリーグ結果がまとめて登録される」という取り込み元側の偏りがあり、
+  // このスパイク日1日が残り6日分（合計でも数百件）を数の力で圧倒してしまい、
+  // スパイク日が7日窓の内外どちらに落ちるかだけで採用率が数十ポイント単位で
+  // 暴れていた（ユーザー指摘・実測で発覚。詳細はdocs/incident-log.md）。
+  // 「日ごとに採用率を計算してから期間内の日数で平均する」方式に変更し、デッキ数が
+  // 多い日も少ない日も「1日」として同じ重みにする（スパイク日の影響を実測で
+  // +67.3ptから-1.8pt相当まで是正できることを検証済み）。
   const usageRows = [];
   for (const periodDays of PERIOD_DAYS_OPTIONS) {
     const cutoff = new Date(today);
@@ -130,37 +140,58 @@ async function main() {
     const cutoffStr = isoDate(cutoff);
     const decksInPeriod = decks.filter((d) => (d.tournaments?.event_date ?? "") >= cutoffStr);
 
-    const formatDeckCount = new Map(); // format -> total decks
-    const formatOracleDeckCount = new Map(); // "format|oracle_id" -> decks containing it (main only)
+    // 日付ごとにグルーピングしてから、日×フォーマットの合計・日×フォーマット×オラクルの
+    // 件数を別々に集計する（後段で「その日format自体に活動があったか」を判定するため）。
+    const formatDeckCountByDate = new Map(); // "date|format" -> total decks that day
+    const formatOracleDeckCountByDate = new Map(); // "date|format|oracle_id" -> decks that day
+    const datesByFormat = new Map(); // format -> Set(date)（その日formatに活動があった日）
+    const oraclesByFormat = new Map(); // format -> Set(oracle_id)（期間内に一度でも出た全オラクル）
 
     for (const deck of decksInPeriod) {
       const format = deck.tournaments?.format;
-      if (!format) continue;
-      formatDeckCount.set(format, (formatDeckCount.get(format) ?? 0) + 1);
+      const date = deck.tournaments?.event_date;
+      if (!format || !date) continue;
+
+      const dateFormatKey = `${date}|${format}`;
+      formatDeckCountByDate.set(dateFormatKey, (formatDeckCountByDate.get(dateFormatKey) ?? 0) + 1);
+      if (!datesByFormat.has(format)) datesByFormat.set(format, new Set());
+      datesByFormat.get(format).add(date);
 
       const mainOracleIds = new Set(
         deck.deck_cards
           .filter((c) => c.board === "main" && c.oracle_id)
           .map((c) => c.oracle_id)
       );
+      if (!oraclesByFormat.has(format)) oraclesByFormat.set(format, new Set());
       for (const oracleId of mainOracleIds) {
-        const key = `${format}|${oracleId}`;
-        formatOracleDeckCount.set(key, (formatOracleDeckCount.get(key) ?? 0) + 1);
+        oraclesByFormat.get(format).add(oracleId);
+        const key = `${date}|${format}|${oracleId}`;
+        formatOracleDeckCountByDate.set(key, (formatOracleDeckCountByDate.get(key) ?? 0) + 1);
       }
     }
 
-    for (const [key, count] of formatOracleDeckCount) {
-      const [format, oracleId] = key.split("|");
-      const totalDecks = formatDeckCount.get(format) ?? 0;
-      if (totalDecks === 0) continue;
-      usageRows.push({
-        format,
-        oracle_id: oracleId,
-        period_days: periodDays,
-        usage_rate: Math.round((count / totalDecks) * 10000) / 100,
-        deck_sample_size: totalDecks,
-        calculated_at: today,
-      });
+    for (const [format, oracleIds] of oraclesByFormat) {
+      const dates = [...datesByFormat.get(format)];
+      // deck_sample_sizeは今まで通り「期間内の総デッキ数」（画面表示・信頼度の目安用）として残す
+      const totalDecksInPeriod = dates.reduce((s, d) => s + (formatDeckCountByDate.get(`${d}|${format}`) ?? 0), 0);
+      if (totalDecksInPeriod === 0) continue;
+
+      for (const oracleId of oracleIds) {
+        const dailyRates = dates.map((d) => {
+          const total = formatDeckCountByDate.get(`${d}|${format}`) ?? 0;
+          const count = formatOracleDeckCountByDate.get(`${d}|${format}|${oracleId}`) ?? 0;
+          return (count / total) * 100;
+        });
+        const avgRate = dailyRates.reduce((s, r) => s + r, 0) / dailyRates.length;
+        usageRows.push({
+          format,
+          oracle_id: oracleId,
+          period_days: periodDays,
+          usage_rate: Math.round(avgRate * 100) / 100,
+          deck_sample_size: totalDecksInPeriod,
+          calculated_at: today,
+        });
+      }
     }
   }
   // 1回のUPSERTで送る行数が多すぎるとPostgres側のstatement timeoutに達するため分割送信する
