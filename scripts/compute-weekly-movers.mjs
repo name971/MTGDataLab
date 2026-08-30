@@ -156,8 +156,14 @@ async function main() {
       return changes;
     }
 
+    // 候補の選定（フォーマットごとの相対成長率＋ラウンドロビン）はCommander一色化を防ぐため
+    // 必要だが、そのままの順で見せると表示中のpt（画面に出る数値）と順位が一致せず、
+    // 「数字順に並んでいない」とユーザーに分かりにくかった（2026-08-30指摘）。選定後の
+    // 表示順だけ、実際に画面へ出す値（pt）の大きい順に並べ直す（多様性は選定側で
+    // 既に確保済みなので、表示ソートを変えても崩れない）。
     buildUsageRanking("up")
       .slice(0, TOP_N)
+      .sort((a, b) => b.pt - a.pt)
       .forEach((c, i) => {
         rows.push({
           oracle_id: c.oracleId,
@@ -173,6 +179,7 @@ async function main() {
       });
     buildUsageRanking("down")
       .slice(0, TOP_N)
+      .sort((a, b) => a.pt - b.pt)
       .forEach((c, i) => {
         rows.push({
           oracle_id: c.oracleId,
