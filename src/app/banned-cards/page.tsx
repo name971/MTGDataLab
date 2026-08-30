@@ -233,10 +233,10 @@ async function CurrentBannedTab({ format }: { format: Format }) {
             >
               {card.imageUrl ? (
                 <Image
-                  src={card.imageUrl}
+                  src={toSmallImageUrl(card.imageUrl)}
                   alt={card.nameJa ?? card.name}
-                  width={223}
-                  height={311}
+                  width={146}
+                  height={204}
                   className="w-full rounded-md"
                 />
               ) : (
@@ -273,10 +273,10 @@ async function ReservedListTab() {
           >
             {card.imageUrl ? (
               <Image
-                src={card.imageUrl}
+                src={toSmallImageUrl(card.imageUrl)}
                 alt={card.name}
-                width={223}
-                height={311}
+                width={146}
+                height={204}
                 className="w-full rounded-md"
               />
             ) : (
