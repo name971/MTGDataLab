@@ -53,7 +53,7 @@ export async function getBannedCardsByYear(
       ...entry,
       oracleId: oracle.oracle_id,
       nameJa: oracle.printed_name_ja,
-      imageUrl: entry.imageUrl ?? imageByOracle.get(oracle.oracle_id) ?? null,
+      imageUrl: entry.imageUrl ?? imageByOracle.get(oracle.oracle_id)?.imageUrl ?? null,
     });
   }
 
@@ -81,6 +81,7 @@ export interface CurrentBannedCard {
   name: string;
   imageUrl: string | null;
   status: "banned" | "restricted";
+  releasedAt: string | null;
 }
 
 /**
@@ -93,13 +94,17 @@ export async function getCurrentlyBannedCards(format: Format): Promise<CurrentBa
   const key = formatSlug(format);
   const { data } = await supabase
     .from("cards")
-    .select("oracle_id, name, legalities, card_oracles(printed_name_ja)")
+    .select("oracle_id, name, legalities, released_at, image_uri_normal, type_line, card_oracles(printed_name_ja)")
     .eq("lang", "en")
     .or(`legalities->>${key}.eq.banned,legalities->>${key}.eq.restricted`);
 
   const byOracle = new Map<string, CurrentBannedCard>();
   for (const row of data ?? []) {
     if (byOracle.has(row.oracle_id)) continue; // 同じオラクルの複数プリントは1件にまとめる
+    // 計略（Conspiracy）は通常のデッキに入れるカードではなくドラフト時の効果のみを持つ
+    // 特殊カードで、全フォーマットのlegalitiesが軒並みnot_legal/banned扱いになるため
+    // 混ぜるとノイズになる。除外する。
+    if (row.type_line?.includes("Conspiracy")) continue;
     const legalities = row.legalities as Record<string, string> | null;
     const status = legalities?.[key] === "restricted" ? "restricted" : "banned";
     byOracle.set(row.oracle_id, {
@@ -109,16 +114,28 @@ export async function getCurrentlyBannedCards(format: Format): Promise<CurrentBa
       name: row.name,
       imageUrl: null,
       status,
+      releasedAt: row.released_at,
     });
   }
 
   const oracleIds = [...byOracle.keys()];
-  const imageByOracle = await getBestCardImages(oracleIds);
+  // 初版（英語版）の画像を使う。"Name Sticker" Goblin等、Scryfallバルクデータ上は
+  // 紙のプリントが存在せずMTGO専用（デジタル限定の再現版）でしか存在しないカードは
+  // rebuild-card-prints.mjsがdigital=trueのプリントを除外するためcard_printsに1件も
+  // 入らない＝getEarliestCardImagesで画像が決まらない。この種のカードは値段も付かず
+  // 実質「紙のカードとしては存在しない」ノイズなので、一覧から丸ごと除外する。
+  const earliestByOracle = await getEarliestCardImages(oracleIds);
   for (const [oracleId, card] of byOracle) {
-    card.imageUrl = imageByOracle.get(oracleId) ?? null;
+    const earliest = earliestByOracle.get(oracleId);
+    if (!earliest) {
+      byOracle.delete(oracleId);
+      continue;
+    }
+    card.imageUrl = earliest.imageUrl;
+    if (earliest.releasedAt) card.releasedAt = earliest.releasedAt;
   }
 
-  return [...byOracle.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return [...byOracle.values()].sort((a, b) => (b.releasedAt ?? "").localeCompare(a.releasedAt ?? ""));
 }
 
 export interface ReservedListCard {

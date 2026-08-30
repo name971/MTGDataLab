@@ -229,7 +229,7 @@ async function CurrentBannedTab({ format }: { format: Format }) {
             <Link
               key={card.oracleId}
               href={`/cards/${card.oracleId}`}
-              className="flex flex-col items-center gap-1 rounded-lg p-1.5 hover:bg-neutral-50"
+              className="group relative flex flex-col items-center gap-1 rounded-lg p-1.5 hover:bg-neutral-50"
             >
               {card.imageUrl ? (
                 <Image
@@ -244,10 +244,12 @@ async function CurrentBannedTab({ format }: { format: Format }) {
                   {card.nameJa ?? card.name}
                 </div>
               )}
-              <p className="truncate text-center text-xs font-medium">{card.nameJa ?? card.name}</p>
               {card.status === "restricted" && (
-                <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">制限</span>
+                <span className="pointer-events-none absolute top-0.5 right-0.5 rounded-full bg-amber-500 px-1 text-[9px] leading-tight font-bold text-white shadow">
+                  制限
+                </span>
               )}
+              <p className="truncate text-center text-xs font-medium">{card.nameJa ?? card.name}</p>
             </Link>
           ))}
         </div>

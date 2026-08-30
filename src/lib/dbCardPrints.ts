@@ -231,8 +231,11 @@ export async function getBestCardImages(oracleIds: string[]): Promise<Map<string
  * getBestCardImagesの初版版。歴代禁止カード等、当時の雰囲気を出すために一番古いプリント
  * （英語版）の画像を使いたい場合向け。価格は見ず、released_atが最も古い行の
  * image_uri_normalを採用する（日本語版は当時存在しないことが多いため英語版のみ）。
+ * 併せてそのオラクルの最古プリントのreleased_atも返す（デビュー年でのソート用）。
  */
-export async function getEarliestCardImages(oracleIds: string[]): Promise<Map<string, string>> {
+export async function getEarliestCardImages(
+  oracleIds: string[],
+): Promise<Map<string, { imageUrl: string; releasedAt: string | null }>> {
   if (oracleIds.length === 0) return new Map();
 
   const rows: { oracle_id: string; released_at: string | null; image_uri_normal: string | null }[] = [];
@@ -254,10 +257,12 @@ export async function getEarliestCardImages(oracleIds: string[]): Promise<Map<st
     }
   }
 
-  const result = new Map<string, string>();
+  const result = new Map<string, { imageUrl: string; releasedAt: string | null }>();
   for (const r of rows) {
     // released_at昇順で取得しているので、oracleIdごとに最初に出てきた行が最古のプリント
-    if (!result.has(r.oracle_id) && r.image_uri_normal) result.set(r.oracle_id, r.image_uri_normal);
+    if (!result.has(r.oracle_id) && r.image_uri_normal) {
+      result.set(r.oracle_id, { imageUrl: r.image_uri_normal, releasedAt: r.released_at });
+    }
   }
   return result;
 }
