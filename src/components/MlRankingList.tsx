@@ -271,42 +271,43 @@ function MlRankingCard({
             （scripts/update-ml-prediction-outcomes.mjs）が未実行/価格履歴が無い分はnull
             になるため、その場合はバッジを出さず価格だけ表示する（ArtifactモックのC9案、
             2026-08-29採用）。 */}
-        {/* サイズは元の固定値（text-sm/text-[10px]）に戻した——container query版は
-            狭いカードで常に文字が小さくなり不評だった（ユーザー指摘、2026-08-30:
-            「文字のサイズ戻した？」「このサイズに戻したい」とスクリーンショット添付）。
-            ほとんどのカードはこのサイズで1行に収まる。長い数字（¥6桁等）で収まらない
-            稀なケースだけ、見切れではなく折り返しで受ける（flex-wrap）。 */}
-        <div className="flex flex-wrap items-baseline justify-end gap-x-1 gap-y-0.5">
-          <span className="font-numeric shrink-0 text-sm font-semibold">
-            ¥{row.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
-          </span>
-          {/* 色の強弱はMAX優先（モデルが予測しているのはMAX側、ml/features.pyの
-              log_return_7d_max/min）。ただし並び順は現在値→MAXに戻した——MAXを先に
-              出すと、後ろのラベル無し「-n%」が何に対する数字か分かりにくいという
-              指摘のため（2026-08-29）。現在値はラベル無しでも「価格の直後」という
-              位置で読み取れ、MAXは"MAX"という接頭辞自体が自明なので、この順なら
-              曖昧さが出ない。 */}
-          {/* MAXより2段階薄い色調で赤/青に。無彩色のグレーだとプラス/マイナスの方向が
-              伝わらないという指摘のため（2026-08-29）。さらに変化幅が大きいほど濃くなる
-              （ユーザー提案、同日） */}
-          {row.currentPctChange != null && (
-            <span
-              title="予測時点からの現時点での変化率"
-              className={`font-numeric shrink-0 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-bold ${pctBadgeClass(row.currentPctChange, CURRENT_BADGE_CLASS)}`}
-            >
-              {row.currentPctChange >= 0 ? "+" : ""}
-              {row.currentPctChange.toFixed(1)}%
+        {/* 価格は常にtext-sm固定（ユーザー指摘: このサイズが良い）。バッジ2つだけ
+            container query（clamp+cqw）の対象にし、範囲を9〜10pxとごく狭く取ることで
+            「普段は元のtext-[10px]と見分かないが、収まらない時だけギリギリまで
+            僅かに縮んで1行を保つ」を狙う（2026-08-30、ユーザー提案）。 */}
+        <div className="[container-type:inline-size]">
+          <div className="flex flex-nowrap items-baseline justify-end gap-x-1">
+            <span className="font-numeric shrink-0 text-sm font-semibold">
+              ¥{row.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
             </span>
-          )}
-          {row.extremePctChange != null && (
-            <span
-              title="予測時点から今日までの間で一番良かった結果（モデルが予測している指標）"
-              className={`font-numeric shrink-0 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-bold ${pctBadgeClass(row.extremePctChange, MAX_BADGE_CLASS)}`}
-            >
-              MAX{pctSign(row.extremePctChange, direction)}
-              {row.extremePctChange.toFixed(1)}%
-            </span>
-          )}
+            {/* 色の強弱はMAX優先（モデルが予測しているのはMAX側、ml/features.pyの
+                log_return_7d_max/min）。ただし並び順は現在値→MAXに戻した——MAXを先に
+                出すと、後ろのラベル無し「-n%」が何に対する数字か分かりにくいという
+                指摘のため（2026-08-29）。現在値はラベル無しでも「価格の直後」という
+                位置で読み取れ、MAXは"MAX"という接頭辞自体が自明なので、この順なら
+                曖昧さが出ない。 */}
+            {/* MAXより2段階薄い色調で赤/青に。無彩色のグレーだとプラス/マイナスの方向が
+                伝わらないという指摘のため（2026-08-29）。さらに変化幅が大きいほど濃くなる
+                （ユーザー提案、同日） */}
+            {row.currentPctChange != null && (
+              <span
+                title="予測時点からの現時点での変化率"
+                className={`font-numeric shrink-0 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[clamp(9px,5cqw,10px)] font-bold ${pctBadgeClass(row.currentPctChange, CURRENT_BADGE_CLASS)}`}
+              >
+                {row.currentPctChange >= 0 ? "+" : ""}
+                {row.currentPctChange.toFixed(1)}%
+              </span>
+            )}
+            {row.extremePctChange != null && (
+              <span
+                title="予測時点から今日までの間で一番良かった結果（モデルが予測している指標）"
+                className={`font-numeric shrink-0 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[clamp(9px,5cqw,10px)] font-bold ${pctBadgeClass(row.extremePctChange, MAX_BADGE_CLASS)}`}
+              >
+                MAX{pctSign(row.extremePctChange, direction)}
+                {row.extremePctChange.toFixed(1)}%
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </Link>
