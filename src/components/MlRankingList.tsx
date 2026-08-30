@@ -271,7 +271,10 @@ function MlRankingCard({
             （scripts/update-ml-prediction-outcomes.mjs）が未実行/価格履歴が無い分はnull
             になるため、その場合はバッジを出さず価格だけ表示する（ArtifactモックのC9案、
             2026-08-29採用）。 */}
-        <div className="flex items-baseline justify-end gap-1 overflow-hidden">
+        {/* 3つ（価格・現在値バッジ・MAXバッジ）が狭いカード幅に収まらないと
+            overflow-hiddenで価格の¥記号ごと見切れていた（ユーザー指摘、2026-08-30）。
+            折り返し可能にして、収まらない分はバッジが2行目に落ちるだけにする。 */}
+        <div className="flex flex-wrap items-baseline justify-end gap-x-1 gap-y-0.5">
           <span className="font-numeric shrink-0 text-sm font-semibold">
             ¥{row.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
           </span>
