@@ -17,7 +17,7 @@ export default function Footer() {
             ランキング
           </Link>
           <Link href="/banned-cards" className="hover:text-neutral-700">
-            歴代禁止カード
+            禁止カード
           </Link>
         </nav>
         <p>

@@ -1,26 +1,45 @@
 import Image from "next/image";
 import Link from "next/link";
 import { FORMATS, formatLabelJa, type Format } from "@/lib/formats";
-import { getBannedCardsByYear, type BannedCardWithCard } from "@/lib/dbBannedCards";
+import {
+  getBannedCardsByYear,
+  getCurrentlyBannedCards,
+  getReservedListCards,
+  type BannedCardWithCard,
+} from "@/lib/dbBannedCards";
 
-export const metadata = { title: "歴代禁止カード - MTG DataLab" };
+export const metadata = { title: "禁止カード - MTG DataLab" };
 
-// 禁止カード自体の追加頻度は低い（bannedCards.tsの手動更新のみ）ため、長めのキャッシュで十分
+// 禁止カード自体の追加頻度は低い（bannedCards.tsの手動更新・legalities/is_reservedも
+// 日次バッチ更新止まり）ため、長めのキャッシュで十分
 export const revalidate = 21600;
+
+const TABS = [
+  { key: "current", label: "禁止カード" },
+  { key: "history", label: "歴代禁止カード" },
+  { key: "reserved", label: "再録禁止カード" },
+] as const;
+type TabKey = (typeof TABS)[number]["key"];
+
+function isTab(v: string | undefined): v is TabKey {
+  return (TABS.map((t) => t.key) as string[]).includes(v ?? "");
+}
 
 function isFormat(v: string | undefined): v is Format {
   return (FORMATS as readonly string[]).includes(v ?? "");
 }
 
 function buildHref(
+  tab: TabKey,
   format: Format,
   sortDir: "asc" | "desc",
   fillGaps: boolean,
   view: "list" | "compact",
-  overrides: Partial<{ format: Format; sortDir: "asc" | "desc"; fillGaps: boolean; view: "list" | "compact" }>,
+  overrides: Partial<{ tab: TabKey; format: Format; sortDir: "asc" | "desc"; fillGaps: boolean; view: "list" | "compact" }>,
 ): string {
-  const next = { format, sortDir, fillGaps, view, ...overrides };
+  const next = { tab, format, sortDir, fillGaps, view, ...overrides };
   const params = new URLSearchParams();
+  if (next.tab !== "current") params.set("tab", next.tab);
   if (next.format !== "Standard") params.set("format", next.format);
   if (next.sortDir !== "desc") params.set("sort", next.sortDir);
   if (next.fillGaps) params.set("fillGaps", "1");
@@ -145,13 +164,150 @@ function planCompactColumns(
 export default async function BannedCardsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ format?: string; sort?: string; fillGaps?: string; view?: string }>;
+  searchParams: Promise<{ tab?: string; format?: string; sort?: string; fillGaps?: string; view?: string }>;
 }) {
   const sp = await searchParams;
+  const tab: TabKey = isTab(sp.tab) ? sp.tab : "current";
   const format: Format = isFormat(sp.format) ? sp.format : "Standard";
   const sortDir: "asc" | "desc" = sp.sort === "asc" ? "asc" : "desc";
   const fillGaps = sp.fillGaps === "1";
   const view: "list" | "compact" = sp.view === "compact" ? "compact" : "list";
+
+  return (
+    <div className="flex flex-col gap-4">
+      <h1 className="text-xl font-semibold">禁止カード</h1>
+
+      <div className="flex flex-wrap gap-1.5">
+        {TABS.map((t) => (
+          <Link
+            key={t.key}
+            href={buildHref(tab, format, sortDir, fillGaps, view, { tab: t.key })}
+            className={`rounded-md border px-3 py-1.5 text-sm ${
+              t.key === tab
+                ? "border-neutral-500 bg-neutral-100 text-neutral-900"
+                : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
+            }`}
+          >
+            {t.label}
+          </Link>
+        ))}
+      </div>
+
+      {tab === "current" && <CurrentBannedTab format={format} />}
+      {tab === "reserved" && <ReservedListTab />}
+      {tab === "history" && (
+        <HistoryTab tab={tab} format={format} sortDir={sortDir} fillGaps={fillGaps} view={view} />
+      )}
+    </div>
+  );
+}
+
+async function CurrentBannedTab({ format }: { format: Format }) {
+  const cards = await getCurrentlyBannedCards(format);
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap gap-1.5">
+        {FORMATS.map((f) => (
+          <Link
+            key={f}
+            href={buildHref("current", f, "desc", false, "list", {})}
+            className={`rounded-md border px-3 py-1 text-sm ${
+              f === format
+                ? "border-neutral-500 bg-neutral-100 text-neutral-900"
+                : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
+            }`}
+          >
+            {formatLabelJa(f)}
+          </Link>
+        ))}
+      </div>
+      {cards.length === 0 ? (
+        <p className="text-sm text-neutral-500">{formatLabelJa(format)}に現在禁止/制限中のカードはありません。</p>
+      ) : (
+        <div className="grid grid-cols-3 gap-3 sm:grid-cols-5 lg:grid-cols-8">
+          {cards.map((card) => (
+            <Link
+              key={card.oracleId}
+              href={`/cards/${card.oracleId}`}
+              className="flex flex-col items-center gap-1 rounded-lg p-1.5 hover:bg-neutral-50"
+            >
+              {card.imageUrl ? (
+                <Image
+                  src={card.imageUrl}
+                  alt={card.nameJa ?? card.name}
+                  width={223}
+                  height={311}
+                  className="w-full rounded-md"
+                />
+              ) : (
+                <div className="flex aspect-[223/311] w-full items-center justify-center rounded-md bg-neutral-100 text-center text-xs text-neutral-400">
+                  {card.nameJa ?? card.name}
+                </div>
+              )}
+              <p className="truncate text-center text-xs font-medium">{card.nameJa ?? card.name}</p>
+              {card.status === "restricted" && (
+                <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">制限</span>
+              )}
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+async function ReservedListTab() {
+  const cards = await getReservedListCards();
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-sm text-neutral-500">
+        {cards.length.toLocaleString()}枚（価格が高い順）。Wizards of the Coastが将来的にも再録しないと
+        約束しているカード一覧。
+      </p>
+      <div className="grid grid-cols-3 gap-3 sm:grid-cols-5 lg:grid-cols-8">
+        {cards.map((card) => (
+          <Link
+            key={card.oracleId}
+            href={`/cards/${card.oracleId}`}
+            className="flex flex-col items-center gap-1 rounded-lg p-1.5 hover:bg-neutral-50"
+          >
+            {card.imageUrl ? (
+              <Image
+                src={card.imageUrl}
+                alt={card.name}
+                width={223}
+                height={311}
+                className="w-full rounded-md"
+              />
+            ) : (
+              <div className="flex aspect-[223/311] w-full items-center justify-center rounded-md bg-neutral-100 text-center text-xs text-neutral-400">
+                {card.nameJa ?? card.name}
+              </div>
+            )}
+            <p className="truncate text-center text-xs font-medium">{card.nameJa ?? card.name}</p>
+            {card.priceJpy != null && (
+              <p className="text-xs text-neutral-500">¥{card.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}</p>
+            )}
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+async function HistoryTab({
+  tab,
+  format,
+  sortDir,
+  fillGaps,
+  view,
+}: {
+  tab: TabKey;
+  format: Format;
+  sortDir: "asc" | "desc";
+  fillGaps: boolean;
+  view: "list" | "compact";
+}) {
   const yearGroups = await getBannedCardsByYear(format, { sortDir, fillGaps });
   const hasRestricted = yearGroups.some((g) => g.cards.some((c) => c.status === "restricted"));
 
@@ -160,14 +316,12 @@ export default async function BannedCardsPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-semibold">歴代禁止カード</h1>
-
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap gap-1.5">
           {FORMATS.map((f) => (
             <Link
               key={f}
-              href={buildHref(format, sortDir, fillGaps, view, { format: f })}
+              href={buildHref(tab, format, sortDir, fillGaps, view, { format: f })}
               className={`rounded-md border px-3 py-1 text-sm ${
                 f === format
                   ? "border-neutral-500 bg-neutral-100 text-neutral-900"
@@ -180,7 +334,7 @@ export default async function BannedCardsPage({
         </div>
         <div className="flex flex-wrap gap-1.5">
           <Link
-            href={buildHref(format, sortDir, fillGaps, view, { view: view === "compact" ? "list" : "compact" })}
+            href={buildHref(tab, format, sortDir, fillGaps, view, { view: view === "compact" ? "list" : "compact" })}
             className={`rounded-md border px-3 py-1 text-sm ${
               view === "compact"
                 ? "border-neutral-500 bg-neutral-100 text-neutral-900"
@@ -190,13 +344,13 @@ export default async function BannedCardsPage({
             {view === "compact" ? "リスト表示" : "1画面で見る"}
           </Link>
           <Link
-            href={buildHref(format, sortDir, fillGaps, view, { sortDir: sortDir === "desc" ? "asc" : "desc" })}
+            href={buildHref(tab, format, sortDir, fillGaps, view, { sortDir: sortDir === "desc" ? "asc" : "desc" })}
             className="rounded-md border border-neutral-300 px-3 py-1 text-sm text-neutral-500 hover:border-neutral-500"
           >
             {sortDir === "desc" ? "古い順に並び替え" : "新しい順に並び替え"}
           </Link>
           <Link
-            href={buildHref(format, sortDir, fillGaps, view, { fillGaps: !fillGaps })}
+            href={buildHref(tab, format, sortDir, fillGaps, view, { fillGaps: !fillGaps })}
             className={`rounded-md border px-3 py-1 text-sm ${
               fillGaps
                 ? "border-neutral-500 bg-neutral-100 text-neutral-900"
