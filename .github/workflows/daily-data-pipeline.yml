@@ -5,7 +5,10 @@ name: Daily data pipeline
 # Cloudflare Workers（本番ホスティング）ではなくGitHub Actionsのランナーで実行する。
 on:
   schedule:
-    - cron: "0 3 * * *" # 12:00 JST
+    # Scryfallバルクデータの日次更新が21:00 UTC(06:00 JST)頃に完了するため（2026-08-29実測）、
+    # その直後・十分な余裕を見て07:00 JSTに設定（ユーザー要望、以前は12:00 JSTで鮮度自体は
+    # 問題無かったが、もっと早い時間に結果を見られるようにしたいとのこと）。
+    - cron: "0 22 * * *" # 07:00 JST（前日22:00 UTC）
   workflow_dispatch:
 
 jobs:

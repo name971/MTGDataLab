@@ -1,13 +1,13 @@
 name: Daily pipeline watchdog
 
-# daily-data-pipeline.ymlのcron（12:00 JST）が、GitHub Actions側のbest-effort scheduling
-# （長時間ジョブほど起きやすいと見られる、確証は無い）により2026-08-25/27/28と度々未発火に
-# なっていた。気づかず放置すると採用率・価格データが丸ごと1日欠測する
-# （docs/incident-log.md参照）。本来の発火時刻から3時間の余裕を見て、その日まだ1回も
-# 走っていなければworkflow_dispatchで代わりに起動する。
+# daily-data-pipeline.ymlのcron（2026-08-29、07:00 JSTに変更）が、GitHub Actions側の
+# best-effort scheduling（長時間ジョブほど起きやすいと見られる、確証は無い）により
+# 2026-08-25/27/28と度々未発火になっていた。気づかず放置すると採用率・価格データが
+# 丸ごと1日欠測する（docs/incident-log.md参照）。本来の発火時刻から3時間の余裕を見て、
+# その日まだ1回も走っていなければworkflow_dispatchで代わりに起動する。
 on:
   schedule:
-    - cron: "0 6 * * *" # 15:00 JST
+    - cron: "0 1 * * *" # 10:00 JST
   workflow_dispatch:
 
 permissions:
