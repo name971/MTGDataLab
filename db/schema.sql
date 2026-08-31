@@ -164,6 +164,12 @@ CREATE TABLE card_prints (
   updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- compute-cheapest-price-snapshots.mjs等が`not_tournament_legal=eq.true`で頻繁に絞り込む。
+-- 全体の一部（数%程度）しか該当しないため部分インデックスにする（2026-08-31、
+-- card_prints全件再構築（is_normal_frame追加）直後にこのクエリがstatement timeoutで
+-- 日次パイプラインを落とした。詳細はdocs/incident-log.md参照）。
+CREATE INDEX IF NOT EXISTS idx_card_prints_not_tournament_legal ON card_prints (scryfall_id) WHERE not_tournament_legal = true;
+
 CREATE INDEX idx_card_prints_oracle_id ON card_prints (oracle_id);
 
 -- 【廃止予定・新規書き込み停止済み】card_prints（全プリント、10万件超）の日次価格履歴。

@@ -795,3 +795,29 @@ border_colorといった「特殊版かどうか」を示すフラグを一切�
 `getEarliestCardImages`はこの列を見るだけになり、推測ロジックを完全に排除した。
 本番の`card_prints`全件（103,320件）を再構築し、全禁止カード（275件）を対象に
 検証スクリプトで反例が0件になったことを確認済み。
+
+---
+
+## 2026-08-31 上記card_prints全件再構築の直後、日次パイプラインが
+statement timeoutで失敗した
+
+**症状**: ユーザー指摘「パイプライン失敗している」。`daily-data-pipeline.yml`の
+「Compute cheapest-print-price snapshots」ステップが
+`GET card_prints?not_tournament_legal=eq.true&select=scryfall_id`で
+`57014 canceling statement due to statement timeout`により失敗し、以降の全ステップが
+skipされた（10:22 JST）。
+
+**原因**: 直前（上記のis_normal_frame追加）に`card_prints`全件（103,320行）を
+upsertし直しており、そのテーブル膨張・自動VACUUM未完了の影響でこの単純な
+bool列フィルタが一時的に重くなっていたと見られる。実際、同じクエリを後で
+手動実行すると3.5秒で正常終了しており（4,189件該当）、恒久的なクエリ性能問題
+ではなくタイミングの問題だった。ただし`not_tournament_legal`列には元々
+インデックスが無く、全件走査に頼っていたため、通常時でも余裕が無かった。
+
+**教訓**: 大量行のupsert（特に既存行の全件洗い替え）を本番DBに対して行う直後は、
+他のバッチジョブ・クエリが一時的に遅くなりうる。無インデックスのbool列フィルタは
+平常時は許容範囲でも、こうした負荷スパイクと重なると簡単にタイムアウトする。
+
+**対応（機械的対策）**: `not_tournament_legal = true`の行だけを対象にした部分
+インデックス（該当は全体の数%程度）を追加し、平常時・負荷スパイク時の両方で
+このクエリのコストを下げた。日次パイプラインは手動で再起動して当日分を完走させた。
