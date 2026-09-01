@@ -19,6 +19,13 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 // 90日は2026-08-20にDB容量対策で廃止（docs/incident-log.md参照）。deck_cards等の生データも
 // 30日分だけ保持すればよくなった。
 const PERIOD_DAYS_OPTIONS = [7, 30];
+// TopDeck.gg等の取り込み元は大会当日にすぐ確定せず、数日かけて後追いでデッキが増え続ける
+// （実測: ある日のデッキ数が20→974→1493→1568件と4日がかりで収束、docs/incident-log.md参照）。
+// 直近LAG_DAYS日をそのまま集計に含めると、まだ確定していない薄いサンプルの採用率が
+// 混ざり、翌日以降のバックフィルで大半のカードが下方修正される（「上昇0件」という
+// 統計的にありえない結果が実際に発生した）。集計期間の終端を今日からLAG_DAYS日前まで
+// 遡らせることで、ほぼ確定したデータだけを使う。
+const LAG_DAYS = 3;
 const ARCHETYPE_DECK_WINDOW = 20; // アーキタイプごとに直近何件を集計対象にするか
 
 const PAGE_SIZE = 1000; // PostgRESTのデフォルト最大行数（db-max-rows）に合わせてページングする
@@ -88,8 +95,14 @@ async function main() {
   // （例: Commanderの大量バックフィルで一時的にdeck_cardsが数十万行に達した際）Supabase側の
   // クエリタイムアウトを起こす。必要な範囲だけサーバー側で絞り込んで取得する。
   const oldestNeededDate = new Date(today);
-  oldestNeededDate.setDate(oldestNeededDate.getDate() - (Math.max(...PERIOD_DAYS_OPTIONS) - 1));
+  oldestNeededDate.setDate(oldestNeededDate.getDate() - (Math.max(...PERIOD_DAYS_OPTIONS) - 1) - LAG_DAYS);
   const oldestNeededDateStr = isoDate(oldestNeededDate);
+
+  // 集計期間の終端（今日からLAG_DAYS日前）。これより新しい日はまだ確定していないとみなし
+  // 一切集計に使わない。
+  const windowEndDate = new Date(today);
+  windowEndDate.setDate(windowEndDate.getDate() - LAG_DAYS);
+  const windowEndStr = isoDate(windowEndDate);
 
   // decks + tournaments(format, event_date)
   // 「直近N日」はトーナメント開催日（event_date）基準。deck自体のimport日時（created_at）
@@ -135,10 +148,13 @@ async function main() {
   // +67.3ptから-1.8pt相当まで是正できることを検証済み）。
   const usageRows = [];
   for (const periodDays of PERIOD_DAYS_OPTIONS) {
-    const cutoff = new Date(today);
+    const cutoff = new Date(windowEndDate);
     cutoff.setDate(cutoff.getDate() - (periodDays - 1));
     const cutoffStr = isoDate(cutoff);
-    const decksInPeriod = decks.filter((d) => (d.tournaments?.event_date ?? "") >= cutoffStr);
+    const decksInPeriod = decks.filter((d) => {
+      const eventDate = d.tournaments?.event_date ?? "";
+      return eventDate >= cutoffStr && eventDate <= windowEndStr;
+    });
 
     // 日付ごとにグルーピングしてから、日×フォーマットの合計・日×フォーマット×オラクルの
     // 件数を別々に集計する（後段で「その日format自体に活動があったか」を判定するため）。
