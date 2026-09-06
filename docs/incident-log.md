@@ -13,6 +13,47 @@
 
 ---
 
+## 2026-09-06 デッキランキング（アーキタイプランキング）のCommanderで「直近7日」に
+切り替えても表示が全く変わらなかった
+
+**症状**: ユーザー指摘「デッキ単位のランキング（アーキタイプランキング）のページで直近7日押しても
+全然入れ替わらない」。実際には`/decks?format=commander&period=7`は本物のDBデータ（`/decks/archetype/[id]`
+へのリンク）ではなく、`getSampleArchetypes()`のハードコードされたサンプルデータ（Atraxa等、
+`/decks/cmd-atraxa`のような固定slug）を表示し続けていた。期間を7日にしても30日にしても常に
+同じサンプルが出るため「入れ替わらない」ように見えていた。
+
+**原因**: `dbArchetypeStats.ts`の`getArchetypesFromDb`は、Commander・期間30日の組み合わせだけ
+日次バッチ（`compute-deck-stats.mjs`）の事前計算済み価格（`archetype_price_stats`）を使い、
+7日/90日指定時は`deck_cards`をその場でページング集計する設計だった。Commanderは統率者数
+（＝アーキタイプ数）が700件超に及ぶため、この場合`deck_cards`だけで数万行・約46往復のページング
+リクエストが必要になり、価格・アート取得等と合わせるとCloudflare Workers**無料プランの外部
+subrequest上限（50件/リクエスト）**を超えて一部のfetchが失敗していた。Supabase-jsはHTTPレベルの
+失敗を例外ではなく`{data:null,error}`で返すため、失敗したチャンクは静かに無視され、最終的に
+全アーキタイプの価格が1件も算出できず`dbRows.length===0`となり、`getSampleArchetypes()`への
+フォールバックが常に発動していた。ローカルNode.js（Workersのsubrequest制限が無い環境）では
+同じロジックが正しく185件を返すことを確認し、本番Workers環境固有の問題と特定した。
+
+**教訓**: Cloudflare Workersでは、CPU時間・DB容量だけでなく**1リクエストあたりの外部fetch
+（subrequest）回数**にも無料プランの上限（50件）があり、ページングを伴うAPI呼び出しを
+Promise.allで並列展開する設計は、データ件数の多いケース（今回はCommanderの700超アーキタイプ）
+で静かにこの上限を超えうる。ローカル開発では制限が無いため気づけず、本番でのみ発現する。
+また、Supabase-jsのエラーは例外を投げないため、`{ data }`だけを見て`error`を確認しない箇所
+（`fetchArchetypeDeckCards`等）は失敗を検知できず、「部分的に欠けたデータ」や「全滅」が
+「正常だが0件」に見えてしまう。
+
+**対応**: `archetype_price_stats`（日次バッチの事前計算値）の利用条件を「Commander・期間30日」
+から「Commander全期間」に拡大し、期間を問わずCommanderは`deck_cards`のその場集計自体を
+スキップするようにした（`src/lib/dbArchetypeStats.ts`）。バッチの窓は元々「直近作成20件」という
+日付非依存の近似値であり、30日指定時の使い方もその近似を許容していた設計だったため、7日/90日
+指定時にも同じ近似値を使うことにした。ローカルで`getArchetypesFromDb("Commander", 7)`を
+直接実行し、673件（precomputed対象）が正しい採用率順で返ることを確認済み。
+**機械的な防止策の検討**: Supabaseへの読み書きを行う関数で`error`を握りつぶさず、
+チャンク取得が1件でも失敗したら例外を投げる（または警告ログを出す）ガードを入れるのが理想だが、
+今回は該当ファイル全体の呼び出し箇所が多く範囲が広いため見送り、次にこのファイルを触る機会に
+`fetchArchetypeDeckCards`等の`error`ハンドリングを追加することとする（未実装）。
+
+---
+
 ## 2026-08-30 daily-pipeline-watchdog.ymlがgh workflow run実行時にリポジトリを
 特定できず失敗していた
 

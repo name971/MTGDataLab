@@ -92,21 +92,24 @@ export async function getArchetypesFromDb(
     }
   }
 
-  // Commander・期間30日（デフォルト表示）は、日次バッチ（scripts/compute-deck-stats.mjs）が
-  // 既に「アーキタイプごと直近20件の実勢価格中央値」をarchetype_price_statsに事前計算済み。
-  // Commanderは統率者数（＝アーキタイプ数）が数百に及び、ライブ集計だとdeck_cardsだけで
-  // 20万行超を毎回転送する羽目になり体感速度の主因になっていたため、この組み合わせだけは
-  // 事前計算値を使い、deck_cards取得・その場集計を丸ごとスキップする。
-  // バッチの窓は日付フィルタ無しの「直近作成20件」なので7日/90日指定時とは厳密には
-  // 一致しないため、その場合と事前計算がまだ無いアーキタイプ（新規等）は従来通りその場で計算する。
+  // Commanderは全期間で、日次バッチ（scripts/compute-deck-stats.mjs）が既に
+  // 「アーキタイプごと直近20件の実勢価格中央値」をarchetype_price_statsに事前計算済みのものを使う。
+  // バッチの窓は日付フィルタ無しの「直近作成20件」なので7日/90日指定時とは厳密には一致しないが、
+  // 元々「直近作成20件」という近似値である点は30日指定時と同じなので、期間で使い分ける理由が無い。
+  // 以前は30日指定時だけこの事前計算値を使い、7日/90日はdeck_cardsをその場でページング集計していたが、
+  // Commanderは統率者数（＝アーキタイプ数）が数百に及ぶため、その場集計だけでdeck_cards取得に
+  // 数十往復のリクエストが発生し、Cloudflare Workers無料プランの外部subrequest上限（50件/リクエスト）
+  // を超えて一部のリクエストが失敗し、価格が1件も算出できず「デッキランキングが常にサンプルデータの
+  // ままで期間を切り替えても変わらない」という不具合になっていた（2026-09-06、ユーザー報告で発覚。
+  // docs/incident-log.md参照）。事前計算値を全期間で使うことでdeck_cardsのその場集計自体を
+  // 丸ごとスキップし、この爆発を無くす。
   let medianPriceByArchetype: Map<number, { medianPriceJpy: number; sampleSize: number }>;
   let artUrlsByArchetype: Map<number, string[]>;
   let colorsByArchetype: Map<number, string[]>;
   let arenaMedianByArchetype: Map<number, number>;
 
   const archetypeIds = archetypes.map((a) => a.id);
-  const precomputedPrice =
-    format === "Commander" && periodDays === 30 ? await getPrecomputedMedianPriceByArchetype(archetypeIds) : null;
+  const precomputedPrice = format === "Commander" ? await getPrecomputedMedianPriceByArchetype(archetypeIds) : null;
 
   if (precomputedPrice && precomputedPrice.size > 0) {
     medianPriceByArchetype = precomputedPrice;
