@@ -60,3 +60,4 @@ scratch/
 
 # デバッグ時の一時ログ
 ssh_debug.log
+.claude/.hook-state/
