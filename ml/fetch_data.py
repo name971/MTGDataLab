@@ -30,6 +30,7 @@ import gzip
 import io
 import json
 import os
+import time
 import zipfile
 from pathlib import Path
 
@@ -68,15 +69,21 @@ def supabase_get_all(path: str) -> list[dict]:
     rows: list[dict] = []
     offset = 0
     while True:
-        res = requests.get(
-            f"{SUPABASE_URL}/rest/v1/{path}",
-            headers={
-                "apikey": SUPABASE_ANON_KEY,
-                "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
-                "Range": f"{offset}-{offset + PAGE_SIZE - 1}",
-            },
-            timeout=60,
-        )
+        # 深いOFFSETページングでSupabaseがまれに500（statement timeout）を返すため、
+        # 数回リトライする（2026-09-11、predict_and_publish手動実行時に遭遇）。
+        for attempt in range(5):
+            res = requests.get(
+                f"{SUPABASE_URL}/rest/v1/{path}",
+                headers={
+                    "apikey": SUPABASE_ANON_KEY,
+                    "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
+                    "Range": f"{offset}-{offset + PAGE_SIZE - 1}",
+                },
+                timeout=60,
+            )
+            if res.status_code < 500:
+                break
+            time.sleep(2 * (attempt + 1))
         res.raise_for_status()
         page = res.json()
         rows.extend(page)
