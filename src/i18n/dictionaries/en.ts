@@ -53,6 +53,14 @@ const en: typeof ja = {
     mlRankingInfo:
       "Predicted with a machine learning model on the probability of a significant price move (up or down) within 7 days, ranked by confidence (tournament-played cards only). Historical Top 10 accuracy: ~73% for surges, ~95% for crashes.",
   },
+  cardRankingPage: {
+    metaTitle: (formatName: string) => `${formatName} Card Rankings - MTG DataLab`,
+    metaTitleFallback: "MTG DataLab",
+    heading: "Card Rankings",
+    periodLabel: "Period:",
+    recentDays: (n: number) => `Last ${n}d`,
+    noData: "No data for this period/format yet. Try a different period tab.",
+  },
   deckRankingPage: {
     metaTitle: "Deck Rankings - MTG DataLab",
     heading: "Deck Rankings (Archetypes)",

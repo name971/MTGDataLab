@@ -1,10 +1,11 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { FORMATS, formatSlug, formatLabelJa, type Format } from "@/lib/formats";
+import { FORMATS, formatSlug, formatLabel, type Format } from "@/lib/formats";
 import { getFormatSettings } from "@/lib/formatSettings";
 import { getCardRankingFromDb } from "@/lib/dbCardRanking";
 import RankingTable from "@/components/RankingTable";
 import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
+import { getDictionary } from "@/i18n/getDictionary";
 
 // 集計バッチは1日1回しか回らないため、長めにキャッシュしてegressを抑える
 export const revalidate = 21600;
@@ -24,11 +25,13 @@ function resolvePeriod(raw: string | undefined): PeriodDays {
 export async function generateMetadata({
   params,
 }: {
-  params: Promise<{ format: string }>;
+  params: Promise<{ locale: string; format: string }>;
 }) {
-  const { format: slug } = await params;
+  const { locale: rawLocale, format: slug } = await params;
+  const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
+  const t = getDictionary(locale).cardRankingPage;
   const format = resolveFormat(slug);
-  return { title: format ? `${formatLabelJa(format)} カードランキング - MTG DataLab` : "MTG DataLab" };
+  return { title: format ? t.metaTitle(formatLabel(format, locale)) : t.metaTitleFallback };
 }
 
 export default async function FormatRankingPage({
@@ -40,6 +43,7 @@ export default async function FormatRankingPage({
 }) {
   const { locale: rawLocale, format: slug } = await params;
   const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
+  const t = getDictionary(locale).cardRankingPage;
   const format = resolveFormat(slug);
   if (!format) notFound();
 
@@ -51,7 +55,7 @@ export default async function FormatRankingPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-semibold">カードランキング</h1>
+      <h1 className="text-xl font-semibold">{t.heading}</h1>
 
       <div className="flex flex-wrap gap-2">
         {FORMATS.map((f) => (
@@ -64,13 +68,13 @@ export default async function FormatRankingPage({
                 : "border-neutral-300 text-neutral-600 hover:border-neutral-500"
             }`}
           >
-            {formatLabelJa(f)}
+            {formatLabel(f, locale)}
           </Link>
         ))}
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-sm text-neutral-500">集計期間:</span>
+        <span className="text-sm text-neutral-500">{t.periodLabel}</span>
         {PERIOD_OPTIONS.map((p) => (
           <Link
             key={p}
@@ -81,7 +85,7 @@ export default async function FormatRankingPage({
                 : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
             }`}
           >
-            直近{p}日
+            {t.recentDays(p)}
           </Link>
         ))}
       </div>
@@ -91,7 +95,7 @@ export default async function FormatRankingPage({
         <RankingTable rows={rows} />
       ) : (
         <p className="py-6 text-center text-sm text-neutral-500">
-          この期間・フォーマットではまだ実データがありません。期間タブを変えてみてください。
+          {t.noData}
         </p>
       )}
     </div>
