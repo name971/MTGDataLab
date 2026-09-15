@@ -9,6 +9,7 @@ import {
   type BannedCardWithCard,
   type ReservedListCard,
 } from "@/lib/dbBannedCards";
+import { getIconUrlBySetCodes } from "@/lib/dbCardPrints";
 
 // 色フィルタの選択肢。"C"は無色（mana_costにWUBRGどれも含まれないカード）を表す特別扱いで、
 // COLOR_ORDER（W/U/B/R/G）そのものには含まれない。
@@ -340,12 +341,13 @@ async function ReservedListTab({ colors }: { colors: ColorFilter[] }) {
   };
 
   // 発売日昇順（getReservedListCardsの並び順）を保ったままセットごとにグループ化する
-  const groups: { setName: string; cards: ReservedListCard[] }[] = [];
+  const groups: { setCode: string; setName: string; cards: ReservedListCard[] }[] = [];
   for (const card of cards) {
     const last = groups[groups.length - 1];
-    if (last && last.setName === card.setName) last.cards.push(card);
-    else groups.push({ setName: card.setName, cards: [card] });
+    if (last && last.setCode === card.setCode) last.cards.push(card);
+    else groups.push({ setCode: card.setCode, setName: card.setName, cards: [card] });
   }
+  const iconUrlBySetCode = await getIconUrlBySetCodes(groups.map((g) => g.setCode));
 
   return (
     <div className="flex flex-col gap-3">
@@ -359,10 +361,17 @@ async function ReservedListTab({ colors }: { colors: ColorFilter[] }) {
       )}
       <div className="flex flex-col gap-5">
         {groups.map((group) => (
-          <div key={group.setName} className="flex flex-col gap-2">
-            <h2 className="text-sm font-semibold text-neutral-700">
+          <div key={group.setCode} className="flex flex-col gap-2">
+            <h2 className="flex items-center gap-1.5 text-sm font-semibold text-neutral-700">
+              <Image
+                src={iconUrlBySetCode[group.setCode] ?? `https://svgs.scryfall.io/sets/${group.setCode}.svg`}
+                alt=""
+                width={16}
+                height={16}
+                className="h-4 w-4 shrink-0 opacity-80"
+              />
               {group.setName}
-              <span className="ml-1.5 font-normal text-neutral-400">({group.cards.length})</span>
+              <span className="font-normal text-neutral-400">({group.cards.length})</span>
             </h2>
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-5 lg:grid-cols-8">
               {group.cards.map((card) => (
