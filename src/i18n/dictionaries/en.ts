@@ -53,6 +53,30 @@ const en: typeof ja = {
     mlRankingInfo:
       "Predicted with a machine learning model on the probability of a significant price move (up or down) within 7 days, ranked by confidence (tournament-played cards only). Historical Top 10 accuracy: ~73% for surges, ~95% for crashes.",
   },
+  bannedCards: {
+    metaTitle: "Banned Cards - MTG DataLab",
+    heading: "Banned Cards",
+    tabCurrent: "Currently Banned",
+    tabHistory: "Ban History",
+    tabReserved: "Reserved List",
+    colorless: "Colorless",
+    clear: "Clear",
+    restricted: "Restricted",
+    banned: "Banned",
+    noColorMatch: "No cards match the selected colors.",
+    noCurrentBanned: (format: string) => `No cards currently banned/restricted in ${format}.`,
+    reservedListNote: (count: string) =>
+      `${count} cards (by set release date). Cards Wizards of the Coast has promised never to reprint.`,
+    noHistoryData: (format: string) => `Ban history data for ${format} is not available yet.`,
+    listView: "List view",
+    compactView: "Fit to screen",
+    sortOldest: "Sort oldest first",
+    sortNewest: "Sort newest first",
+    showEmptyYears: "Show years with no bans",
+    restrictedLegend: "Restricted (max 1). Otherwise banned (0 copies).",
+    cardTitle: (name: string, year: number, month: number, isRestricted: boolean) =>
+      `${name} (${isRestricted ? "restricted" : "banned"} ${year}-${month})`,
+  },
   trendingCard: {
     priceCategory: "Price Surge",
     usageCategory: "Play Rate Surge",

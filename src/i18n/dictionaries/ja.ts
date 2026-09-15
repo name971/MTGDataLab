@@ -52,6 +52,30 @@ const ja = {
     mlRankingInfo:
       "7日以内に一定以上値上がり・値下がりする確率を機械学習モデルで予測し、確率が高い順に並べています（トーナメントで使用実績のあるカードが対象）。過去のTop10的中率: 高騰予想は約73%、暴落予想は約95%。",
   },
+  bannedCards: {
+    metaTitle: "禁止カード - MTG DataLab",
+    heading: "禁止カード",
+    tabCurrent: "禁止カード",
+    tabHistory: "歴代禁止カード",
+    tabReserved: "再録禁止カード",
+    colorless: "無色",
+    clear: "クリア",
+    restricted: "制限",
+    banned: "禁止",
+    noColorMatch: "選択した色に一致するカードはありません。",
+    noCurrentBanned: (format: string) => `${format}に現在禁止/制限中のカードはありません。`,
+    reservedListNote: (count: string) =>
+      `${count}枚（セットの発売日順）。Wizards of the Coastが将来的にも再録しないと約束しているカード一覧。`,
+    noHistoryData: (format: string) => `${format}の禁止カードデータは準備中です。`,
+    listView: "リスト表示",
+    compactView: "1画面で見る",
+    sortOldest: "古い順に並び替え",
+    sortNewest: "新しい順に並び替え",
+    showEmptyYears: "禁止が無かった年も表示",
+    restrictedLegend: "制限（1枚まで）。それ以外は禁止（0枚）。",
+    cardTitle: (name: string, year: number, month: number, isRestricted: boolean) =>
+      `${name} (${year}年${month}月${isRestricted ? "制限" : "禁止"})`,
+  },
   trendingCard: {
     priceCategory: "価格上昇",
     usageCategory: "採用率上昇",

@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { FORMATS, formatLabelJa, type Format } from "@/lib/formats";
+import { FORMATS, formatLabel, type Format } from "@/lib/formats";
 import { COLOR_ORDER } from "@/lib/manaColors";
 import {
   getBannedCardsByYear,
@@ -11,6 +11,7 @@ import {
 } from "@/lib/dbBannedCards";
 import { getIconUrlBySetCodes } from "@/lib/dbCardPrints";
 import { isLocale, DEFAULT_LOCALE, type Locale } from "@/i18n/config";
+import { getDictionary } from "@/i18n/getDictionary";
 
 // 色フィルタの選択肢。"C"は無色（mana_costにWUBRGどれも含まれないカード）を表す特別扱いで、
 // COLOR_ORDER（W/U/B/R/G）そのものには含まれない。
@@ -33,7 +34,16 @@ function matchesColorFilter(cardColors: string[], selected: ColorFilter[]): bool
   return cardColors.some((c) => selected.includes(c as ColorFilter));
 }
 
-function ColorFilterRow({ selected, buildColorHref }: { selected: ColorFilter[]; buildColorHref: (colors: ColorFilter[]) => string }) {
+function ColorFilterRow({
+  selected,
+  buildColorHref,
+  locale,
+}: {
+  selected: ColorFilter[];
+  buildColorHref: (colors: ColorFilter[]) => string;
+  locale: Locale;
+}) {
+  const t = getDictionary(locale).bannedCards;
   const toggle = (c: ColorFilter) => (selected.includes(c) ? selected.filter((x) => x !== c) : [...selected, c]);
   return (
     <div className="flex flex-wrap items-center justify-end gap-1.5">
@@ -56,32 +66,32 @@ function ColorFilterRow({ selected, buildColorHref }: { selected: ColorFilter[];
             : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
         }`}
       >
-        無色
+        {t.colorless}
       </Link>
       {selected.length > 0 && (
         <Link href={buildColorHref([])} className="text-xs text-neutral-400 underline hover:text-neutral-600">
-          クリア
+          {t.clear}
         </Link>
       )}
     </div>
   );
 }
 
-export const metadata = { title: "禁止カード - MTG DataLab" };
+export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }) {
+  const { locale: rawLocale } = await params;
+  const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
+  return { title: getDictionary(locale).bannedCards.metaTitle };
+}
 
 // 禁止カード自体の追加頻度は低い（bannedCards.tsの手動更新・legalities/is_reservedも
 // 日次バッチ更新止まり）ため、長めのキャッシュで十分
 export const revalidate = 21600;
 
-const TABS = [
-  { key: "current", label: "禁止カード" },
-  { key: "history", label: "歴代禁止カード" },
-  { key: "reserved", label: "再録禁止カード" },
-] as const;
-type TabKey = (typeof TABS)[number]["key"];
+const TAB_KEYS = ["current", "history", "reserved"] as const;
+type TabKey = (typeof TAB_KEYS)[number];
 
 function isTab(v: string | undefined): v is TabKey {
-  return (TABS.map((t) => t.key) as string[]).includes(v ?? "");
+  return (TAB_KEYS as readonly string[]).includes(v ?? "");
 }
 
 function isFormat(v: string | undefined): v is Format {
@@ -108,9 +118,11 @@ function buildHref(
   return qs ? `/${locale}/banned-cards?${qs}` : `/${locale}/banned-cards`;
 }
 
-function cardTitle(card: BannedCardWithCard): string {
-  const label = card.status === "restricted" ? "制限" : "禁止";
-  return `${card.nameJa ?? card.name}${card.month ? ` (${card.year}年${card.month}月${label})` : ""}`;
+function cardTitle(card: BannedCardWithCard, locale: Locale): string {
+  const t = getDictionary(locale).bannedCards;
+  const name = locale === "ja" ? (card.nameJa ?? card.name) : card.name;
+  if (!card.month) return name;
+  return t.cardTitle(name, card.year, card.month, card.status === "restricted");
 }
 
 // このページのサムネイルは最大でも90px高（コンパクト表示では46px高まで縮む）にしか表示しない
@@ -126,18 +138,20 @@ function toSmallImageUrl(url: string): string {
 // カード画像の縦横比（通常のカード比率）。next/imageのwidth/heightは実画像取得用のヒントとして
 // 固定値64x90を渡しつつ、実際の表示サイズはstyleのheight（CSS式もしくは数値px）で決める。
 function CardThumb({ card, heightStyle, locale }: { card: BannedCardWithCard; heightStyle: string; locale: Locale }) {
+  const t = getDictionary(locale).bannedCards;
+  const name = locale === "ja" ? (card.nameJa ?? card.name) : card.name;
   const borderClass = card.status === "restricted" ? "border-amber-500" : "border-neutral-200";
   return (
     <Link
       key={card.oracleId}
       href={`/${locale}/cards/${card.oracleId}`}
       className="group relative block shrink-0 hover:z-20"
-      title={cardTitle(card)}
+      title={cardTitle(card, locale)}
     >
       {card.imageUrl ? (
         <Image
           src={toSmallImageUrl(card.imageUrl)}
-          alt={card.nameJa ?? card.name}
+          alt={name}
           width={64}
           height={90}
           className={`rounded-sm border group-hover:border-neutral-500 ${borderClass}`}
@@ -148,12 +162,12 @@ function CardThumb({ card, heightStyle, locale }: { card: BannedCardWithCard; he
           className={`flex items-center justify-center overflow-hidden rounded-sm border bg-neutral-100 text-center text-[8px] text-neutral-400 ${borderClass}`}
           style={{ height: heightStyle, aspectRatio: "64 / 90" }}
         >
-          {card.nameJa ?? card.name}
+          {name}
         </div>
       )}
       {card.status === "restricted" && (
         <span className="pointer-events-none absolute -top-0.5 -right-0.5 rounded-full bg-amber-500 px-0.5 text-[6px] leading-tight font-bold text-white shadow">
-          制限
+          {t.restricted}
         </span>
       )}
     </Link>
@@ -230,6 +244,12 @@ export default async function BannedCardsPage({
 }) {
   const { locale: rawLocale } = await params;
   const locale: Locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
+  const t = getDictionary(locale).bannedCards;
+  const TABS: { key: TabKey; label: string }[] = [
+    { key: "current", label: t.tabCurrent },
+    { key: "history", label: t.tabHistory },
+    { key: "reserved", label: t.tabReserved },
+  ];
   const sp = await searchParams;
   const tab: TabKey = isTab(sp.tab) ? sp.tab : "current";
   const format: Format = isFormat(sp.format) ? sp.format : "Standard";
@@ -240,7 +260,7 @@ export default async function BannedCardsPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-semibold">禁止カード</h1>
+      <h1 className="text-xl font-semibold">{t.heading}</h1>
 
       <div className="flex flex-wrap gap-1.5">
         {TABS.map((t) => (
@@ -276,6 +296,7 @@ async function CurrentBannedTab({
   colors: ColorFilter[];
   locale: Locale;
 }) {
+  const t = getDictionary(locale).bannedCards;
   const allCards = await getCurrentlyBannedCards(format);
   const cards = allCards.filter((c) => matchesColorFilter(c.colors, colors));
   const buildColorHref = (next: ColorFilter[]) => {
@@ -298,46 +319,47 @@ async function CurrentBannedTab({
                 : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
             }`}
           >
-            {formatLabelJa(f)}
+            {formatLabel(f, locale)}
           </Link>
         ))}
       </div>
-      <ColorFilterRow selected={colors} buildColorHref={buildColorHref} />
+      <ColorFilterRow selected={colors} buildColorHref={buildColorHref} locale={locale} />
       {cards.length === 0 ? (
         <p className="text-sm text-neutral-500">
-          {colors.length > 0
-            ? "選択した色に一致するカードはありません。"
-            : `${formatLabelJa(format)}に現在禁止/制限中のカードはありません。`}
+          {colors.length > 0 ? t.noColorMatch : t.noCurrentBanned(formatLabel(format, locale))}
         </p>
       ) : (
         <div className="grid grid-cols-3 gap-3 sm:grid-cols-5 lg:grid-cols-8">
-          {cards.map((card) => (
-            <Link
-              key={card.oracleId}
-              href={`/${locale}/cards/${card.oracleId}`}
-              className="group relative flex flex-col items-center gap-1 rounded-lg p-1.5 hover:bg-neutral-50"
-            >
-              {card.imageUrl ? (
-                <Image
-                  src={toSmallImageUrl(card.imageUrl)}
-                  alt={card.nameJa ?? card.name}
-                  width={146}
-                  height={204}
-                  className="w-full rounded-md"
-                />
-              ) : (
-                <div className="flex aspect-[223/311] w-full items-center justify-center rounded-md bg-neutral-100 text-center text-xs text-neutral-400">
-                  {card.nameJa ?? card.name}
-                </div>
-              )}
-              {card.status === "restricted" && (
-                <span className="pointer-events-none absolute top-0.5 right-0.5 rounded-full bg-amber-500 px-1 text-[9px] leading-tight font-bold text-white shadow">
-                  制限
-                </span>
-              )}
-              <p className="line-clamp-2 text-center text-[11px] leading-tight font-medium">{card.nameJa ?? card.name}</p>
-            </Link>
-          ))}
+          {cards.map((card) => {
+            const name = locale === "ja" ? (card.nameJa ?? card.name) : card.name;
+            return (
+              <Link
+                key={card.oracleId}
+                href={`/${locale}/cards/${card.oracleId}`}
+                className="group relative flex flex-col items-center gap-1 rounded-lg p-1.5 hover:bg-neutral-50"
+              >
+                {card.imageUrl ? (
+                  <Image
+                    src={toSmallImageUrl(card.imageUrl)}
+                    alt={name}
+                    width={146}
+                    height={204}
+                    className="w-full rounded-md"
+                  />
+                ) : (
+                  <div className="flex aspect-[223/311] w-full items-center justify-center rounded-md bg-neutral-100 text-center text-xs text-neutral-400">
+                    {name}
+                  </div>
+                )}
+                {card.status === "restricted" && (
+                  <span className="pointer-events-none absolute top-0.5 right-0.5 rounded-full bg-amber-500 px-1 text-[9px] leading-tight font-bold text-white shadow">
+                    {t.restricted}
+                  </span>
+                )}
+                <p className="line-clamp-2 text-center text-[11px] leading-tight font-medium">{name}</p>
+              </Link>
+            );
+          })}
         </div>
       )}
     </div>
@@ -345,6 +367,7 @@ async function CurrentBannedTab({
 }
 
 async function ReservedListTab({ colors, locale }: { colors: ColorFilter[]; locale: Locale }) {
+  const t = getDictionary(locale).bannedCards;
   const allCards = await getReservedListCards();
   const cards = allCards.filter((c) => matchesColorFilter(c.colors, colors));
   const buildColorHref = (next: ColorFilter[]) => {
@@ -365,14 +388,9 @@ async function ReservedListTab({ colors, locale }: { colors: ColorFilter[]; loca
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-sm text-neutral-500">
-        {allCards.length.toLocaleString()}枚（セットの発売日順）。Wizards of the Coastが将来的にも再録しないと
-        約束しているカード一覧。
-      </p>
-      <ColorFilterRow selected={colors} buildColorHref={buildColorHref} />
-      {cards.length === 0 && (
-        <p className="text-sm text-neutral-500">選択した色に一致するカードはありません。</p>
-      )}
+      <p className="text-sm text-neutral-500">{t.reservedListNote(allCards.length.toLocaleString())}</p>
+      <ColorFilterRow selected={colors} buildColorHref={buildColorHref} locale={locale} />
+      {cards.length === 0 && <p className="text-sm text-neutral-500">{t.noColorMatch}</p>}
       <div className="flex flex-col gap-5">
         {groups.map((group) => (
           <div key={group.setCode} className="flex flex-col gap-2">
@@ -388,28 +406,31 @@ async function ReservedListTab({ colors, locale }: { colors: ColorFilter[]; loca
               <span className="font-normal text-neutral-400">({group.cards.length})</span>
             </h2>
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-5 lg:grid-cols-8">
-              {group.cards.map((card) => (
-                <Link
-                  key={card.oracleId}
-                  href={`/${locale}/cards/${card.oracleId}`}
-                  className="flex flex-col items-center gap-1 rounded-lg p-1.5 hover:bg-neutral-50"
-                >
-                  {card.imageUrl ? (
-                    <Image
-                      src={toSmallImageUrl(card.imageUrl)}
-                      alt={card.name}
-                      width={146}
-                      height={204}
-                      className="w-full rounded-md"
-                    />
-                  ) : (
-                    <div className="flex aspect-[223/311] w-full items-center justify-center rounded-md bg-neutral-100 text-center text-xs text-neutral-400">
-                      {card.nameJa ?? card.name}
-                    </div>
-                  )}
-                  <p className="line-clamp-2 text-center text-[11px] leading-tight font-medium">{card.nameJa ?? card.name}</p>
-                </Link>
-              ))}
+              {group.cards.map((card) => {
+                const name = locale === "ja" ? (card.nameJa ?? card.name) : card.name;
+                return (
+                  <Link
+                    key={card.oracleId}
+                    href={`/${locale}/cards/${card.oracleId}`}
+                    className="flex flex-col items-center gap-1 rounded-lg p-1.5 hover:bg-neutral-50"
+                  >
+                    {card.imageUrl ? (
+                      <Image
+                        src={toSmallImageUrl(card.imageUrl)}
+                        alt={name}
+                        width={146}
+                        height={204}
+                        className="w-full rounded-md"
+                      />
+                    ) : (
+                      <div className="flex aspect-[223/311] w-full items-center justify-center rounded-md bg-neutral-100 text-center text-xs text-neutral-400">
+                        {name}
+                      </div>
+                    )}
+                    <p className="line-clamp-2 text-center text-[11px] leading-tight font-medium">{name}</p>
+                  </Link>
+                );
+              })}
             </div>
           </div>
         ))}
@@ -433,6 +454,7 @@ async function HistoryTab({
   view: "list" | "compact";
   locale: Locale;
 }) {
+  const t = getDictionary(locale).bannedCards;
   const yearGroups = await getBannedCardsByYear(format, { sortDir, fillGaps });
   const hasRestricted = yearGroups.some((g) => g.cards.some((c) => c.status === "restricted"));
 
@@ -453,7 +475,7 @@ async function HistoryTab({
                   : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
               }`}
             >
-              {formatLabelJa(f)}
+              {formatLabel(f, locale)}
             </Link>
           ))}
         </div>
@@ -466,13 +488,13 @@ async function HistoryTab({
                 : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
             }`}
           >
-            {view === "compact" ? "リスト表示" : "1画面で見る"}
+            {view === "compact" ? t.listView : t.compactView}
           </Link>
           <Link
             href={buildHref(locale, tab, format, sortDir, fillGaps, view, { sortDir: sortDir === "desc" ? "asc" : "desc" })}
             className="rounded-md border border-neutral-300 px-3 py-1 text-sm text-neutral-500 hover:border-neutral-500"
           >
-            {sortDir === "desc" ? "古い順に並び替え" : "新しい順に並び替え"}
+            {sortDir === "desc" ? t.sortOldest : t.sortNewest}
           </Link>
           <Link
             href={buildHref(locale, tab, format, sortDir, fillGaps, view, { fillGaps: !fillGaps })}
@@ -482,7 +504,7 @@ async function HistoryTab({
                 : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
             }`}
           >
-            禁止が無かった年も表示
+            {t.showEmptyYears}
           </Link>
         </div>
       </div>
@@ -490,12 +512,12 @@ async function HistoryTab({
       {hasRestricted && (
         <div className="flex items-center gap-1.5 text-xs text-neutral-500">
           <span className="inline-block h-3 w-3 rounded-full bg-amber-500" />
-          制限（1枚まで）。それ以外は禁止（0枚）。
+          {t.restrictedLegend}
         </div>
       )}
 
       {yearGroups.length === 0 ? (
-        <p className="text-sm text-neutral-500">{format}の禁止カードデータは準備中です。</p>
+        <p className="text-sm text-neutral-500">{t.noHistoryData(formatLabel(format, locale))}</p>
       ) : view === "compact" ? (
         <div
           className="flex w-screen items-end justify-center gap-3 overflow-x-auto px-4 pb-2"
