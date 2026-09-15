@@ -8,6 +8,8 @@
  * 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... node scripts/compute-deck-stats.mjs
  */
 
+import { readOracleCardFile, runWithConcurrency } from "./lib/r2PriceArchive.mjs";
+
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -134,6 +136,33 @@ async function main() {
   const snapshots = await supabaseGet(`card_current_prices?select=oracle_id,jpy_est`);
   const priceByOracle = new Map(snapshots.map((s) => [s.oracle_id, Number(s.jpy_est)]));
   console.log(`本日の価格スナップショット: ${priceByOracle.size}件`);
+
+  // card_current_prices未登録のオラクル（TCGCSVの日次取得対象外の低流動性プリント中心、
+  // ヴィンテージのPower Nine等）は、そのままだとアーキタイプ中央値の計算で「そのカードだけ
+  // 価格0円扱いで合計から丸ごと抜け落ちる」のではなく上のpriceByOracle.get()がundefinedになり
+  // 258行目のif (price == null) continueでスキップされる＝デッキ合計に一切算入されない。
+  // 高額カードほど抜け落ちる影響が大きく、特にヴィンテージのランキングが実態より
+  // かなり低く出ていた（2026-09-15ユーザー指摘、src/lib/dbDeckDetail.tsの同種修正と対）。
+  // R2の価格アーカイブに残る直近の値（古くても可）にフォールバックする。
+  const deckOracleIds = new Set();
+  for (const deck of decks) {
+    for (const card of deck.deck_cards) {
+      if (card.board === "main" && card.oracle_id) deckOracleIds.add(card.oracle_id);
+    }
+  }
+  const missingOracleIds = [...deckOracleIds].filter((id) => !priceByOracle.has(id));
+  if (missingOracleIds.length > 0) {
+    let fallbackCount = 0;
+    await runWithConcurrency(missingOracleIds, 16, async (oracleId) => {
+      const rows = await readOracleCardFile(oracleId);
+      const latest = [...rows].reverse().find((r) => r.jpy_est != null);
+      if (latest) {
+        priceByOracle.set(oracleId, Number(latest.jpy_est));
+        fallbackCount++;
+      }
+    });
+    console.log(`価格スナップショット未登録${missingOracleIds.length}件中、R2アーカイブから${fallbackCount}件を補完`);
+  }
 
   // ── card_usage_stats: フォーマット別・オラクルID別の採用率（7/30/90日それぞれ） ──
   //
