@@ -3,10 +3,12 @@
 import Image from "next/image";
 import type { ReactNode } from "react";
 import { useIsPremium } from "@/lib/useIsPremium";
-import { FORMATS, formatLabelJa } from "@/lib/formats";
+import { FORMATS, formatLabel } from "@/lib/formats";
 import { COLOR_ORDER } from "@/lib/manaColors";
 import { RARITIES } from "@/lib/parseAdvancedSearchParams";
-import { RARITY_LABEL_JA } from "@/lib/scryfall";
+import { rarityLabel } from "@/lib/scryfall";
+import { useLocale } from "@/i18n/useLocale";
+import { getDictionary } from "@/i18n/getDictionary";
 
 export interface RankingFilters {
   formats: string[]; // 空配列 = すべて（複数選択、OR条件）
@@ -50,6 +52,8 @@ export default function RankingFilterPanel({
   overrideLocked?: boolean;
 }) {
   const status = useIsPremium();
+  const locale = useLocale();
+  const t = getDictionary(locale).rankingFilter;
   const locked = overrideLocked ?? status !== "premium";
   // overrideLocked指定時（テスト用）はstatusの読み込み待ちを無視して即座に判定する
   const showLockOverlay = overrideLocked !== undefined ? locked : locked && status !== "loading";
@@ -78,18 +82,16 @@ export default function RankingFilterPanel({
   return (
     <div className="absolute right-0 top-9 z-10 w-72 rounded-md border border-neutral-200 bg-white p-3 shadow-md">
       <div className="mb-2 flex items-center justify-between">
-        <p className="text-sm font-medium">絞り込み</p>
+        <p className="text-sm font-medium">{t.title}</p>
         <button type="button" onClick={onClose} className="text-xs text-neutral-400 hover:text-neutral-600">
-          閉じる
+          {t.close}
         </button>
       </div>
 
       <div className="relative">
         <div className={`space-y-3 ${locked ? "pointer-events-none opacity-50" : ""}`}>
           <div>
-            <label className="mb-1 block text-xs text-neutral-500">
-              フォーマット{filters.formats.length > 0 && `（${filters.formats.length}件選択中）`}
-            </label>
+            <label className="mb-1 block text-xs text-neutral-500">{t.formatLabel(filters.formats.length)}</label>
             <div className="flex flex-wrap gap-1">
               {FORMATS.map((format) => (
                 <button
@@ -103,13 +105,13 @@ export default function RankingFilterPanel({
                       : "border-neutral-300 text-neutral-600 hover:border-neutral-500"
                   }`}
                 >
-                  {formatLabelJa(format)}
+                  {formatLabel(format, locale)}
                 </button>
               ))}
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-xs text-neutral-500">色</label>
+            <label className="mb-1 block text-xs text-neutral-500">{t.colorLabel}</label>
             <div className="flex gap-1">
               {COLOR_ORDER.map((c) => (
                 <button
@@ -127,9 +129,7 @@ export default function RankingFilterPanel({
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-xs text-neutral-500">
-              レアリティ{filters.rarities.length > 0 && `（${filters.rarities.length}件選択中）`}
-            </label>
+            <label className="mb-1 block text-xs text-neutral-500">{t.rarityLabel(filters.rarities.length)}</label>
             <div className="flex flex-wrap gap-1">
               {RARITIES.map((r) => (
                 <button
@@ -143,25 +143,25 @@ export default function RankingFilterPanel({
                       : "border-neutral-300 text-neutral-600 hover:border-neutral-500"
                   }`}
                 >
-                  {RARITY_LABEL_JA[r]}
+                  {rarityLabel(r, locale)}
                 </button>
               ))}
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-xs text-neutral-500">価格帯（円）</label>
+            <label className="mb-1 block text-xs text-neutral-500">{t.priceRangeLabel}</label>
             <div className="flex items-center gap-2">
               <input
                 type="number"
-                placeholder="下限"
+                placeholder={t.priceMinPlaceholder}
                 value={filters.priceMin ?? ""}
                 onChange={(e) => onChange({ ...filters, priceMin: toNumberOrNull(e.target.value) })}
                 className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
               />
-              <span className="text-neutral-400">〜</span>
+              <span className="text-neutral-400">{t.rangeSeparator}</span>
               <input
                 type="number"
-                placeholder="上限"
+                placeholder={t.priceMaxPlaceholder}
                 value={filters.priceMax ?? ""}
                 onChange={(e) => onChange({ ...filters, priceMax: toNumberOrNull(e.target.value) })}
                 className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
@@ -174,9 +174,9 @@ export default function RankingFilterPanel({
         {showLockOverlay && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 rounded-md bg-white/70 text-center">
             <LockIcon />
-            <p className="text-xs font-medium text-neutral-700">有料会員限定機能</p>
+            <p className="text-xs font-medium text-neutral-700">{t.premiumOnly}</p>
             <p className="px-4 text-[11px] text-neutral-500">
-              {status === "anonymous" ? "ログインすると詳細が確認できます" : "近日提供予定です"}
+              {status === "anonymous" ? t.loginForDetails : t.comingSoon}
             </p>
           </div>
         )}

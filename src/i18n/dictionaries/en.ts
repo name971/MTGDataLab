@@ -53,6 +53,20 @@ const en: typeof ja = {
     mlRankingInfo:
       "Predicted with a machine learning model on the probability of a significant price move (up or down) within 7 days, ranked by confidence (tournament-played cards only). Historical Top 10 accuracy: ~73% for surges, ~95% for crashes.",
   },
+  rankingFilter: {
+    title: "Filters",
+    close: "Close",
+    formatLabel: (count: number) => `Format${count > 0 ? ` (${count} selected)` : ""}`,
+    colorLabel: "Color",
+    rarityLabel: (count: number) => `Rarity${count > 0 ? ` (${count} selected)` : ""}`,
+    priceRangeLabel: "Price range (¥)",
+    priceMinPlaceholder: "Min",
+    priceMaxPlaceholder: "Max",
+    rangeSeparator: "–",
+    premiumOnly: "Premium members only",
+    loginForDetails: "Log in to see details",
+    comingSoon: "Coming soon",
+  },
   mlRanking: {
     surgeTab: "Surge forecast",
     crashTab: "Crash forecast",

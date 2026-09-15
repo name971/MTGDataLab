@@ -135,6 +135,18 @@ export const RARITY_LABEL_JA: Record<string, string> = {
   mythic: "神話レア",
 };
 
+const RARITY_LABEL_EN: Record<string, string> = {
+  common: "Common",
+  uncommon: "Uncommon",
+  rare: "Rare",
+  mythic: "Mythic",
+};
+
+export function rarityLabel(rarity: string, locale: "ja" | "en"): string {
+  const table = locale === "ja" ? RARITY_LABEL_JA : RARITY_LABEL_EN;
+  return table[rarity] ?? rarity;
+}
+
 export async function fetchCardByFuzzyName(name: string): Promise<ScryfallCard | null> {
   const res = await fetch(`${SCRYFALL_BASE}/cards/named?fuzzy=${encodeURIComponent(name)}`, {
     headers: SCRYFALL_HEADERS,
