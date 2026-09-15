@@ -7,11 +7,12 @@ import {
   type RecentDeckSummary,
 } from "@/lib/dbDeckDetail";
 import DeckDetailView from "@/components/DeckDetailView";
-import { FORMATS, formatLabelJa, type Format } from "@/lib/formats";
-import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
+import { FORMATS, formatLabel, type Format } from "@/lib/formats";
+import { isLocale, DEFAULT_LOCALE, type Locale } from "@/i18n/config";
+import { getDictionary } from "@/i18n/getDictionary";
 
-function formatLabelJaSafe(format: string): string {
-  return FORMATS.includes(format as Format) ? formatLabelJa(format as Format) : format;
+function formatLabelSafe(format: string, locale: Locale): string {
+  return FORMATS.includes(format as Format) ? formatLabel(format as Format, locale) : format;
 }
 
 // 集計バッチは1日1回しか回らないため、長めにキャッシュしてegressを抑える
@@ -66,12 +67,15 @@ function pickBestDeck(decks: RecentDeckSummary[]): RecentDeckSummary | null {
 export async function generateMetadata({
   params,
 }: {
-  params: Promise<{ archetypeId: string }>;
+  params: Promise<{ locale: string; archetypeId: string }>;
 }) {
-  const { archetypeId } = await params;
+  const { locale: rawLocale, archetypeId } = await params;
+  const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
+  const t = getDictionary(locale).archetypeDetail;
   const archetype = await getArchetypeById(Number(archetypeId));
-  if (!archetype) return { title: "MTG DataLab" };
-  return { title: `${archetype.nameJa ?? archetype.nameEn} - MTG DataLab` };
+  if (!archetype) return { title: t.metaTitleFallback };
+  const name = locale === "ja" ? (archetype.nameJa ?? archetype.nameEn) : archetype.nameEn;
+  return { title: `${name} - MTG DataLab` };
 }
 
 export default async function ArchetypeDetailPage({
@@ -81,6 +85,7 @@ export default async function ArchetypeDetailPage({
 }) {
   const { locale: rawLocale, archetypeId } = await params;
   const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
+  const t = getDictionary(locale).archetypeDetail;
   const numericId = Number(archetypeId);
   if (!Number.isInteger(numericId)) notFound();
 
@@ -100,9 +105,11 @@ export default async function ArchetypeDetailPage({
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h1 className="text-xl font-semibold">{archetype.nameJa ?? archetype.nameEn}</h1>
+        <h1 className="text-xl font-semibold">
+          {locale === "ja" ? (archetype.nameJa ?? archetype.nameEn) : archetype.nameEn}
+        </h1>
         <p className="text-sm text-neutral-500">
-          {archetype.nameEn} ・ {formatLabelJaSafe(archetype.format)}
+          {archetype.nameEn} ・ {formatLabelSafe(archetype.format, locale)}
         </p>
       </div>
 
@@ -110,7 +117,7 @@ export default async function ArchetypeDetailPage({
         href={`/${locale}/decks?format=${archetype.format.toLowerCase()}`}
         className="text-sm text-neutral-500 hover:underline"
       >
-        ← デッキランキングに戻る
+        {t.backToRanking}
       </Link>
 
       {bestDeck && bestDeckDetail ? (
@@ -119,7 +126,7 @@ export default async function ArchetypeDetailPage({
           format={bestDeckDetail.format}
           headerContent={
             <p className="text-sm text-neutral-500">
-              代表デッキ（最多勝率）:{" "}
+              {t.representativeDeck}{" "}
               <Link href={`/${locale}/decks/${bestDeck.deckId}`} className="hover:underline">
                 {bestDeckDetail.playerName}
               </Link>{" "}
@@ -128,14 +135,12 @@ export default async function ArchetypeDetailPage({
           }
         />
       ) : (
-        <p className="text-sm text-neutral-500">
-          このアーキタイプに分類されたデッキは登録されていません。
-        </p>
+        <p className="text-sm text-neutral-500">{t.noDecks}</p>
       )}
 
       {otherDecks.length > 0 && (
         <div className="mt-4">
-          <h2 className="mb-2 text-sm font-medium text-neutral-500">他のデッキ</h2>
+          <h2 className="mb-2 text-sm font-medium text-neutral-500">{t.otherDecks}</h2>
           <ul className="flex flex-col gap-1 text-sm">
             {visibleOtherDecks.map((deck) => (
               <li key={deck.deckId} className="flex items-baseline gap-2">
@@ -157,7 +162,7 @@ export default async function ArchetypeDetailPage({
           {collapsedOtherDecks.length > 0 && (
             <details className="mt-1 text-sm">
               <summary className="cursor-pointer text-neutral-500 hover:underline">
-                残り{collapsedOtherDecks.length}件を表示
+                {t.showRemaining(collapsedOtherDecks.length)}
               </summary>
               <ul className="mt-1 flex flex-col gap-1">
                 {collapsedOtherDecks.map((deck) => (

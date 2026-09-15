@@ -53,6 +53,14 @@ const en: typeof ja = {
     mlRankingInfo:
       "Predicted with a machine learning model on the probability of a significant price move (up or down) within 7 days, ranked by confidence (tournament-played cards only). Historical Top 10 accuracy: ~73% for surges, ~95% for crashes.",
   },
+  archetypeDetail: {
+    metaTitleFallback: "MTG DataLab",
+    backToRanking: "← Back to deck rankings",
+    representativeDeck: "Representative deck (best record):",
+    noDecks: "No decks classified under this archetype.",
+    otherDecks: "Other Decks",
+    showRemaining: (n: number) => `Show ${n} more`,
+  },
   printDetail: {
     backTo: (name: string) => `← Back to ${name}`,
     notTournamentLegalBadge: "Not legal",
