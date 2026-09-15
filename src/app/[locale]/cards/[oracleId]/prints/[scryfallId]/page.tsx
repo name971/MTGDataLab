@@ -4,12 +4,13 @@ import { notFound } from "next/navigation";
 import { getCardPrintByScryfallId } from "@/lib/dbCardPrints";
 import { getPrintPriceHistory } from "@/lib/dbCardPrintPrices";
 import { getCardDetailFromDb, getCardDetailByOracleId, type DbCardDetail } from "@/lib/cardData";
-import { RARITY_LABEL_JA } from "@/lib/scryfall";
+import { rarityLabel } from "@/lib/scryfall";
 import { SAMPLE_CARD_SLUGS } from "@/lib/sampleCards";
 import PriceHistoryChart from "@/components/PriceHistoryChart";
 import LegalityGrid from "@/components/LegalityGrid";
 import ManaText from "@/components/ManaText";
 import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
+import { getDictionary } from "@/i18n/getDictionary";
 
 /**
  * URLの[oracleId]は「サンプル22枚のスラグ（例: "ragavan"）」と「実データのUUID」の
@@ -38,6 +39,7 @@ export default async function CardPrintDetailPage({
 }) {
   const { locale: rawLocale, oracleId, scryfallId } = await params;
   const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
+  const t = getDictionary(locale).printDetail;
 
   const [print, card, priceHistory, foilPriceHistory] = await Promise.all([
     getCardPrintByScryfallId(scryfallId),
@@ -66,7 +68,7 @@ export default async function CardPrintDetailPage({
   return (
     <div className="flex flex-col gap-6">
       <Link href={`/${locale}/cards/${oracleId}`} className="text-sm text-neutral-500 hover:underline">
-        ← {nameJa ?? nameEn} に戻る
+        {t.backTo(locale === "ja" ? (nameJa ?? nameEn) : nameEn)}
       </Link>
 
       <div className="flex flex-col gap-6 sm:flex-row">
@@ -84,10 +86,10 @@ export default async function CardPrintDetailPage({
         <div className="flex flex-1 flex-col gap-4">
           <div>
             <p className="flex flex-wrap items-center gap-x-2 text-xl font-medium">
-              <span>{nameJa ?? nameEn}</span>
+              <span>{locale === "ja" ? (nameJa ?? nameEn) : nameEn}</span>
               {enCard.mana_cost && <ManaText text={enCard.mana_cost} symbolSize={20} align="middle" />}
             </p>
-            {nameJa && <p className="text-sm text-neutral-500">{nameEn}</p>}
+            {locale === "ja" && nameJa && <p className="text-sm text-neutral-500">{nameEn}</p>}
             {typeLine && <p className="mt-2 text-sm text-neutral-600">{typeLine}</p>}
             {oracleText && (
               <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-neutral-700">
@@ -102,25 +104,29 @@ export default async function CardPrintDetailPage({
             {/* レアリティはcard_printsにプリント単位で持っていないため代表プリントのもので代用
                 （マスターピース等の特殊枠は元のレアリティと異なることがある点に注意） */}
             <p className="mt-3 text-sm text-neutral-500">
-              {print.setName}（#{print.collectorNumber}） ・ {RARITY_LABEL_JA[enCard.rarity] ?? enCard.rarity}
+              {print.setName}（#{print.collectorNumber}） ・ {rarityLabel(enCard.rarity, locale)}
               {print.notTournamentLegal && (
-                <span className="ml-1 rounded bg-red-50 px-1 text-[10px] text-red-700">使用不可</span>
+                <span className="ml-1 rounded bg-red-50 px-1 text-[10px] text-red-700">
+                  {t.notTournamentLegalBadge}
+                </span>
               )}
             </p>
             {print.releasedAt && (
-              <p className="text-sm text-neutral-500">発売日: {formatDateSlash(print.releasedAt)}</p>
+              <p className="text-sm text-neutral-500">{t.releasedOn(formatDateSlash(print.releasedAt))}</p>
             )}
             {jpyPrice !== null ? (
               <>
-                <p className="font-numeric mt-4 text-2xl font-medium">{jpyPrice.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}円</p>
-                <p className="text-xs text-neutral-400">{latest?.date}時点の参考値</p>
+                <p className="font-numeric mt-4 text-2xl font-medium">
+                  {t.priceUnit(jpyPrice.toLocaleString("ja-JP", { maximumFractionDigits: 0 }))}
+                </p>
+                <p className="text-xs text-neutral-400">{t.asOf(latest?.date ?? "")}</p>
               </>
             ) : (
-              <p className="mt-4 text-sm text-neutral-500">価格データなし</p>
+              <p className="mt-4 text-sm text-neutral-500">{t.noPriceData}</p>
             )}
             {jpyPriceFoil !== null && (
               <p className="font-numeric text-sm text-neutral-500">
-                Foil ¥{jpyPriceFoil.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}（{latestFoil?.date}時点）
+                {t.foilAsOf(jpyPriceFoil.toLocaleString("ja-JP", { maximumFractionDigits: 0 }), latestFoil?.date ?? "")}
               </p>
             )}
           </div>
@@ -137,7 +143,7 @@ export default async function CardPrintDetailPage({
       )}
 
       <div className="rounded-lg border border-neutral-200 p-4 sm:max-w-md">
-        <h2 className="mb-3 text-sm font-medium text-neutral-500">フォーマットリーガル</h2>
+        <h2 className="mb-3 text-sm font-medium text-neutral-500">{t.formatLegality}</h2>
         <LegalityGrid legalities={enCard.legalities} disabled={print.notTournamentLegal} />
       </div>
     </div>

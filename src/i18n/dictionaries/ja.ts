@@ -52,6 +52,16 @@ const ja = {
     mlRankingInfo:
       "7日以内に一定以上値上がり・値下がりする確率を機械学習モデルで予測し、確率が高い順に並べています（トーナメントで使用実績のあるカードが対象）。過去のTop10的中率: 高騰予想は約73%、暴落予想は約95%。",
   },
+  printDetail: {
+    backTo: (name: string) => `← ${name} に戻る`,
+    notTournamentLegalBadge: "使用不可",
+    releasedOn: (date: string) => `発売日: ${date}`,
+    priceUnit: (jpy: string) => `${jpy}円`,
+    asOf: (date: string) => `${date}時点の参考値`,
+    noPriceData: "価格データなし",
+    foilAsOf: (jpy: string, date: string) => `Foil ¥${jpy}（${date}時点）`,
+    formatLegality: "フォーマットリーガル",
+  },
   cardDecksPage: {
     backTo: (name: string) => `← ${name}に戻る`,
     heading: (name: string, format: string) => `${name}を使用したデッキ（${format}）`,

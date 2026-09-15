@@ -53,6 +53,16 @@ const en: typeof ja = {
     mlRankingInfo:
       "Predicted with a machine learning model on the probability of a significant price move (up or down) within 7 days, ranked by confidence (tournament-played cards only). Historical Top 10 accuracy: ~73% for surges, ~95% for crashes.",
   },
+  printDetail: {
+    backTo: (name: string) => `← Back to ${name}`,
+    notTournamentLegalBadge: "Not legal",
+    releasedOn: (date: string) => `Released: ${date}`,
+    priceUnit: (jpy: string) => `¥${jpy}`,
+    asOf: (date: string) => `as of ${date}`,
+    noPriceData: "No price data",
+    foilAsOf: (jpy: string, date: string) => `Foil ¥${jpy} (as of ${date})`,
+    formatLegality: "Format Legality",
+  },
   cardDecksPage: {
     backTo: (name: string) => `← Back to ${name}`,
     heading: (name: string, format: string) => `Decks Playing ${name} (${format})`,
