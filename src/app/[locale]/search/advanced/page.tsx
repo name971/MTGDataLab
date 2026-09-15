@@ -1,10 +1,11 @@
 import Image from "next/image";
 import Link from "next/link";
 import { advancedSearchCards, MV_BUCKETS, PAGE_SIZE } from "@/lib/dbAdvancedSearch";
-import { RARITY_LABEL_JA } from "@/lib/scryfall";
-import { FORMATS, formatLabelJa } from "@/lib/formats";
+import { rarityLabel } from "@/lib/scryfall";
+import { FORMATS, formatLabel } from "@/lib/formats";
 import { COLOR_ORDER } from "@/lib/manaColors";
 import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
+import { getDictionary } from "@/i18n/getDictionary";
 import {
   COMMON_TYPES,
   PERIODS,
@@ -14,7 +15,11 @@ import {
   type RawSearchParams,
 } from "@/lib/parseAdvancedSearchParams";
 
-export const metadata = { title: "高度検索 - MTG DataLab" };
+export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }) {
+  const { locale: rawLocale } = await params;
+  const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
+  return { title: getDictionary(locale).advancedSearch.metaTitle };
+}
 
 /** 現在のsearchParamsを引き継ぎつつ、指定したキーだけ上書きしたクエリ文字列を作る
  * （ソート切り替え・ページ送りのリンク用。値がundefinedのキーは削除する）。 */
@@ -40,6 +45,7 @@ export default async function AdvancedSearchPage({
 }) {
   const { locale: rawLocale } = await params;
   const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
+  const t = getDictionary(locale).advancedSearch;
   const sp = await searchParams;
   const filters = parseAdvancedSearchFilters(sp);
   const page = parsePage(sp);
@@ -58,16 +64,16 @@ export default async function AdvancedSearchPage({
   // カード詳細ページ「その他のプリント」の並び順ボタンと同じ規則に揃える。
   // 発売日順のデフォルトは新しい順、価格順のデフォルトは安い順（キーを切り替えた直後の向き）
   const SORT_OPTIONS = [
-    { key: "price", label: "価格順", defaultDir: "asc" },
-    { key: "releasedAt", label: "発売日順", defaultDir: "desc" },
+    { key: "price", label: t.sortPrice, defaultDir: "asc" },
+    { key: "releasedAt", label: t.sortReleasedAt, defaultDir: "desc" },
   ] as const;
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-baseline gap-3">
-        <h1 className="text-xl font-semibold">高度検索</h1>
+        <h1 className="text-xl font-semibold">{t.heading}</h1>
         <Link href={`/${locale}/search`} className="text-sm text-neutral-500 hover:underline">
-          通常検索に戻る
+          {t.backToSimple}
         </Link>
       </div>
 
@@ -78,25 +84,25 @@ export default async function AdvancedSearchPage({
         {/* 項目が増えて見通しが悪くなってきたため、意味のまとまりごとにセクション見出し付きで
             区切っている（カード自体の特徴 → フォーマット/レアリティ → 数値レンジ条件、の3段）。 */}
         <fieldset className="flex flex-col gap-4">
-          <legend className="mb-1 text-xs font-semibold text-neutral-400">カードの特徴</legend>
+          <legend className="mb-1 text-xs font-semibold text-neutral-400">{t.sectionCardFeatures}</legend>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-sm">
-              <span className="text-neutral-600">カード名</span>
+              <span className="text-neutral-600">{t.cardName}</span>
               <input
                 type="text"
                 name="name"
                 defaultValue={filters.name ?? ""}
-                placeholder="例: 稲妻"
+                placeholder={t.cardNamePlaceholder}
                 className="rounded-md border border-neutral-300 px-2.5 py-1.5"
               />
             </label>
             <div className="flex flex-col gap-1 text-sm">
-              <span className="text-neutral-600">タイプ行</span>
+              <span className="text-neutral-600">{t.typeLine}</span>
               <input
                 type="text"
                 name="type"
                 defaultValue={filters.typeText ?? ""}
-                placeholder="例: マーフォーク、ゾンビ"
+                placeholder={t.typeLinePlaceholder}
                 className="rounded-md border border-neutral-300 px-2.5 py-1.5"
               />
               {/* チェックボックスをボタン風に見せるだけの選択トグル（送信ボタンではない）。
@@ -124,18 +130,18 @@ export default async function AdvancedSearchPage({
           </div>
 
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-neutral-600">ルールテキスト（英語のオラクルテキストに含む語句）</span>
+            <span className="text-neutral-600">{t.ruleText}</span>
             <input
               type="text"
               name="text"
               defaultValue={filters.text ?? ""}
-              placeholder="例: draw a card"
+              placeholder={t.ruleTextPlaceholder}
               className="rounded-md border border-neutral-300 px-2.5 py-1.5"
             />
           </label>
 
           <div className="flex flex-col gap-1.5 text-sm">
-            <span className="text-neutral-600">色（選択した色を全て含むカード）</span>
+            <span className="text-neutral-600">{t.colorsLabel}</span>
             <div className="flex flex-wrap items-center gap-3">
               {COLOR_ORDER.map((c) => (
                 <label key={c} className="flex items-center gap-1.5">
@@ -145,18 +151,16 @@ export default async function AdvancedSearchPage({
               ))}
               <label className="ml-2 flex items-center gap-1.5 border-l border-neutral-200 pl-3">
                 <input type="checkbox" name="colorless" value="1" defaultChecked={filters.colorlessOnly} />
-                無色のみ
+                {t.colorlessOnly}
               </label>
             </div>
           </div>
         </fieldset>
 
         <fieldset className="flex flex-col gap-4 border-t border-neutral-100 pt-4">
-          <legend className="mb-1 text-xs font-semibold text-neutral-400">フォーマット・レアリティ</legend>
+          <legend className="mb-1 text-xs font-semibold text-neutral-400">{t.sectionFormatRarity}</legend>
           <div className="flex flex-col gap-1.5 text-sm">
-            <span className="text-neutral-600">
-              フォーマット適正（複数選択可、いずれかで合法なカード。採用率は先頭選択分のみ対象）
-            </span>
+            <span className="text-neutral-600">{t.formatLegality}</span>
             <div className="flex flex-wrap gap-1.5">
               {FORMATS.map((f) => (
                 <label key={f} className="cursor-pointer">
@@ -168,7 +172,7 @@ export default async function AdvancedSearchPage({
                     className="peer sr-only"
                   />
                   <span className="rounded-full border border-neutral-300 px-2.5 py-0.5 text-xs text-neutral-500 hover:border-neutral-500 peer-checked:border-neutral-500 peer-checked:bg-neutral-100 peer-checked:text-neutral-900">
-                    {formatLabelJa(f)}
+                    {formatLabel(f, locale)}
                   </span>
                 </label>
               ))}
@@ -176,12 +180,12 @@ export default async function AdvancedSearchPage({
           </div>
 
           <div className="flex flex-col gap-1.5 text-sm">
-            <span className="text-neutral-600">レアリティ</span>
+            <span className="text-neutral-600">{t.rarityLabel}</span>
             <div className="flex flex-wrap gap-3">
               {RARITIES.map((r) => (
                 <label key={r} className="flex items-center gap-1.5">
                   <input type="checkbox" name="rarity" value={r} defaultChecked={selectedRarities.has(r)} />
-                  {RARITY_LABEL_JA[r]}
+                  {rarityLabel(r, locale)}
                 </label>
               ))}
             </div>
@@ -189,10 +193,10 @@ export default async function AdvancedSearchPage({
         </fieldset>
 
         <fieldset className="flex flex-col gap-4 border-t border-neutral-100 pt-4">
-          <legend className="mb-1 text-xs font-semibold text-neutral-400">数値条件</legend>
+          <legend className="mb-1 text-xs font-semibold text-neutral-400">{t.sectionNumeric}</legend>
 
           <div className="flex flex-col gap-1.5 text-sm">
-            <span className="text-neutral-600">マナ総量（複数選択可）</span>
+            <span className="text-neutral-600">{t.manaValue}</span>
             <div className="flex flex-wrap gap-1.5">
               {MV_BUCKETS.map((mv) => (
                 <label key={mv} className="cursor-pointer">
@@ -215,49 +219,47 @@ export default async function AdvancedSearchPage({
         <fieldset className="flex flex-col gap-4 border-t border-neutral-100 pt-4">
           {/* 価格・値動き・採用率はScryfallには無いこのサイト独自の条件（日次の実勢価格・
               トーナメント採用率データを持っているからこそ出せる指標）なので、あえて区別して見出しを付ける */}
-          <legend className="mb-1 text-xs font-semibold text-neutral-400">MTG DataLab独自条件</legend>
+          <legend className="mb-1 text-xs font-semibold text-neutral-400">{t.sectionSiteExclusive}</legend>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1 text-sm">
-              <span className="text-neutral-600">価格帯（円）</span>
+              <span className="text-neutral-600">{t.priceRange}</span>
               <div className="flex items-center gap-2">
                 <input
                   type="number"
                   name="priceMin"
                   min={0}
                   defaultValue={filters.priceMin ?? ""}
-                  placeholder="下限"
+                  placeholder={t.priceMinPlaceholder}
                   className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
                 />
-                <span className="text-neutral-400">〜</span>
+                <span className="text-neutral-400">{t.rangeSeparator}</span>
                 <input
                   type="number"
                   name="priceMax"
                   min={0}
                   defaultValue={filters.priceMax ?? ""}
-                  placeholder="上限"
+                  placeholder={t.priceMaxPlaceholder}
                   className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
                 />
               </div>
             </div>
 
             <div className="flex flex-col gap-1 text-sm">
-              <span className="text-neutral-600">
-                価格変化率（%、指定期間前との比較。マイナス指定で値下がりも絞れる）
-              </span>
+              <span className="text-neutral-600">{t.priceChangePct}</span>
               <div className="flex items-center gap-2">
                 <input
                   type="number"
                   name="priceChangeMin"
                   defaultValue={filters.priceChangeMin ?? ""}
-                  placeholder="下限"
+                  placeholder={t.priceMinPlaceholder}
                   className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
                 />
-                <span className="text-neutral-400">〜</span>
+                <span className="text-neutral-400">{t.rangeSeparator}</span>
                 <input
                   type="number"
                   name="priceChangeMax"
                   defaultValue={filters.priceChangeMax ?? ""}
-                  placeholder="上限"
+                  placeholder={t.priceMaxPlaceholder}
                   className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
                 />
                 <select
@@ -267,7 +269,7 @@ export default async function AdvancedSearchPage({
                 >
                   {PERIODS.map((p) => (
                     <option key={p} value={p}>
-                      {p}日前比
+                      {t.daysAgo(p)}
                     </option>
                   ))}
                 </select>
@@ -275,7 +277,7 @@ export default async function AdvancedSearchPage({
             </div>
 
             <div className="flex flex-col gap-1 text-sm">
-              <span className="text-neutral-600">採用率（%、「フォーマット適正」の指定が必要）</span>
+              <span className="text-neutral-600">{t.usageRate}</span>
               <div className="flex items-center gap-2">
                 <input
                   type="number"
@@ -283,17 +285,17 @@ export default async function AdvancedSearchPage({
                   min={0}
                   max={100}
                   defaultValue={filters.usageRateMin ?? ""}
-                  placeholder="下限"
+                  placeholder={t.priceMinPlaceholder}
                   className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
                 />
-                <span className="text-neutral-400">〜</span>
+                <span className="text-neutral-400">{t.rangeSeparator}</span>
                 <input
                   type="number"
                   name="usageRateMax"
                   min={0}
                   max={100}
                   defaultValue={filters.usageRateMax ?? ""}
-                  placeholder="上限"
+                  placeholder={t.priceMaxPlaceholder}
                   className="w-full rounded-md border border-neutral-300 px-2.5 py-1.5"
                 />
                 <select
@@ -303,7 +305,7 @@ export default async function AdvancedSearchPage({
                 >
                   {PERIODS.map((p) => (
                     <option key={p} value={p}>
-                      直近{p}日
+                      {t.recentDays(p)}
                     </option>
                   ))}
                 </select>
@@ -316,7 +318,7 @@ export default async function AdvancedSearchPage({
           type="submit"
           className="self-start rounded-md bg-neutral-800 px-4 py-2 text-sm font-semibold text-white hover:bg-neutral-700"
         >
-          検索
+          {t.submit}
         </button>
       </form>
 
@@ -324,15 +326,13 @@ export default async function AdvancedSearchPage({
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm text-neutral-500">
-              {totalCount}件{capped ? "以上" : ""}ヒット
+              {t.resultsCount(totalCount, capped)}
               {capped && (filters.sortKey ?? "price") === "price" && (
-                <span className="ml-1 text-xs text-neutral-400">
-                  （該当件数が多いため、価格順の並びは調査した範囲内のみ正確です）
-                </span>
+                <span className="ml-1 text-xs text-neutral-400">{t.cappedNote}</span>
               )}
             </p>
             <div className="flex items-center gap-1 text-xs">
-              <span className="text-neutral-400">並び順:</span>
+              <span className="text-neutral-400">{t.sortLabel}</span>
               {SORT_OPTIONS.map((opt) => {
                 const isActive = (filters.sortKey ?? "price") === opt.key;
                 const nextDir = isActive ? (filters.sortDir === "asc" ? "desc" : "asc") : opt.defaultDir;
@@ -372,14 +372,16 @@ export default async function AdvancedSearchPage({
                     />
                   )}
                   <div className="flex flex-col gap-0.5 p-2">
-                    <p className="truncate text-sm font-medium">{card.nameJa ?? card.nameEn}</p>
-                    <p className="truncate text-xs text-neutral-500">{card.nameEn}</p>
+                    <p className="truncate text-sm font-medium">
+                      {locale === "ja" ? (card.nameJa ?? card.nameEn) : card.nameEn}
+                    </p>
+                    {locale === "ja" && <p className="truncate text-xs text-neutral-500">{card.nameEn}</p>}
                     <div className="mt-1 flex items-center justify-between text-xs text-neutral-500">
-                      <span>{RARITY_LABEL_JA[card.rarity] ?? card.rarity}</span>
+                      <span>{rarityLabel(card.rarity, locale)}</span>
                       <span>
                         {card.priceJpy !== null
                           ? `¥${card.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}`
-                          : "-"}
+                          : t.priceUnknown}
                       </span>
                     </div>
                   </div>
@@ -387,9 +389,7 @@ export default async function AdvancedSearchPage({
               ))}
             </div>
           ) : (
-            <p className="py-6 text-center text-sm text-neutral-500">
-              条件に一致するカードが見つかりませんでした。
-            </p>
+            <p className="py-6 text-center text-sm text-neutral-500">{t.noResults}</p>
           )}
 
           {totalPages > 1 && (
@@ -406,7 +406,7 @@ export default async function AdvancedSearchPage({
                     : "border-neutral-300 text-neutral-600 hover:border-neutral-500"
                 }`}
               >
-                前へ
+                {t.prevPage}
               </Link>
               <span className="px-2 text-neutral-500">
                 {page} / {totalPages}
@@ -420,7 +420,7 @@ export default async function AdvancedSearchPage({
                     : "border-neutral-300 text-neutral-600 hover:border-neutral-500"
                 }`}
               >
-                次へ
+                {t.nextPage}
               </Link>
             </div>
           )}
