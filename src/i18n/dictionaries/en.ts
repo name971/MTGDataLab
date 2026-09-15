@@ -53,6 +53,17 @@ const en: typeof ja = {
     mlRankingInfo:
       "Predicted with a machine learning model on the probability of a significant price move (up or down) within 7 days, ranked by confidence (tournament-played cards only). Historical Top 10 accuracy: ~73% for surges, ~95% for crashes.",
   },
+  deckRankingPage: {
+    metaTitle: "Deck Rankings - MTG DataLab",
+    heading: "Deck Rankings (Archetypes)",
+    top10Avg: (count: number) => `Top ${count} avg:`,
+    arenaWildcardTooltip: "Wildcard estimate: Rare ¥1,500/4, Mythic ¥3,000/4, Common/Uncommon ¥0",
+    arenaAvg: "MTG Arena est. avg:",
+    periodLabel: "Period:",
+    recentDays: (n: number) => `Last ${n}d`,
+    noData: "No data for this format yet.",
+    realTournamentDecks: "Actual Tournament Decks",
+  },
   trending: {
     metaTitle: "Weekly Rankings - MTG DataLab",
     priceCategory: "Price Movers",

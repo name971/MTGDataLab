@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { FORMATS, formatSlug, formatLabelJa, type Format } from "@/lib/formats";
+import { FORMATS, formatSlug, formatLabel, type Format } from "@/lib/formats";
 import { getSampleArchetypes } from "@/lib/sampleDeckData";
 import { getFormatSettings } from "@/lib/formatSettings";
 import { getRecentDecksFromDb } from "@/lib/dbDeckDetail";
 import { getArchetypesFromDb } from "@/lib/dbArchetypeStats";
 import DeckRankingTable from "@/components/DeckRankingTable";
 import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
+import { getDictionary } from "@/i18n/getDictionary";
 
 // 集計バッチは1日1回しか回らないため、長めにキャッシュしてegressを抑える
 export const revalidate = 21600;
@@ -22,7 +23,11 @@ function resolvePeriod(raw: string | undefined): PeriodDays {
   return (PERIOD_OPTIONS as readonly number[]).includes(n) ? (n as PeriodDays) : 30;
 }
 
-export const metadata = { title: "デッキランキング - MTG DataLab" };
+export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }) {
+  const { locale: rawLocale } = await params;
+  const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
+  return { title: getDictionary(locale).deckRankingPage.metaTitle };
+}
 
 export default async function DeckRankingPage({
   params,
@@ -33,6 +38,7 @@ export default async function DeckRankingPage({
 }) {
   const { locale: rawLocale } = await params;
   const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
+  const t = getDictionary(locale).deckRankingPage;
   const { format: formatParam, period } = await searchParams;
   const format = resolveFormat(formatParam);
   const periodDays = resolvePeriod(period);
@@ -68,22 +74,22 @@ export default async function DeckRankingPage({
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
         <div className="flex items-baseline gap-3">
-          <h1 className="text-lg font-semibold sm:text-xl">デッキ単位のランキング（アーキタイプランキング）</h1>
+          <h1 className="text-lg font-semibold sm:text-xl">{t.heading}</h1>
         </div>
         {top10AvgPriceJpy !== null && (
           <div className="flex flex-col items-start gap-0.5 sm:items-end">
             <p className="whitespace-nowrap text-sm text-neutral-600">
-              上位{top10.length}デッキ平均:{" "}
+              {t.top10Avg(top10.length)}{" "}
               <span className="font-numeric text-lg font-semibold text-neutral-900">
                 ¥{top10AvgPriceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
               </span>
             </p>
             {top10ArenaAvgPriceJpy !== null && (
               <p
-                title="ワイルドカード換算：レア¥1,500/4枚、神話レア¥3,000/4枚、コモン・アンコモン¥0"
+                title={t.arenaWildcardTooltip}
                 className="cursor-help whitespace-nowrap text-xs text-neutral-500"
               >
-                MTG Arena換算平均:{" "}
+                {t.arenaAvg}{" "}
                 <span className="font-numeric font-medium text-neutral-700">
                   ¥{top10ArenaAvgPriceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
                 </span>
@@ -104,13 +110,13 @@ export default async function DeckRankingPage({
                 : "border-neutral-300 text-neutral-600 hover:border-neutral-500"
             }`}
           >
-            {formatLabelJa(f)}
+            {formatLabel(f, locale)}
           </Link>
         ))}
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-sm text-neutral-500">集計期間:</span>
+        <span className="text-sm text-neutral-500">{t.periodLabel}</span>
         {PERIOD_OPTIONS.map((p) => (
           <Link
             key={p}
@@ -121,7 +127,7 @@ export default async function DeckRankingPage({
                 : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
             }`}
           >
-            直近{p}日
+            {t.recentDays(p)}
           </Link>
         ))}
       </div>
@@ -133,14 +139,12 @@ export default async function DeckRankingPage({
       {rows.length > 0 ? (
         <DeckRankingTable rows={rows} />
       ) : (
-        <p className="text-sm text-neutral-500">このフォーマットのデータはまだありません。</p>
+        <p className="text-sm text-neutral-500">{t.noData}</p>
       )}
 
       {recentDecks.length > 0 && (
         <div className="mt-4">
-          <h2 className="mb-2 text-sm font-medium text-neutral-500">
-            実際のトーナメント戦績デッキ
-          </h2>
+          <h2 className="mb-2 text-sm font-medium text-neutral-500">{t.realTournamentDecks}</h2>
           <ul className="flex flex-col gap-1 text-sm">
             {recentDecks.map((deck) => (
               <li key={deck.deckId}>

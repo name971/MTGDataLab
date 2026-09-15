@@ -52,6 +52,17 @@ const ja = {
     mlRankingInfo:
       "7日以内に一定以上値上がり・値下がりする確率を機械学習モデルで予測し、確率が高い順に並べています（トーナメントで使用実績のあるカードが対象）。過去のTop10的中率: 高騰予想は約73%、暴落予想は約95%。",
   },
+  deckRankingPage: {
+    metaTitle: "デッキランキング - MTG DataLab",
+    heading: "デッキ単位のランキング（アーキタイプランキング）",
+    top10Avg: (count: number) => `上位${count}デッキ平均:`,
+    arenaWildcardTooltip: "ワイルドカード換算：レア¥1,500/4枚、神話レア¥3,000/4枚、コモン・アンコモン¥0",
+    arenaAvg: "MTG Arena換算平均:",
+    periodLabel: "集計期間:",
+    recentDays: (n: number) => `直近${n}日`,
+    noData: "このフォーマットのデータはまだありません。",
+    realTournamentDecks: "実際のトーナメント戦績デッキ",
+  },
   trending: {
     metaTitle: "週間ランキング - MTG DataLab",
     priceCategory: "値上がりランキング",
