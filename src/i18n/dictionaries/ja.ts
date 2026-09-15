@@ -52,6 +52,14 @@ const ja = {
     mlRankingInfo:
       "7日以内に一定以上値上がり・値下がりする確率を機械学習モデルで予測し、確率が高い順に並べています（トーナメントで使用実績のあるカードが対象）。過去のTop10的中率: 高騰予想は約73%、暴落予想は約95%。",
   },
+  rankingTable: {
+    sortUsageRate: "採用率",
+    sortPriceChange: "価格変化率",
+    noMatch: "この色の組み合わせに該当するカードはありません。",
+    priceChange3d: "価格変化率(3日)",
+    usageRate: "採用率",
+    priceUnknown: "価格不明",
+  },
   rankingFilter: {
     title: "絞り込み",
     close: "閉じる",

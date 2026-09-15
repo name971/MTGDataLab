@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { RankingRow } from "@/lib/sampleRankingData";
 import { useLocale } from "@/i18n/useLocale";
+import { getDictionary } from "@/i18n/getDictionary";
 
 /**
  * 取引量は無料データソースが存在しないため launch では対象外（docs/spec.md 2章）。
@@ -14,15 +15,16 @@ import { useLocale } from "@/i18n/useLocale";
  */
 type SortKey = "priceChangePct" | "usageRatePct";
 
-const SORT_OPTIONS: { key: SortKey; label: string }[] = [
-  { key: "usageRatePct", label: "採用率" },
-  { key: "priceChangePct", label: "価格変化率" },
-];
-
 const COLOR_FILTER_OPTIONS = ["W", "U", "B", "R", "G"] as const;
 const VISIBLE_COUNT = 20;
 
 export default function RankingTable({ rows }: { rows: RankingRow[] }) {
+  const locale = useLocale();
+  const t = getDictionary(locale).rankingTable;
+  const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+    { key: "usageRatePct", label: t.sortUsageRate },
+    { key: "priceChangePct", label: t.sortPriceChange },
+  ];
   const [sortKey, setSortKey] = useState<SortKey>("usageRatePct");
   const [priceSortDir, setPriceSortDir] = useState<"asc" | "desc">("desc");
   const [colorFilter, setColorFilter] = useState<Set<string>>(new Set());
@@ -146,7 +148,7 @@ export default function RankingTable({ rows }: { rows: RankingRow[] }) {
       </div>
       {sorted.length === 0 && (
         <p className="py-6 text-center text-sm text-neutral-500">
-          この色の組み合わせに該当するカードはありません。
+          {t.noMatch}
         </p>
       )}
     </div>
@@ -173,6 +175,7 @@ function CardRankRow({
   // カードそのものを見分けられることが重要なので、アートクロップではなくカード全体の画像を使う。
   // Scryfallの画像URLは/<バリエーション>/front/<...>.jpgという共通構造なので置換で導出できる。
   const locale = useLocale();
+  const t = getDictionary(locale).rankingTable;
   const normalImageUrl = row.artCropUrl.replace("/art_crop/", "/normal/");
 
   return (
@@ -195,14 +198,14 @@ function CardRankRow({
         <p className="truncate text-xs text-neutral-500">{row.nameEn}</p>
         <div className="mt-1 flex items-start justify-between text-sm">
           <span className="flex flex-col">
-            <span className="whitespace-nowrap text-[10px] text-neutral-400">価格変化率(3日)</span>
+            <span className="whitespace-nowrap text-[10px] text-neutral-400">{t.priceChange3d}</span>
             <span className={row.priceChangePct >= 0 ? "text-teal-800" : "text-red-800"}>
               {row.priceChangePct >= 0 ? "+" : ""}
               {row.priceChangePct.toFixed(1)}%
             </span>
           </span>
           <span className="flex flex-col items-end">
-            <span className="whitespace-nowrap text-[10px] text-neutral-400">採用率</span>
+            <span className="whitespace-nowrap text-[10px] text-neutral-400">{t.usageRate}</span>
             <span className={USAGE_TIER_CLASS[usageTier]}>{row.usageRatePct.toFixed(1)}%</span>
           </span>
         </div>
@@ -217,7 +220,7 @@ function CardRankRow({
                   : ""
           }`}
         >
-          {row.priceJpy > 0 ? `¥${row.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}` : "価格不明"}
+          {row.priceJpy > 0 ? `¥${row.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}` : t.priceUnknown}
         </p>
       </div>
     </Link>

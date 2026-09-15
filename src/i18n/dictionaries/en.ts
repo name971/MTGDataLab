@@ -53,6 +53,14 @@ const en: typeof ja = {
     mlRankingInfo:
       "Predicted with a machine learning model on the probability of a significant price move (up or down) within 7 days, ranked by confidence (tournament-played cards only). Historical Top 10 accuracy: ~73% for surges, ~95% for crashes.",
   },
+  rankingTable: {
+    sortUsageRate: "Play Rate",
+    sortPriceChange: "Price Change",
+    noMatch: "No cards match this color combination.",
+    priceChange3d: "Price change (3d)",
+    usageRate: "Play rate",
+    priceUnknown: "Price unknown",
+  },
   rankingFilter: {
     title: "Filters",
     close: "Close",
