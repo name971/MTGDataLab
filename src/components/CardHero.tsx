@@ -9,6 +9,7 @@ import LegalityGrid from "./LegalityGrid";
 import ManaText from "./ManaText";
 import { useLocale } from "@/i18n/useLocale";
 import { getDictionary } from "@/i18n/getDictionary";
+import { formatPrice } from "@/lib/fx";
 
 // 実物が角丸ではない（角が四角い）ことで知られるセットの一覧。角丸カードかどうかを毎回
 // 判定するより、角が四角い方が少数派で既知のセットに限られるため、こちらを列挙する方が楽。
@@ -398,6 +399,9 @@ export default function CardHero({
     : effectiveFinish === "foil"
       ? defaultPrint.jpyPriceFoil
       : defaultPrint.jpyPrice;
+  // USD表示用の逆算レート（記録日ごとの正確なレートは持たないため、代表プリントの
+  // 直近レートを一律で使う簡易換算）
+  const usdRate = effectiveFinish === "foil" ? defaultPrint.usdToJpyRateFoil : defaultPrint.usdToJpyRate;
 
   return (
     <div className="flex flex-col gap-6">
@@ -556,20 +560,19 @@ export default function CardHero({
             )}
 
             {jpyPrice !== null ? (
-              <p className="font-numeric mt-4 text-2xl font-medium">
-                ¥{jpyPrice.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
-              </p>
+              <p className="font-numeric mt-4 text-2xl font-medium">{formatPrice(jpyPrice, locale, usdRate)}</p>
             ) : (
               <p className="mt-4 text-sm text-neutral-500">{t.noPriceData}</p>
             )}
             {/* 為替参考値・最高値/最安値は通常/Foilそれぞれの日次履歴から別々に出す
-                （defaultPrint.usdPrice/priceExtremesTextが非Foil用、*Foil系がFoil用）。 */}
-            {!isAlternate && effectiveFinish === "normal" && defaultPrint.usdPrice !== null && defaultPrint.jpyPrice !== null && (
+                （defaultPrint.usdPrice/priceExtremesTextが非Foil用、*Foil系がFoil用）。
+                英語版は元々USD表示なので参考値自体が不要。 */}
+            {locale === "ja" && !isAlternate && effectiveFinish === "normal" && defaultPrint.usdPrice !== null && defaultPrint.jpyPrice !== null && (
               <p className="text-xs text-neutral-400">
                 {t.fxReference(defaultPrint.usdPrice.toFixed(2), defaultPrint.usdToJpyRate.toFixed(2))}
               </p>
             )}
-            {!isAlternate && effectiveFinish === "foil" && defaultPrint.usdPriceFoil !== null && defaultPrint.jpyPriceFoil !== null && (
+            {locale === "ja" && !isAlternate && effectiveFinish === "foil" && defaultPrint.usdPriceFoil !== null && defaultPrint.jpyPriceFoil !== null && (
               <p className="text-xs text-neutral-400">
                 {t.fxReference(defaultPrint.usdPriceFoil.toFixed(2), defaultPrint.usdToJpyRateFoil.toFixed(2))}
               </p>
@@ -595,6 +598,7 @@ export default function CardHero({
             enFoilHistory={enFoilHistoryForChart}
             finish={effectiveFinish}
             iconUrlBySetCode={iconUrlBySetCode}
+            usdToJpyRate={usdRate}
           />
         )}
 
@@ -729,10 +733,10 @@ export default function CardHero({
                 const jpyFoil = allFoilPrices[p.scryfallId];
                 const priceLabel = listSortFoil
                   ? jpyFoil !== undefined
-                    ? `Foil ¥${jpyFoil.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}`
+                    ? `Foil ${formatPrice(jpyFoil, locale, usdRate)}`
                     : "Foil -"
                   : jpy !== undefined
-                    ? `¥${jpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}`
+                    ? formatPrice(jpy, locale, usdRate)
                     : "-";
                 return (
                   <option key={p.scryfallId} value={p.scryfallId}>
@@ -788,16 +792,14 @@ export default function CardHero({
                             listSortFoil ? "text-[10px] text-neutral-400" : ""
                           }`}
                         >
-                          {jpy !== undefined ? `¥${jpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}` : "-"}
+                          {jpy !== undefined ? formatPrice(jpy, locale, usdRate) : "-"}
                         </p>
                         <p
                           className={`overflow-hidden text-ellipsis whitespace-nowrap ${
                             listSortFoil ? "" : "text-[10px] text-neutral-400"
                           }`}
                         >
-                          {jpyFoil !== undefined
-                            ? `Foil ¥${jpyFoil.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}`
-                            : "Foil -"}
+                          {jpyFoil !== undefined ? `Foil ${formatPrice(jpyFoil, locale, usdRate)}` : "Foil -"}
                         </p>
                       </td>
                     </tr>
@@ -915,10 +917,10 @@ export default function CardHero({
               const jpyFoil = allFoilPrices[p.scryfallId];
               const priceLabel = listSortFoil
                 ? jpyFoil !== undefined
-                  ? `Foil ¥${jpyFoil.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}`
+                  ? `Foil ${formatPrice(jpyFoil, locale, usdRate)}`
                   : t.priceUnknown
                 : jpy !== undefined
-                  ? `¥${jpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}`
+                  ? formatPrice(jpy, locale, usdRate)
                   : t.priceUnknown;
               return (
                 <button

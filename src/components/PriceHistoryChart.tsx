@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { PricePoint } from "@/lib/dbPriceHistory";
 import { useLocale } from "@/i18n/useLocale";
 import { getDictionary } from "@/i18n/getDictionary";
+import { formatPrice } from "@/lib/fx";
 
 type Period = "7" | "30" | "90" | "all";
 
@@ -21,6 +22,7 @@ export default function PriceHistoryChart({
   enFoilHistory,
   finish,
   iconUrlBySetCode,
+  usdToJpyRate = 150,
 }: {
   enHistory: PricePoint[];
   enFoilHistory: PricePoint[];
@@ -28,6 +30,8 @@ export default function PriceHistoryChart({
   finish: "normal" | "foil";
   /** set_code -> Scryfallの正しいセットシンボル画像URL（CardHero.tsx参照） */
   iconUrlBySetCode: Record<string, string>;
+  /** 英語版でのUSD逆算表示用（過去日付も同じ現在レートで割り戻す簡易換算） */
+  usdToJpyRate?: number;
 }) {
   const [period, setPeriod] = useState<Period>("30");
   const locale = useLocale();
@@ -86,7 +90,7 @@ export default function PriceHistoryChart({
       ) : points.length === 0 ? (
         <p className="py-6 text-center text-xs text-neutral-500">{t.noDataForPeriod}</p>
       ) : (
-        <ChartSvg points={points} iconUrlBySetCode={iconUrlBySetCode} />
+        <ChartSvg points={points} iconUrlBySetCode={iconUrlBySetCode} locale={locale} usdToJpyRate={usdToJpyRate} />
       )}
     </div>
   );
@@ -95,9 +99,13 @@ export default function PriceHistoryChart({
 function ChartSvg({
   points,
   iconUrlBySetCode,
+  locale,
+  usdToJpyRate,
 }: {
   points: PricePoint[];
   iconUrlBySetCode: Record<string, string>;
+  locale: "ja" | "en";
+  usdToJpyRate: number;
 }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
@@ -157,10 +165,10 @@ function ChartSvg({
           className="stroke-neutral-200"
         />
         <text x={4} y={yFor(maxPrice) + 4} className="fill-neutral-400 font-numeric text-[10px]">
-          ¥{maxPrice.toLocaleString("ja-JP")}
+          {formatPrice(maxPrice, locale, usdToJpyRate)}
         </text>
         <text x={4} y={yFor(minPrice) + 4} className="fill-neutral-400 font-numeric text-[10px]">
-          ¥{minPrice.toLocaleString("ja-JP")}
+          {formatPrice(minPrice, locale, usdToJpyRate)}
         </text>
         <path d={linePath} fill="none" className={diff >= 0 ? "stroke-red-700" : "stroke-blue-700"} strokeWidth={2} />
         {points.map((p, i) => (
@@ -246,7 +254,7 @@ function ChartSvg({
                     </>
                   )}
                   <text x={10} y={hovered.setCode ? 40 : 17} className="fill-white font-numeric text-[13px] font-medium">
-                    ¥{hovered.jpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
+                    {formatPrice(hovered.jpy, locale, usdToJpyRate)}
                   </text>
                   <text x={10} y={hovered.setCode ? 53 : 33} className="fill-neutral-300 text-[11px]">
                     {hovered.date}

@@ -128,7 +128,7 @@ export async function getOtherPrintsForCard(
  * card_printsに行が無い（scripts/rebuild-card-prints.mjs未反映）オラクルはnullを返す
  * （呼び出し側でcardsテーブルの代表プリント画像にフォールバックする想定）。
  */
-export async function getBestCardImage(oracleId: string): Promise<string | null> {
+export async function getBestCardImage(oracleId: string, locale: "ja" | "en" = "ja"): Promise<string | null> {
   const PAGE_SIZE = 1000;
   const rows: { scryfall_id: string; image_uri_normal: string | null; image_uri_normal_ja: string | null }[] = [];
   for (let offset = 0; ; offset += PAGE_SIZE) {
@@ -168,9 +168,11 @@ export async function getBestCardImage(oracleId: string): Promise<string | null>
     });
 
   // 本当の最安値プリント（価格不明な行しか無ければ先頭の行）自身の画像を使う。
-  // 日本語版画像があればそちら、無ければ英語版画像。
+  // ja: 日本語版画像があればそちら、無ければ英語版画像。en（米国市場向け）: 英語版画像を優先。
   const cheapest = priced[0] ?? rows[0];
-  return cheapest.image_uri_normal_ja ?? cheapest.image_uri_normal ?? null;
+  return locale === "en"
+    ? (cheapest.image_uri_normal ?? cheapest.image_uri_normal_ja ?? null)
+    : (cheapest.image_uri_normal_ja ?? cheapest.image_uri_normal ?? null);
 }
 
 const ORACLE_ID_CHUNK = 150; // .in()にUUIDを大量に並べるとURLが長すぎてPostgRESTが400を返すため

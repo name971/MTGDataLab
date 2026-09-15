@@ -13,7 +13,7 @@ import {
   resolveImageUris,
   rarityLabel,
 } from "@/lib/scryfall";
-import { toJpy } from "@/lib/fx";
+import { toJpy, formatPrice } from "@/lib/fx";
 import { SAMPLE_CARD_SLUGS } from "@/lib/sampleCards";
 import { getArchetypesUsingCard } from "@/lib/sampleDeckDetail";
 import { getFormatUsageCountsForCard } from "@/lib/dbCardUsageByFormat";
@@ -71,7 +71,7 @@ async function resolveCardFromDbDetail(dbResult: DbCardDetail, locale: Locale): 
   // 無ければライブ取得にフォールバック
   const [snapshot, bestImage] = await Promise.all([
     getLatestCheapestPrice(oracle.oracle_id),
-    getBestCardImage(oracle.oracle_id),
+    getBestCardImage(oracle.oracle_id, locale),
   ]);
   let usdPrice: number | null = snapshot?.usd ?? null;
   let jpyPrice: number | null = snapshot?.jpyEst ?? null;
@@ -327,17 +327,17 @@ export default async function CardDetailPage({
 
   const priceExtremesText = priceExtremes
     ? t.priceExtremes(
-        priceExtremes.minJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 }),
+        formatPrice(priceExtremes.minJpy, locale, usdToJpyRate),
         formatDateSlash(priceExtremes.minDate),
-        priceExtremes.maxJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 }),
+        formatPrice(priceExtremes.maxJpy, locale, usdToJpyRate),
         formatDateSlash(priceExtremes.maxDate),
       )
     : null;
   const priceExtremesFoilText = priceExtremesFoil
     ? t.priceExtremes(
-        priceExtremesFoil.minJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 }),
+        formatPrice(priceExtremesFoil.minJpy, locale, usdToJpyRateFoil),
         formatDateSlash(priceExtremesFoil.minDate),
-        priceExtremesFoil.maxJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 }),
+        formatPrice(priceExtremesFoil.maxJpy, locale, usdToJpyRateFoil),
         formatDateSlash(priceExtremesFoil.maxDate),
       )
     : null;

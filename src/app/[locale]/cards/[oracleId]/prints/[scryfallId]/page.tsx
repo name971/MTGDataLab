@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getCardPrintByScryfallId } from "@/lib/dbCardPrints";
 import { getPrintPriceHistory } from "@/lib/dbCardPrintPrices";
-import { getCardDetailFromDb, getCardDetailByOracleId, type DbCardDetail } from "@/lib/cardData";
+import { getCardDetailFromDb, getCardDetailByOracleId, getLatestUsdToJpyRate, type DbCardDetail } from "@/lib/cardData";
 import { rarityLabel } from "@/lib/scryfall";
 import { SAMPLE_CARD_SLUGS } from "@/lib/sampleCards";
 import PriceHistoryChart from "@/components/PriceHistoryChart";
@@ -11,6 +11,7 @@ import LegalityGrid from "@/components/LegalityGrid";
 import ManaText from "@/components/ManaText";
 import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
 import { getDictionary } from "@/i18n/getDictionary";
+import { formatPrice } from "@/lib/fx";
 
 /**
  * URLの[oracleId]は「サンプル22枚のスラグ（例: "ragavan"）」と「実データのUUID」の
@@ -55,11 +56,14 @@ export default async function CardPrintDetailPage({
   // 名前・タイプ・テキストはオラクル単位（プリントによってゲームルール上変わらない）で、
   // カード詳細ページ（src/app/cards/[oracleId]/page.tsx）と同じ解決ロジックを使う。
   // 画像・セット・価格だけがこのプリント固有の情報。
-  const typeLine = (jaCard?.printed_type_line || fallbackTypeLineJa || enCard.type_line) ?? null;
-  const oracleText = fallbackTextJa ?? jaCard?.printed_text_ja ?? oracle.oracle_text;
+  const typeLine =
+    locale === "en" ? enCard.type_line : ((jaCard?.printed_type_line || fallbackTypeLineJa || enCard.type_line) ?? null);
+  const oracleText =
+    locale === "en" ? oracle.oracle_text : (fallbackTextJa ?? jaCard?.printed_text_ja ?? oracle.oracle_text);
 
   // card_print_prices（scripts/snapshot-print-prices.mjsが日次で追記、db/schema.sql参照）の
   // 最新日を「現在価格」として表示する。まだ一度もスナップショットが無い場合は価格データなし。
+  const usdToJpyRate = (await getLatestUsdToJpyRate()) ?? 150;
   const latest = priceHistory.at(-1) ?? null;
   const latestFoil = foilPriceHistory.at(-1) ?? null;
   const jpyPrice = latest?.jpy ?? null;
@@ -117,7 +121,7 @@ export default async function CardPrintDetailPage({
             {jpyPrice !== null ? (
               <>
                 <p className="font-numeric mt-4 text-2xl font-medium">
-                  {t.priceUnit(jpyPrice.toLocaleString("ja-JP", { maximumFractionDigits: 0 }))}
+                  {t.priceUnit(formatPrice(jpyPrice, locale, usdToJpyRate))}
                 </p>
                 <p className="text-xs text-neutral-400">{t.asOf(latest?.date ?? "")}</p>
               </>
@@ -126,7 +130,7 @@ export default async function CardPrintDetailPage({
             )}
             {jpyPriceFoil !== null && (
               <p className="font-numeric text-sm text-neutral-500">
-                {t.foilAsOf(jpyPriceFoil.toLocaleString("ja-JP", { maximumFractionDigits: 0 }), latestFoil?.date ?? "")}
+                {t.foilAsOf(formatPrice(jpyPriceFoil, locale, usdToJpyRate), latestFoil?.date ?? "")}
               </p>
             )}
           </div>
@@ -139,6 +143,7 @@ export default async function CardPrintDetailPage({
           enFoilHistory={foilPriceHistory}
           finish="normal"
           iconUrlBySetCode={{}}
+          usdToJpyRate={usdToJpyRate}
         />
       )}
 

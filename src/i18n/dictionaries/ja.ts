@@ -147,10 +147,10 @@ const ja = {
     backTo: (name: string) => `← ${name} に戻る`,
     notTournamentLegalBadge: "使用不可",
     releasedOn: (date: string) => `発売日: ${date}`,
-    priceUnit: (jpy: string) => `${jpy}円`,
+    priceUnit: (price: string) => price,
     asOf: (date: string) => `${date}時点の参考値`,
     noPriceData: "価格データなし",
-    foilAsOf: (jpy: string, date: string) => `Foil ¥${jpy}（${date}時点）`,
+    foilAsOf: (price: string, date: string) => `Foil ${price}（${date}時点）`,
     formatLegality: "フォーマットリーガル",
   },
   cardDecksPage: {
@@ -216,8 +216,8 @@ const ja = {
     cmcTooltip: (bucket: string, n: number) => `CMC ${bucket}: ${n}枚`,
   },
   cardDetail: {
-    priceExtremes: (minJpy: string, minDate: string, maxJpy: string, maxDate: string) =>
-      `最安値: ¥${minJpy}（${minDate}） ／ 最高値: ¥${maxJpy}（${maxDate}）\n※日次スナップショットの記録が残っている範囲内での最高値・最安値です`,
+    priceExtremes: (min: string, minDate: string, max: string, maxDate: string) =>
+      `最安値: ${min}（${minDate}） ／ 最高値: ${max}（${maxDate}）\n※日次スナップショットの記録が残っている範囲内での最高値・最安値です`,
     usageDeckHeading: "使用デッキ",
     periodDays: (n: number) => `${n}日`,
     deckCountUnit: (n: number) => `${n}件`,

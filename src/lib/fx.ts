@@ -31,3 +31,15 @@ export function toJpy(amountUsd: number, usdToJpy: number): number {
 export function formatJpy(jpy: number): string {
   return `¥${jpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}`;
 }
+
+/**
+ * ロケールに応じて円/ドル表示を切り替える。英語版はUSD表示（米国市場向け方針、2026-09-16）。
+ * DBに保存されているのは基本的にjpy_est（記録日時点のレートで換算済み）のみのため、USD表示は
+ * 現在の為替レートで逆算する簡易換算（過去の日付の値も同じ現在レートで割り戻すため、
+ * 会計目的の厳密さは持たないが、UI表示としては十分）。
+ */
+export function formatPrice(jpy: number, locale: "ja" | "en", usdToJpyRate: number): string {
+  if (locale === "ja") return formatJpy(jpy);
+  const rate = usdToJpyRate > 0 ? usdToJpyRate : 150;
+  return `$${(jpy / rate).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}

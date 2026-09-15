@@ -148,10 +148,10 @@ const en: typeof ja = {
     backTo: (name: string) => `← Back to ${name}`,
     notTournamentLegalBadge: "Not legal",
     releasedOn: (date: string) => `Released: ${date}`,
-    priceUnit: (jpy: string) => `¥${jpy}`,
+    priceUnit: (price: string) => price,
     asOf: (date: string) => `as of ${date}`,
     noPriceData: "No price data",
-    foilAsOf: (jpy: string, date: string) => `Foil ¥${jpy} (as of ${date})`,
+    foilAsOf: (price: string, date: string) => `Foil ${price} (as of ${date})`,
     formatLegality: "Format Legality",
   },
   cardDecksPage: {
@@ -217,8 +217,8 @@ const en: typeof ja = {
     cmcTooltip: (bucket: string, n: number) => `CMC ${bucket}: ${n}`,
   },
   cardDetail: {
-    priceExtremes: (minJpy: string, minDate: string, maxJpy: string, maxDate: string) =>
-      `Low: ¥${minJpy} (${minDate}) / High: ¥${maxJpy} (${maxDate})\n※Low/high within the recorded range of daily snapshots`,
+    priceExtremes: (min: string, minDate: string, max: string, maxDate: string) =>
+      `Low: ${min} (${minDate}) / High: ${max} (${maxDate})\n※Low/high within the recorded range of daily snapshots`,
     usageDeckHeading: "Decks Playing This Card",
     periodDays: (n: number) => `${n}d`,
     deckCountUnit: (n: number) => `${n}`,
