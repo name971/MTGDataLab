@@ -4,18 +4,21 @@ import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { ArchetypeRow } from "@/lib/sampleDeckData";
+import { useLocale } from "@/i18n/useLocale";
+import { getDictionary } from "@/i18n/getDictionary";
 
 type SortKey = "usageRatePct" | "medianPriceJpy";
-
-const SORT_OPTIONS: { key: SortKey; label: string }[] = [
-  { key: "usageRatePct", label: "採用率順" },
-  { key: "medianPriceJpy", label: "平均価格順" },
-];
 
 const VISIBLE_COUNT = 25;
 const PRICE_HIGHLIGHT_WINDOW = 10;
 
 export default function DeckRankingTable({ rows }: { rows: ArchetypeRow[] }) {
+  const locale = useLocale();
+  const t = getDictionary(locale).deckRanking;
+  const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+    { key: "usageRatePct", label: t.sortByUsage },
+    { key: "medianPriceJpy", label: t.sortByPrice },
+  ];
   const [sortKey, setSortKey] = useState<SortKey>("usageRatePct");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [expanded, setExpanded] = useState(false);
@@ -87,7 +90,7 @@ export default function DeckRankingTable({ rows }: { rows: ArchetypeRow[] }) {
         </div>
         {hasArenaData && (
           <label
-            title="ワイルドカード換算：レア¥1,500/4枚、神話レア¥3,000/4枚、コモン・アンコモン¥0"
+            title={t.arenaWildcardTooltip}
             className="ml-auto flex w-fit cursor-help items-center gap-2 rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-600"
           >
             <input
@@ -96,7 +99,7 @@ export default function DeckRankingTable({ rows }: { rows: ArchetypeRow[] }) {
               onChange={(e) => setArenaMode(e.target.checked)}
               className="h-4 w-4"
             />
-            MTG Arena換算で表示
+            {t.arenaModeToggle}
           </label>
         )}
       </div>
@@ -123,7 +126,7 @@ export default function DeckRankingTable({ rows }: { rows: ArchetypeRow[] }) {
           onClick={() => setExpanded((v) => !v)}
           className="self-center rounded-md border border-neutral-300 px-4 py-1.5 text-sm text-neutral-600 hover:border-neutral-500"
         >
-          {expanded ? "閉じる" : `もっと見る（残り${sorted.length - VISIBLE_COUNT}件）`}
+          {expanded ? t.close : t.loadMore(sorted.length - VISIBLE_COUNT)}
         </button>
       )}
     </div>
@@ -139,11 +142,13 @@ function ArchetypeCard({
   displayPriceJpy: number;
   priceHighlight: "max" | "min" | null;
 }) {
+  const locale = useLocale();
+  const t = getDictionary(locale).deckRanking;
   // archetypeIdが数字ならDB由来（archetypes.id）、それ以外は旧サンプルデータのスラグ。
   // DB由来のidは実デッキのidと数字が衝突しうるので/decks/[deckId]には出さない。
   const href = /^\d+$/.test(row.archetypeId)
-    ? `/decks/archetype/${row.archetypeId}`
-    : `/decks/${row.archetypeId}`;
+    ? `/${locale}/decks/archetype/${row.archetypeId}`
+    : `/${locale}/decks/${row.archetypeId}`;
 
   return (
     <Link
@@ -176,7 +181,7 @@ function ArchetypeCard({
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center bg-neutral-100 text-xs text-neutral-400">
-            画像なし
+            {t.noImage}
           </div>
         )}
         {row.colors && row.colors.length > 0 && (
@@ -192,11 +197,11 @@ function ArchetypeCard({
         <p className="truncate text-xs text-neutral-500">{row.nameEn}</p>
         <div className="mt-1 flex items-start justify-between text-sm">
           <span className="flex flex-col">
-            <span className="text-xs text-neutral-400">採用率</span>
+            <span className="text-xs text-neutral-400">{t.usageRateLabel}</span>
             <span className="text-neutral-600">{row.usageRatePct.toFixed(1)}%</span>
           </span>
           <span className="flex flex-col items-end">
-            <span className="text-xs text-neutral-400">中央値価格</span>
+            <span className="text-xs text-neutral-400">{t.medianPriceLabel}</span>
             <span
               className={
                 priceHighlight === "max"

@@ -52,6 +52,17 @@ const ja = {
     mlRankingInfo:
       "7日以内に一定以上値上がり・値下がりする確率を機械学習モデルで予測し、確率が高い順に並べています（トーナメントで使用実績のあるカードが対象）。過去のTop10的中率: 高騰予想は約73%、暴落予想は約95%。",
   },
+  deckRanking: {
+    sortByUsage: "採用率順",
+    sortByPrice: "平均価格順",
+    arenaModeToggle: "MTG Arena換算で表示",
+    arenaWildcardTooltip: "ワイルドカード換算：レア¥1,500/4枚、神話レア¥3,000/4枚、コモン・アンコモン¥0",
+    close: "閉じる",
+    loadMore: (remaining: number) => `もっと見る（残り${remaining}件）`,
+    noImage: "画像なし",
+    usageRateLabel: "採用率",
+    medianPriceLabel: "中央値価格",
+  },
   deckStats: {
     landLabel: "土地",
     unitCount: (n: number) => `${n}枚`,

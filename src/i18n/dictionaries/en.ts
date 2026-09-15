@@ -53,6 +53,17 @@ const en: typeof ja = {
     mlRankingInfo:
       "Predicted with a machine learning model on the probability of a significant price move (up or down) within 7 days, ranked by confidence (tournament-played cards only). Historical Top 10 accuracy: ~73% for surges, ~95% for crashes.",
   },
+  deckRanking: {
+    sortByUsage: "By Play Rate",
+    sortByPrice: "By Median Price",
+    arenaModeToggle: "Show MTG Arena estimate",
+    arenaWildcardTooltip: "Wildcard estimate: Rare ¥1,500/4, Mythic ¥3,000/4, Common/Uncommon ¥0",
+    close: "Close",
+    loadMore: (remaining: number) => `Show more (${remaining} left)`,
+    noImage: "No image",
+    usageRateLabel: "Play rate",
+    medianPriceLabel: "Median price",
+  },
   deckStats: {
     landLabel: "Lands",
     unitCount: (n: number) => `${n}`,
