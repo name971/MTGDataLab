@@ -2,15 +2,24 @@ import PackEvCalculator from "@/components/PackEvCalculator";
 import { getPackSetsFromDb, getSetReleaseDates } from "@/lib/dbPackEv";
 import { SAMPLE_SETS, COLLECTOR_SAMPLE_SETS } from "@/lib/samplePackData";
 import { supabase } from "@/lib/supabase";
+import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
+import { getDictionary } from "@/i18n/getDictionary";
 
-export const metadata = { title: "パックEV計算 - MTG DataLab" };
+export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }) {
+  const { locale: rawLocale } = await params;
+  const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
+  return { title: getDictionary(locale).packEv.metaTitle };
+}
 
 // revalidate未設定だとビルド時の1回だけ静的生成されて以降ずっとキャッシュされ続けてしまう
 // （match_rate等の日次更新が反映されない不具合の原因だった）。集計バッチは1日1回のみのため、
 // 他のページと同様に長めのキャッシュで十分。
 export const revalidate = 21600;
 
-export default async function PackEvPage() {
+export default async function PackEvPage({ params }: { params: Promise<{ locale: string }> }) {
+  const { locale: rawLocale } = await params;
+  const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
+  const t = getDictionary(locale).packEv;
   // 発売日はplay/collectorで同じセットが重なるため、先に対象セット一覧をまとめて取ってから
   // 1回だけ取得する（getPackSetsFromDb内で毎回取り直すと往復が倍になる）。
   const { data: slotDefRows } = await supabase.from("pack_slot_definitions").select("set_code");
@@ -27,8 +36,8 @@ export default async function PackEvPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-semibold">パックEV計算</h1>
-      <p className="text-sm text-neutral-500">Play Booster / Collector Boosterに対応</p>
+      <h1 className="text-xl font-semibold">{t.heading}</h1>
+      <p className="text-sm text-neutral-500">{t.subheading}</p>
       <PackEvCalculator playSets={playSets} collectorSets={collectorSets} />
     </div>
   );

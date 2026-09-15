@@ -52,6 +52,18 @@ const ja = {
     mlRankingInfo:
       "7日以内に一定以上値上がり・値下がりする確率を機械学習モデルで予測し、確率が高い順に並べています（トーナメントで使用実績のあるカードが対象）。過去のTop10的中率: 高騰予想は約73%、暴落予想は約95%。",
   },
+  searchPage: {
+    metaTitle: "検索 - MTG DataLab",
+    resultsFor: (query: string) => `検索結果: ${query}`,
+    advancedSearch: "高度検索 →",
+    minLength: "2文字以上（漢字・かなは1文字から）入力してください。",
+    noResults: "該当するカードが見つかりませんでした。",
+  },
+  packEv: {
+    metaTitle: "パックEV計算 - MTG DataLab",
+    heading: "パックEV計算",
+    subheading: "Play Booster / Collector Boosterに対応",
+  },
   deckDetailPage: {
     metaTitleFallback: "MTG DataLab",
     deckTitle: (name: string) => `${name} のデッキ`,

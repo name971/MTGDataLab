@@ -5,8 +5,13 @@ import { searchSampleCards } from "@/lib/sampleSearchIndex";
 import { slugForCardName } from "@/lib/sampleCards";
 import { meetsMinQueryLength } from "@/lib/searchQuery";
 import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
+import { getDictionary } from "@/i18n/getDictionary";
 
-export const metadata = { title: "検索 - MTG DataLab" };
+export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }) {
+  const { locale: rawLocale } = await params;
+  const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
+  return { title: getDictionary(locale).searchPage.metaTitle };
+}
 
 export default async function SearchPage({
   params,
@@ -17,6 +22,7 @@ export default async function SearchPage({
 }) {
   const { locale: rawLocale } = await params;
   const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
+  const t = getDictionary(locale).searchPage;
   const { q } = await searchParams;
   const query = q ?? "";
 
@@ -35,9 +41,9 @@ export default async function SearchPage({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-baseline gap-3">
-        <h1 className="text-xl font-semibold">検索結果: {query}</h1>
+        <h1 className="text-xl font-semibold">{t.resultsFor(query)}</h1>
         <Link href={`/${locale}/search/advanced`} className="text-sm text-neutral-500 hover:underline">
-          高度検索 →
+          {t.advancedSearch}
         </Link>
       </div>
 
@@ -59,17 +65,15 @@ export default async function SearchPage({
                 />
               )}
               <div>
-                <p className="text-sm font-medium">{card.nameJa}</p>
-                <p className="text-xs text-neutral-500">{card.nameEn}</p>
+                <p className="text-sm font-medium">{locale === "ja" ? card.nameJa : card.nameEn}</p>
+                {locale === "ja" && <p className="text-xs text-neutral-500">{card.nameEn}</p>}
               </div>
             </Link>
           ))}
         </div>
       ) : (
         <p className="text-sm text-neutral-500">
-          {!meetsMinQueryLength(query.trim())
-            ? "2文字以上（漢字・かなは1文字から）入力してください。"
-            : "該当するカードが見つかりませんでした。"}
+          {!meetsMinQueryLength(query.trim()) ? t.minLength : t.noResults}
         </p>
       )}
     </div>
