@@ -50,9 +50,19 @@ python ml/predict_and_publish.py
 3. 本番サイトの注目カードランキング（トップページ）が最新予測日を表示しているか、
    実際に開いて確認する（ISRキャッシュの反映に多少ラグがある場合がある）。
 
+## 実行後、自動で追いつくもの（手動対応不要）
+
+- 各カードの「予測時点から今どれだけ動いたか」（`current_pct_change`等）は
+  `scripts/update-ml-prediction-outcomes.mjs`が担当だが、これは日次パイプライン
+  （`daily-data-pipeline.yml`、毎日07:00 JST）に既に組み込まれている。手動実行の翌日に
+  自動で埋まるので、その場で追加実行する必要は無い。
+
 ## 失敗時のよくある原因
 
 - `ensure_fresh_data()`で中断 → `fetch_data.py`を先に実行し忘れている。手順通りやり直す。
-- 為替レートが無くて`fetch_data.py`が失敗 → `scripts/snapshot-exchange-rates.mjs`を先に実行。
+- `exchange_rates`テーブルが空だと`fetch_data.py`の`fetch_supabase_exchange_rates()`で
+  KeyError等の例外になり落ちる（明示的なガードメッセージは無い、素のエラーで気づく形）。
+  通常は日次バッチが毎日書いているので空になることは稀。発生したら
+  `node scripts/snapshot-exchange-rates.mjs`を先に実行してから再試行する。
 - Supabase/R2の一時的な5xx → 数分待って再実行。何度も失敗する場合はSupabase/Cloudflareの
   障害情報を確認する。
