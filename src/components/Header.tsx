@@ -2,6 +2,7 @@ import Link from "next/link";
 import NavLinks from "./NavLinks";
 import SearchBar from "./SearchBar";
 import AuthButton from "./AuthButton";
+import LocaleSwitcher from "./LocaleSwitcher";
 import type { Locale } from "@/i18n/config";
 
 export default function Header({ locale }: { locale: Locale }) {
@@ -13,7 +14,10 @@ export default function Header({ locale }: { locale: Locale }) {
         </Link>
         <NavLinks />
         <SearchBar />
-        <AuthButton />
+        <div className="flex items-center gap-2">
+          <LocaleSwitcher />
+          <AuthButton />
+        </div>
       </div>
     </header>
   );

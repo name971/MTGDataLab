@@ -24,7 +24,7 @@ import { getCatalogOracleById } from "@/lib/catalogDb";
 import { getLatestPricesForPrints } from "@/lib/dbCardPrintPrices";
 import { translateTypeLine } from "@/lib/typeGlossary";
 import CardHero from "@/components/CardHero";
-import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
+import { isLocale, DEFAULT_LOCALE, type Locale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/getDictionary";
 
 // 価格・採用率データは1日1回のバッチでしか更新されないため、長めにキャッシュしてegressを抑える
@@ -65,7 +65,7 @@ interface ResolvedCard {
   source: "db" | "live";
 }
 
-async function resolveCardFromDbDetail(dbResult: DbCardDetail): Promise<ResolvedCard> {
+async function resolveCardFromDbDetail(dbResult: DbCardDetail, locale: Locale): Promise<ResolvedCard> {
   const { oracle, enCard, jaCard, fallbackTypeLineJa, fallbackTextJa } = dbResult;
   // card_cheapest_price_snapshots（日次バッチで投入済み、全プリント横断の最安値）優先、
   // 無ければライブ取得にフォールバック
@@ -99,18 +99,21 @@ async function resolveCardFromDbDetail(dbResult: DbCardDetail): Promise<Resolved
     rarity: enCard.rarity,
     // 実際の日本語版プリント訳が無ければ、辞書（typeGlossary.ts）で機械的に翻訳する。
     // 辞書に無い語（未知のクリーチャー・タイプ等）はそのまま英語で残る。
+    // locale="en"の時は英語版サイトなので素直に英語のtype_line/oracle_textを使う。
     typeLine:
-      (jaCard?.printed_type_line ||
-        fallbackTypeLineJa ||
-        (enCard.type_line ? translateTypeLine(enCard.type_line) : null)) ??
-      null,
+      locale === "en"
+        ? (enCard.type_line ?? null)
+        : ((jaCard?.printed_type_line ||
+            fallbackTypeLineJa ||
+            (enCard.type_line ? translateTypeLine(enCard.type_line) : null)) ??
+          null),
     manaCost: enCard.mana_cost,
     power: enCard.power,
     toughness: enCard.toughness,
     // 日本語版プリントのルールテキスト訳（printed_text_ja）があればそちらを優先するが、
     // 代表プリントがUniverses Beyond版でフレーバー名に差し替わっている場合はfallbackTextJa
     // （非コラボ版のテキスト）を優先する。どちらも無ければ英語のoracle_textにフォールバック。
-    oracleText: fallbackTextJa ?? jaCard?.printed_text_ja ?? oracle.oracle_text,
+    oracleText: locale === "en" ? oracle.oracle_text : (fallbackTextJa ?? jaCard?.printed_text_ja ?? oracle.oracle_text),
     legalities: enCard.legalities,
     // 「一番安いプリントから順に見て、日本語版画像があればそれを採用」というアルゴリズムで
     // card_printsから選ぶ（getBestCardImage）。card_prints未反映（新規カード等）でnullの場合のみ、
@@ -125,9 +128,9 @@ async function resolveCardFromDbDetail(dbResult: DbCardDetail): Promise<Resolved
 }
 
 /** 実トーナメントデータ由来のカード（サンプルの22枚と違いスラグを持たない）をoracle_id直指定で解決する */
-async function resolveCardByOracleId(oracleId: string): Promise<ResolvedCard | null> {
+async function resolveCardByOracleId(oracleId: string, locale: Locale): Promise<ResolvedCard | null> {
   const dbResult = await getCardDetailByOracleId(oracleId);
-  if (dbResult) return resolveCardFromDbDetail(dbResult);
+  if (dbResult) return resolveCardFromDbDetail(dbResult, locale);
 
   // デッキ未使用のため図鑑カタログ（D1）側に移ったカード。D1にはoracle_id→カード名の
   // 対応だけ持たせてあるので、名前が分かればあとは既存のScryfallライブ取得フォールバック
@@ -137,14 +140,14 @@ async function resolveCardByOracleId(oracleId: string): Promise<ResolvedCard | n
   // 「oracleId無し」扱いでスキップされてしまう）。
   const catalogOracle = await getCatalogOracleById(oracleId);
   if (!catalogOracle) return null;
-  const resolved = await resolveCard(catalogOracle.name);
+  const resolved = await resolveCard(catalogOracle.name, locale);
   return resolved ? { ...resolved, oracleId } : null;
 }
 
-async function resolveCard(searchName: string): Promise<ResolvedCard | null> {
+async function resolveCard(searchName: string, locale: Locale): Promise<ResolvedCard | null> {
   const dbResult = await getCardDetailFromDb(searchName);
   if (dbResult) {
-    return resolveCardFromDbDetail(dbResult);
+    return resolveCardFromDbDetail(dbResult, locale);
   }
 
   // DB未インポートのカードはScryfallをライブで取得する（フォールバック）
@@ -166,15 +169,20 @@ async function resolveCard(searchName: string): Promise<ResolvedCard | null> {
     collectorNumber: enCard.collector_number,
     rarity: enCard.rarity,
     typeLine:
-      (jaCard && resolveFrontFacePrintedTypeLine(jaCard)) ??
-      (() => {
-        const en = resolveFrontFaceTypeLine(enCard);
-        return en ? translateTypeLine(en) : null;
-      })(),
+      locale === "en"
+        ? (resolveFrontFaceTypeLine(enCard) ?? null)
+        : ((jaCard && resolveFrontFacePrintedTypeLine(jaCard)) ??
+          (() => {
+            const en = resolveFrontFaceTypeLine(enCard);
+            return en ? translateTypeLine(en) : null;
+          })()),
     manaCost: enCard.mana_cost ?? enCard.card_faces?.[0]?.mana_cost ?? null,
     power: enCard.power ?? enCard.card_faces?.[0]?.power ?? null,
     toughness: enCard.toughness ?? enCard.card_faces?.[0]?.toughness ?? null,
-    oracleText: (jaCard && resolveCombinedPrintedText(jaCard)) ?? resolveCombinedOracleText(enCard),
+    oracleText:
+      locale === "en"
+        ? resolveCombinedOracleText(enCard)
+        : ((jaCard && resolveCombinedPrintedText(jaCard)) ?? resolveCombinedOracleText(enCard)),
     legalities: enCard.legalities,
     imageUrl:
       (jaCard && resolveImageUris(jaCard)?.normal) ?? resolveImageUris(enCard)?.normal ?? null,
@@ -188,11 +196,11 @@ async function resolveCard(searchName: string): Promise<ResolvedCard | null> {
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-async function resolveCardByParam(oracleId: string): Promise<ResolvedCard | null> {
+async function resolveCardByParam(oracleId: string, locale: Locale): Promise<ResolvedCard | null> {
   const searchName = SAMPLE_CARD_SLUGS[oracleId];
-  if (searchName) return resolveCard(searchName);
+  if (searchName) return resolveCard(searchName, locale);
   // 実トーナメントデータ由来のカードはスラグを持たず、oracle_id（UUID）がそのままURLになる
-  if (UUID_PATTERN.test(oracleId)) return resolveCardByOracleId(oracleId);
+  if (UUID_PATTERN.test(oracleId)) return resolveCardByOracleId(oracleId, locale);
   return null;
 }
 
@@ -203,7 +211,7 @@ export async function generateMetadata({
 }) {
   const { locale: rawLocale, oracleId } = await params;
   const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
-  const card = await resolveCardByParam(oracleId);
+  const card = await resolveCardByParam(oracleId, locale);
   if (!card) return { title: "MTG DataLab" };
 
   const name = locale === "ja" ? (card.nameJa ?? card.nameEn) : card.nameEn;
@@ -251,7 +259,7 @@ export default async function CardDetailPage({
   const { period, print, finish } = await searchParams;
   const usagePeriodDays = resolveUsagePeriod(period);
 
-  const card = await resolveCardByParam(oracleId);
+  const card = await resolveCardByParam(oracleId, locale);
   if (!card) notFound();
 
   // 週間ランキング等から「このプリントが動いた」経由で来た場合、初期表示から
