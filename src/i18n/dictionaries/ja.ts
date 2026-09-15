@@ -14,6 +14,38 @@ const ja = {
   logout: "ログアウト",
   footerLegal:
     "MTG DataLabは、Fan Content Policyのもとで許可された非公式のファンコンテンツです。Wizards of the Coastによる承認・後援を受けたものではありません。使用されている素材の一部はWizards of the Coastの所有物です。©Wizards of the Coast LLC.",
+  cardHero: {
+    backToCardData: "← カードデータに戻る",
+    cardDataLabel: "カードデータ",
+    cardDataTooltip:
+      "カード名・画像はこのプリントのものを表示しています（トーナメントで使える通常のプリントの中で最安値のものを自動選択、プロモ・特殊枠・コラボ作品限定版などは対象外）。価格は全プリント中の最安値を表示しています",
+    normalTab: "通常",
+    foilTab: "Foil",
+    releasedOn: (date: string) => ` ・ 発売日: ${date}`,
+    noPriceData: "価格データなし",
+    fxReference: (usd: string, rate: string) => `為替換算の参考値（$${usd} × ${rate}円/$）`,
+    loading: "読み込み中...",
+    loadingEllipsis: "読み込み中…",
+    formatLegality: "フォーマットリーガル",
+    galleryButtonTitle: (count: number) => `画像一覧から探す（全${count}種）`,
+    allPrintsCount: (count: number) => `全${count}種のプリント`,
+    notTournamentLegalNote: "※このプリントは特殊なため、公式大会では使用できません",
+    notTournamentLegalBadge: "使用不可",
+    sortLabel: "並び順:",
+    sortReleaseDate: "発売日順",
+    sortPrice: "価格順",
+    viewNormalPrices: "通常価格で見る",
+    viewFoilPrices: "Foil価格で見る",
+    loadMore: (remaining: number, hasMoreOnServer: boolean) =>
+      `もっと見る（残り${remaining}件${hasMoreOnServer ? "以上" : ""}）`,
+    loadMoreSimple: "もっと見る",
+    loadMoreFromServer: (count: number) => `もっと読み込む（残り${count}種）`,
+    close: "閉じる",
+    priceUnknown: "価格不明",
+    noImage: "画像なし",
+    printsListTitle: (name: string | null, shown: number, total: number) =>
+      `${name ?? ""}のプリント一覧（${shown}/${total}種）`,
+  },
 };
 
 export default ja;

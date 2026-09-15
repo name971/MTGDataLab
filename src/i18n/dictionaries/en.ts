@@ -15,6 +15,38 @@ const en: typeof ja = {
   logout: "Log out",
   footerLegal:
     "MTG DataLab is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards of the Coast. Portions of the materials used are property of Wizards of the Coast. ©Wizards of the Coast LLC.",
+  cardHero: {
+    backToCardData: "← Back to card data",
+    cardDataLabel: "Card data",
+    cardDataTooltip:
+      "Showing the name and image of this print (automatically picked as the cheapest tournament-legal regular print; promos, special frames, and collaboration-exclusive versions are excluded). Price shown is the cheapest across all prints.",
+    normalTab: "Normal",
+    foilTab: "Foil",
+    releasedOn: (date: string) => ` · Released: ${date}`,
+    noPriceData: "No price data",
+    fxReference: (usd: string, rate: string) => `FX reference ($${usd} × ¥${rate}/$)`,
+    loading: "Loading...",
+    loadingEllipsis: "Loading…",
+    formatLegality: "Format Legality",
+    galleryButtonTitle: (count: number) => `Browse image gallery (${count} total)`,
+    allPrintsCount: (count: number) => `${count} prints total`,
+    notTournamentLegalNote: "※This print is special and not legal for official tournament play",
+    notTournamentLegalBadge: "Not legal",
+    sortLabel: "Sort:",
+    sortReleaseDate: "Release date",
+    sortPrice: "Price",
+    viewNormalPrices: "View normal prices",
+    viewFoilPrices: "View foil prices",
+    loadMore: (remaining: number, hasMoreOnServer: boolean) =>
+      `Show more (${remaining}${hasMoreOnServer ? "+" : ""} left)`,
+    loadMoreSimple: "Show more",
+    loadMoreFromServer: (count: number) => `Load more (${count} left)`,
+    close: "Close",
+    priceUnknown: "Price unknown",
+    noImage: "No image",
+    printsListTitle: (name: string | null, shown: number, total: number) =>
+      `${name ?? ""} prints (${shown}/${total})`,
+  },
 };
 
 export default en;

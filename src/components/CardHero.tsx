@@ -7,6 +7,8 @@ import type { PricePoint } from "@/lib/dbPriceHistory";
 import PriceHistoryChart from "./PriceHistoryChart";
 import LegalityGrid from "./LegalityGrid";
 import ManaText from "./ManaText";
+import { useLocale } from "@/i18n/useLocale";
+import { getDictionary } from "@/i18n/getDictionary";
 
 // 実物が角丸ではない（角が四角い）ことで知られるセットの一覧。角丸カードかどうかを毎回
 // 判定するより、角が四角い方が少数派で既知のセットに限られるため、こちらを列挙する方が楽。
@@ -188,6 +190,8 @@ export default function CardHero({
   /** グラフの下・プリント一覧とは独立した左カラムに差し込む追加コンテンツ（使用デッキ等） */
   children?: ReactNode;
 }) {
+  const locale = useLocale();
+  const t = getDictionary(locale).cardHero;
   // otherPrints等はサーバーから最初のページ分だけ渡される（src/lib/dbCardPrints.ts参照）。
   // 「もっと見る」でページの続きが必要になった時だけ/api/other-prints経由で追加取得し、
   // ここに追記していく。
@@ -407,14 +411,14 @@ export default function CardHero({
                   onClick={resetToAggregate}
                   className="mb-1.5 inline-block rounded bg-neutral-800 px-2.5 py-1 text-sm font-semibold text-white hover:bg-neutral-700"
                 >
-                  ← カードデータに戻る
+                  {t.backToCardData}
                 </button>
               ) : (
                 <span
-                  title="カード名・画像はこのプリントのものを表示しています（トーナメントで使える通常のプリントの中で最安値のものを自動選択、プロモ・特殊枠・コラボ作品限定版などは対象外）。価格は全プリント中の最安値を表示しています"
+                  title={t.cardDataTooltip}
                   className="mb-1.5 inline-block cursor-help rounded bg-neutral-800 px-2.5 py-1 text-sm font-semibold text-white"
                 >
-                  カードデータ
+                  {t.cardDataLabel}
                 </span>
               )}
               <div
@@ -481,7 +485,7 @@ export default function CardHero({
                               "linear-gradient(115deg, #ff008033, #ff8c0033, #ffed0033, #00ff8c33, #00c8ff33, #8c00ff33)",
                           }}
                         >
-                          Foil
+                          {t.foilTab}
                           {!available && (
                             <svg
                               viewBox="0 0 100 100"
@@ -508,7 +512,7 @@ export default function CardHero({
                               : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
                         }`}
                       >
-                        通常
+                        {t.normalTab}
                         {!available && (
                           // ボタンの枠全体に対角線のバツ印を重ねて「この選択肢自体が存在しない」ことを見せる
                           <svg
@@ -543,7 +547,7 @@ export default function CardHero({
             {isAlternate ? (
               <p className="mt-3 text-sm text-neutral-500">
                 {current.setName} (#{current.collectorNumber})
-                {current.releasedAt && ` ・ 発売日: ${formatDateSlash(current.releasedAt)}`}
+                {current.releasedAt && t.releasedOn(formatDateSlash(current.releasedAt))}
               </p>
             ) : (
               // 「カードデータ」は特定の1プリントではなく集約値の表示なので、セット名（代表プリントの
@@ -556,18 +560,18 @@ export default function CardHero({
                 ¥{jpyPrice.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
               </p>
             ) : (
-              <p className="mt-4 text-sm text-neutral-500">価格データなし</p>
+              <p className="mt-4 text-sm text-neutral-500">{t.noPriceData}</p>
             )}
             {/* 為替参考値・最高値/最安値は通常/Foilそれぞれの日次履歴から別々に出す
                 （defaultPrint.usdPrice/priceExtremesTextが非Foil用、*Foil系がFoil用）。 */}
             {!isAlternate && effectiveFinish === "normal" && defaultPrint.usdPrice !== null && defaultPrint.jpyPrice !== null && (
               <p className="text-xs text-neutral-400">
-                為替換算の参考値（${defaultPrint.usdPrice.toFixed(2)} × {defaultPrint.usdToJpyRate.toFixed(2)}円/$）
+                {t.fxReference(defaultPrint.usdPrice.toFixed(2), defaultPrint.usdToJpyRate.toFixed(2))}
               </p>
             )}
             {!isAlternate && effectiveFinish === "foil" && defaultPrint.usdPriceFoil !== null && defaultPrint.jpyPriceFoil !== null && (
               <p className="text-xs text-neutral-400">
-                為替換算の参考値（${defaultPrint.usdPriceFoil.toFixed(2)} × {defaultPrint.usdToJpyRateFoil.toFixed(2)}円/$）
+                {t.fxReference(defaultPrint.usdPriceFoil.toFixed(2), defaultPrint.usdToJpyRateFoil.toFixed(2))}
               </p>
             )}
             {!isAlternate && effectiveFinish === "normal" && defaultPrint.priceExtremesText && (
@@ -584,7 +588,7 @@ export default function CardHero({
         </div>
 
         {loading ? (
-          <p className="py-6 text-center text-xs text-neutral-500">読み込み中...</p>
+          <p className="py-6 text-center text-xs text-neutral-500">{t.loading}</p>
         ) : (
           <PriceHistoryChart
             enHistory={enHistory}
@@ -599,7 +603,7 @@ export default function CardHero({
             {/* 「使用デッキ」側は見出しの右にあるボタン（border+padding分だけ実測2px高い）と
                 行の高さを揃えるため、ボタンを追加せずpy-[1px]で同じ高さ分だけ足す
                 （幅を使う要素を足すと折り返して崩れることが分かったため、高さのみ調整）。 */}
-            <h2 className="mb-3 whitespace-nowrap py-[1px] text-sm font-medium text-neutral-500">フォーマットリーガル</h2>
+            <h2 className="mb-3 whitespace-nowrap py-[1px] text-sm font-medium text-neutral-500">{t.formatLegality}</h2>
             <LegalityGrid legalities={legalities} disabled={current.notTournamentLegal} />
           </div>
 
@@ -614,7 +618,7 @@ export default function CardHero({
               汎用の虫眼鏡アイコンを見せつつ、どちらもクリックでギャラリーを開ける。 */}
           <button
             onClick={() => galleryDialogRef.current?.showModal()}
-            title={`画像一覧から探す（全${otherPrintsTotalCount}種）`}
+            title={t.galleryButtonTitle(otherPrintsTotalCount)}
             className="shrink-0 rounded hover:opacity-70"
           >
             {isAlternate ? (
@@ -652,7 +656,7 @@ export default function CardHero({
               // 「カードデータ」は特定の1プリントではなく全プリント集約の表示なので、
               // 代表プリント1件のセット名・コレクター番号ではなく、プリント総数とレアリティ集約を出す
               <>
-                <p className="truncate text-sm leading-snug font-semibold">全{otherPrintsTotalCount}種のプリント</p>
+                <p className="truncate text-sm leading-snug font-semibold">{t.allPrintsCount(otherPrintsTotalCount)}</p>
                 <p className="text-xs leading-snug text-neutral-300">{defaultPrint.rarityLabel}</p>
               </>
             )}
@@ -660,18 +664,18 @@ export default function CardHero({
         </div>
         {current.notTournamentLegal && (
           <p className="mb-3 rounded-md bg-red-50 px-2 py-1 text-xs text-red-700">
-            ※このプリントは特殊なため、公式大会では使用できません
+            {t.notTournamentLegalNote}
           </p>
         )}
 
         {otherPrints.length > 0 && (
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-1 text-xs">
-              <span className="text-neutral-400">並び順:</span>
+              <span className="text-neutral-400">{t.sortLabel}</span>
               {(
                 [
-                  { key: "releaseDate", label: "発売日順" },
-                  { key: "price", label: "価格順" },
+                  { key: "releaseDate", label: t.sortReleaseDate },
+                  { key: "price", label: t.sortPrice },
                 ] as const
               ).map((opt) => (
                 <button
@@ -689,8 +693,8 @@ export default function CardHero({
               ))}
               <button
                 onClick={toggleListSortFoil}
-                title={listSortFoil ? "通常価格で見る" : "Foil価格で見る"}
-                aria-label={listSortFoil ? "通常価格で見る" : "Foil価格で見る"}
+                title={listSortFoil ? t.viewNormalPrices : t.viewFoilPrices}
+                aria-label={listSortFoil ? t.viewNormalPrices : t.viewFoilPrices}
                 aria-pressed={listSortFoil}
                 className={`ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
                   listSortFoil ? "border-neutral-500" : "border-neutral-300 hover:border-neutral-500"
@@ -768,7 +772,7 @@ export default function CardHero({
                           <span className="min-w-0 truncate">{p.setName}</span>
                           {p.notTournamentLegal && (
                             <span className="shrink-0 rounded bg-red-50 px-1 text-[10px] text-red-700">
-                              使用不可
+                              {t.notTournamentLegalBadge}
                             </span>
                           )}
                         </button>
@@ -806,7 +810,7 @@ export default function CardHero({
                 onClick={() => setVisibleCount((v) => v + LOAD_MORE_STEP)}
                 className="self-center rounded-md border border-neutral-300 px-4 py-1.5 text-sm text-neutral-600 hover:border-neutral-500"
               >
-                {`もっと見る（残り${listPrints.length - visibleCount}件${hasMorePrintsOnServer ? "以上" : ""}）`}
+                {t.loadMore(listPrints.length - visibleCount, hasMorePrintsOnServer)}
               </button>
             ) : hasMorePrintsOnServer ? (
               // 現在読み込み済みの分は全部表示し終えた状態。ここから先はサーバーに追加取得が必要
@@ -819,7 +823,7 @@ export default function CardHero({
                 disabled={loadingMorePrints}
                 className="self-center rounded-md border border-neutral-300 px-4 py-1.5 text-sm text-neutral-600 hover:border-neutral-500 disabled:opacity-50"
               >
-                {loadingMorePrints ? "読み込み中…" : "もっと見る"}
+                {loadingMorePrints ? t.loadingEllipsis : t.loadMoreSimple}
               </button>
             ) : (
               visibleCount > VISIBLE_COUNT && (
@@ -827,7 +831,7 @@ export default function CardHero({
                   onClick={() => setVisibleCount(VISIBLE_COUNT)}
                   className="self-center rounded-md border border-neutral-300 px-4 py-1.5 text-sm text-neutral-600 hover:border-neutral-500"
                 >
-                  閉じる
+                  {t.close}
                 </button>
               )
             )}
@@ -848,11 +852,15 @@ export default function CardHero({
         <div className="flex max-h-[85vh] flex-col">
           <div className="flex shrink-0 items-center justify-between border-b border-neutral-200 px-4 py-3">
             <h3 className="text-sm font-medium text-neutral-700">
-              {defaultPrint.nameJa}のプリント一覧（{listPrints.length}/{otherPrintsTotalCount}種）
+              {t.printsListTitle(
+                locale === "ja" ? (defaultPrint.nameJa ?? defaultPrint.nameEn) : defaultPrint.nameEn,
+                listPrints.length,
+                otherPrintsTotalCount,
+              )}
             </h3>
             <button
               onClick={() => galleryDialogRef.current?.close()}
-              aria-label="閉じる"
+              aria-label={t.close}
               className="rounded-full px-2 py-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
             >
               ✕
@@ -861,11 +869,11 @@ export default function CardHero({
           {/* 通常一覧（表）と同じprintSortKey/printSortDir/listSortFoilを共有するので、
               ここで切り替えると表側の並び順にも反映される */}
           <div className="flex shrink-0 items-center gap-1 border-b border-neutral-200 px-4 py-2 text-xs">
-            <span className="text-neutral-400">並び順:</span>
+            <span className="text-neutral-400">{t.sortLabel}</span>
             {(
               [
-                { key: "releaseDate", label: "発売日順" },
-                { key: "price", label: "価格順" },
+                { key: "releaseDate", label: t.sortReleaseDate },
+                { key: "price", label: t.sortPrice },
               ] as const
             ).map((opt) => (
               <button
@@ -883,8 +891,8 @@ export default function CardHero({
             ))}
             <button
               onClick={toggleListSortFoil}
-              title={listSortFoil ? "通常価格で見る" : "Foil価格で見る"}
-              aria-label={listSortFoil ? "通常価格で見る" : "Foil価格で見る"}
+              title={listSortFoil ? t.viewNormalPrices : t.viewFoilPrices}
+              aria-label={listSortFoil ? t.viewNormalPrices : t.viewFoilPrices}
               aria-pressed={listSortFoil}
               className={`ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
                 listSortFoil ? "border-neutral-500" : "border-neutral-300 hover:border-neutral-500"
@@ -908,10 +916,10 @@ export default function CardHero({
               const priceLabel = listSortFoil
                 ? jpyFoil !== undefined
                   ? `Foil ¥${jpyFoil.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}`
-                  : "価格不明"
+                  : t.priceUnknown
                 : jpy !== undefined
                   ? `¥${jpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}`
-                  : "価格不明";
+                  : t.priceUnknown;
               return (
                 <button
                   key={p.scryfallId}
@@ -947,7 +955,7 @@ export default function CardHero({
                     </div>
                   ) : (
                     <div className="flex aspect-[5/7] w-full items-center justify-center rounded-xl bg-neutral-100 text-xs text-neutral-400">
-                      画像なし
+                      {t.noImage}
                     </div>
                   )}
                   <div className="flex items-center gap-1 text-xs text-neutral-600">
@@ -977,7 +985,7 @@ export default function CardHero({
                 disabled={loadingMorePrints}
                 className="w-full rounded-md border border-neutral-300 py-1.5 text-sm text-neutral-600 hover:border-neutral-500 disabled:opacity-50"
               >
-                {loadingMorePrints ? "読み込み中…" : `もっと読み込む（残り${otherPrintsTotalCount - listPrints.length}種）`}
+                {loadingMorePrints ? t.loadingEllipsis : t.loadMoreFromServer(otherPrintsTotalCount - listPrints.length)}
               </button>
             </div>
           )}
