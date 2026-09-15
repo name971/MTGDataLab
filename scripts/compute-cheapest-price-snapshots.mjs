@@ -126,15 +126,29 @@ async function main() {
   );
   console.log(`${printRows.length}件のプリント現在価格を走査`);
 
-  // 2026-09-15判明: Alpha/Beta/UnlimitedのPower Nine等、TCGCSVの日次価格取得
-  // （snapshot-print-prices.mjs）が対象にしていないプリントはcard_print_current_prices側の
-  // usdが常にnullのまま=このオラクルは価格が一切無いものとして扱われ、価格グラフごと
-  // 表示されなくなっていた（Mox Jet/Mox Sapphire、ユーザー指摘）。一方でこれらのプリントは
-  // 過去のTCGCSV一括バックフィル（ml/fetch_tcgcsv_history.py）によりR2
+  // 2026-09-15判明: card_print_current_prices自体に一度も行が作られていないプリントが
+  // 5,745件あった（TCGCSVが存在自体を一度も検知していないケース）。以前のusd==nullだけの
+  // フィルタだとこの「行自体が無い」プリントがR2フォールバック対象から漏れていた
+  // （画像選定側のgetLatestPricesForPrintsは行の有無を問わずR2を試すため、非対称だった）。
+  // card_printsの使用可能プリント全件を土台にし、card_print_current_prices側の値を
+  // 上書きする形にして両者を揃える。
+  const allLegalRows = await supabaseGet("card_prints?not_tournament_legal=eq.false&select=scryfall_id,oracle_id");
+  const usdByScryfallId = new Map(printRows.map((r) => [r.scryfall_id, { usd: r.usd, usd_foil: r.usd_foil }]));
+  const printRowsAll = allLegalRows.map((r) => ({
+    scryfall_id: r.scryfall_id,
+    oracle_id: r.oracle_id,
+    usd: usdByScryfallId.get(r.scryfall_id)?.usd ?? null,
+    usd_foil: usdByScryfallId.get(r.scryfall_id)?.usd_foil ?? null,
+  }));
+
+  // Alpha/Beta/UnlimitedのPower Nine等、TCGCSVの日次価格取得（snapshot-print-prices.mjs）が
+  // 対象にしていないプリントはusdが常にnull=このオラクルは価格が一切無いものとして扱われ、
+  // 価格グラフごと表示されなくなっていた（Mox Jet/Mox Sapphire、ユーザー指摘）。一方でこれらの
+  // プリントは過去のTCGCSV一括バックフィル（ml/fetch_tcgcsv_history.py）によりR2
   // （print-history/{scryfallId}.ndjson.gz）には価格履歴が残っていることが多い。
   // 使用不可版を除いた「価格が無いプリント」だけを対象に、R2から最後に分かっている価格を
   // フォールバックとして拾う。
-  const missingPriceIds = printRows
+  const missingPriceIds = printRowsAll
     .filter((r) => r.usd == null && !notTournamentLegalIds.has(r.scryfall_id))
     .map((r) => r.scryfall_id);
   console.log(`${missingPriceIds.length}件が現在価格未取得のためR2フォールバックを試行中...`);
@@ -148,7 +162,7 @@ async function main() {
 
   // オラクル単位で最安値（通常・Foilそれぞれ）を求める
   const bestByOracle = new Map(); // oracle_id -> { normal: {usd, scryfallId}|null, foil: {...}|null }
-  for (const row of printRows) {
+  for (const row of printRowsAll) {
     if (notTournamentLegalIds.has(row.scryfall_id)) continue;
     const usd = row.usd ?? r2FallbackByScryfallId.get(row.scryfall_id) ?? null;
     const entry = bestByOracle.get(row.oracle_id) ?? { normal: null, foil: null };
