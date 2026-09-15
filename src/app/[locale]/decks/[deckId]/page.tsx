@@ -2,10 +2,12 @@ import { notFound } from "next/navigation";
 import { getSampleDeckDetail } from "@/lib/sampleDeckDetail";
 import { getDeckDetailFromDb } from "@/lib/dbDeckDetail";
 import DeckDetailView, { type DeckCardDisplay } from "@/components/DeckDetailView";
-import { FORMATS, formatLabelJa, type Format } from "@/lib/formats";
+import { FORMATS, formatLabel, type Format } from "@/lib/formats";
+import { isLocale, DEFAULT_LOCALE, type Locale } from "@/i18n/config";
+import { getDictionary } from "@/i18n/getDictionary";
 
-function formatLabelJaSafe(format: string): string {
-  return FORMATS.includes(format as Format) ? formatLabelJa(format as Format) : format;
+function formatLabelSafe(format: string, locale: Locale): string {
+  return FORMATS.includes(format as Format) ? formatLabel(format as Format, locale) : format;
 }
 
 // 過去のトーナメント戦績デッキは内容が変わらないため、長めにキャッシュしてegressを抑える
@@ -24,15 +26,16 @@ interface PageDeck {
   format: string;
 }
 
-async function resolveDeck(deckId: string): Promise<PageDeck | null> {
+async function resolveDeck(deckId: string, locale: Locale): Promise<PageDeck | null> {
+  const t = getDictionary(locale).deckDetailPage;
   const numericId = Number(deckId);
   if (Number.isInteger(numericId)) {
     const dbDeck = await getDeckDetailFromDb(numericId);
     if (dbDeck) {
       const dateLabel = dbDeck.eventDate ? formatDateShort(dbDeck.eventDate) : null;
       return {
-        title: `${dbDeck.playerName} のデッキ`,
-        subtitle: [formatLabelJaSafe(dbDeck.format), dbDeck.eventName, dbDeck.standing, dateLabel]
+        title: t.deckTitle(dbDeck.playerName),
+        subtitle: [formatLabelSafe(dbDeck.format, locale), dbDeck.eventName, dbDeck.standing, dateLabel]
           .filter(Boolean)
           .join(" ・ "),
         cards: dbDeck.cards,
@@ -69,20 +72,22 @@ async function resolveDeck(deckId: string): Promise<PageDeck | null> {
 export async function generateMetadata({
   params,
 }: {
-  params: Promise<{ deckId: string }>;
+  params: Promise<{ locale: string; deckId: string }>;
 }) {
-  const { deckId } = await params;
-  const deck = await resolveDeck(deckId);
-  return { title: deck ? `${deck.title} - MTG DataLab` : "MTG DataLab" };
+  const { locale: rawLocale, deckId } = await params;
+  const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
+  const deck = await resolveDeck(deckId, locale);
+  return { title: deck ? `${deck.title} - MTG DataLab` : getDictionary(locale).deckDetailPage.metaTitleFallback };
 }
 
 export default async function DeckDetailPage({
   params,
 }: {
-  params: Promise<{ deckId: string }>;
+  params: Promise<{ locale: string; deckId: string }>;
 }) {
-  const { deckId } = await params;
-  const deck = await resolveDeck(deckId);
+  const { locale: rawLocale, deckId } = await params;
+  const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
+  const deck = await resolveDeck(deckId, locale);
   if (!deck) notFound();
 
   return <DeckDetailView cards={deck.cards} format={deck.format} title={deck.title} subtitle={deck.subtitle} />;

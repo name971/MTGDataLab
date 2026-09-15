@@ -52,6 +52,10 @@ const ja = {
     mlRankingInfo:
       "7日以内に一定以上値上がり・値下がりする確率を機械学習モデルで予測し、確率が高い順に並べています（トーナメントで使用実績のあるカードが対象）。過去のTop10的中率: 高騰予想は約73%、暴落予想は約95%。",
   },
+  deckDetailPage: {
+    metaTitleFallback: "MTG DataLab",
+    deckTitle: (name: string) => `${name} のデッキ`,
+  },
   archetypeDetail: {
     metaTitleFallback: "MTG DataLab",
     backToRanking: "← デッキランキングに戻る",
