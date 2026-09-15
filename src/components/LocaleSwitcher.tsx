@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { LOCALES, type Locale } from "@/i18n/config";
@@ -13,6 +14,14 @@ function hrefForLocale(pathname: string, queryString: string, target: Locale): s
 }
 
 export default function LocaleSwitcher() {
+  return (
+    <Suspense fallback={null}>
+      <LocaleSwitcherInner />
+    </Suspense>
+  );
+}
+
+function LocaleSwitcherInner() {
   const locale = useLocale();
   const pathname = usePathname();
   const searchParams = useSearchParams();
