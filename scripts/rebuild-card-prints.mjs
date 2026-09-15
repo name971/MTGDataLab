@@ -54,6 +54,15 @@ function isNormalFrame(raw) {
   if (raw.promo || raw.full_art || raw.textless) return false;
   if (raw.border_color === "borderless") return false;
   if ((raw.frame_effects ?? []).some((f) => SPECIAL_FRAME_EFFECTS.has(f))) return false;
+  // variation=true（同セット内の別イラスト版）はpromo/frame_effects等のフラグが立たないことがある。
+  if (raw.variation) return false;
+  // 日本語版限定の特殊イラスト（War of the Sparkのプレインズウォーカー"★"版等、
+  // collector_numberが英語版と別採番のためbyPrintKeyで別プリント扱いになる）は、上記どのフラグも
+  // 立たないままis_normal_frame=trueになってしまっていた（実例: Karn, the Great Creator、
+  // パイオニア禁止カードページで誤った版が表示、2026-09-15）。「通常イラスト」は英語版の
+  // 見た目を基準にするため、英語版以外は無条件で対象外にする（英語版が1件も無いオラクルは
+  // 呼び出し側=getEarliestCardImagesが既にフォールバックする設計なので影響なし）。
+  if (raw.lang !== "en") return false;
   return true;
 }
 
