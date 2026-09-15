@@ -76,7 +76,7 @@ export async function getCheapestPriceHistory(
     (row): row is { date: string; price: number; scryfall_id: string | null } => row.price !== null,
   );
 
-  const scryfallIds = [...new Set(rows.map((r) => r.scryfall_id).filter((id): id is string => id !== null))];
+  const scryfallIds = [...new Set(rows.map((r) => r.scryfall_id).filter((id): id is string => typeof id === "string"))];
   const setCodeByScryfallId = new Map<string, string>();
   const setNameByScryfallId = new Map<string, string>();
   if (scryfallIds.length > 0) {

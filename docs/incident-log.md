@@ -1005,3 +1005,45 @@ R2（`print-history/{scryfallId}.ndjson.gz`、既存の`readPrintCardFile`を新
 導入していない（レビュー観点の話であり自動検知は難しいため、次に同種の「特定したのに
 やっていない」ことに気づいたら、その場でTODOをコード上のコメントか
 このログの「未対応」項目として明示的に残す運用で対応する）。
+
+---
+
+## 2026-09-15 Ammit Eternal等の価格推移グラフで通常価格側だけエキスパンションシンボルが一切出ない
+
+**症状**: ユーザー指摘「Ammit Eternalのページ、価格グラフにエキスパンションシンボルが無い」。
+ホバーしても出ない。Foil側は正常に出る。データ取得ロジック（`dbCheapestPrice.ts`/
+`priceArchiveDb.ts`/`priceArchiveR2.ts`）を読んでも通常/Foilで完全に対称で、R2の生データも
+Supabaseの`card_prints`も個別に検証すると正しい値を返した。「本番が古いコードのままでは」
+という仮説で再デプロイしても直らず、最終的に本番へ一時的なデバッグログを仕込んで
+`wrangler tail`で実行時エラーを直接観測して特定した。
+
+**原因**: `getArchivedPriceHistory`（`priceArchiveDb.ts`）が、R2アーカイブ由来の各日の
+`scryfallId`から`.in("scryfall_id", scryfallIds)`でセットコードを引く際、
+`.filter((id): id is string => id !== null)`で`null`だけを除外していた。しかしR2の
+旧アーカイブ分（scryfall_id追跡を始める前の日次分、898/948行）は`scryfall_id`キー自体が
+存在せず、JS上`undefined`になる（`null`ではない）。このため`undefined`が1件でも
+`scryfallIds`配列に混入すると、Supabase-jsのクエリシリアライズで不正なUUID文字列
+`"undefined"`として`.in()`に渡り、PostgreSQL側が`22P02 invalid input syntax for type uuid`
+でクエリ全体を拒否する。エラーは`const { data: printRows } = await supabase...`と
+分割代入されるだけで一度もチェックされておらず、黙って`printRows`が`null`になり、
+**該当オラクルの全期間・全日付分のsetCode解決がまとめて失敗**していた（古い数行だけで
+なく、直近の正常なscryfall_idを持つ日付分まで巻き添えになる点が症状を分かりにくくして
+いた）。Foil側は、たまたまこのカードの過去データに`scryfall_id_foil`欠損行が無かった
+ため踏まなかっただけで、同じ構造のバグを内包していた。
+
+**教訓**: 「本番が古いデプロイのままではないか」という仮説を検証もせず前提にしたまま
+ユーザーに確認を取ったが、実際に再デプロイしても再現し続けた。コード上は対称に見える・
+手元の検証スクリプトでは再現しない場合でも、「production固有のエラーが起きている
+可能性」を早い段階で疑い、`wrangler tail`で実際のランタイムエラーを見るべきだった
+（本番相当の環境でしか踏まない条件分岐やエラーパスがある、という点で2026-09-06の
+Commanderページ調査と同種の教訓）。また`{ data } = await supabase...`のようにerrorを
+握りつぶす分割代入は、1件のクエリ失敗が「一部のデータが欠ける」のではなく
+「その呼び出し全体が静かに空扱いになる」という致命的な巻き添えを起こしうる。
+
+**対応（機械的対策）**: `priceArchiveDb.ts`・`dbCheapestPrice.ts`双方のscryfallId
+フィルタを`id !== null`から`typeof id === "string"`に変更し、`undefined`（および将来
+混入しうる非文字列値）を確実に除外するよう修正、本番デプロイ・確認済み。エラー自体を
+呼び出し側で握りつぶさず再スローする方向の修正は、他の箇所（`getLatestCheapestPrice`等）
+にも同じパターンが多数あり範囲が大きくなるため今回は見送った（次に同種のエラー握りつぶし
+が原因のバグを踏んだら、個別修正ではなくSupabaseクエリのエラーハンドリング方針自体を
+まとめて見直す）。

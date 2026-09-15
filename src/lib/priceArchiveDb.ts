@@ -23,9 +23,12 @@ export async function getArchivedPriceHistory(
   const rows = await getR2ArchivedPriceHistory(oracleId, finish);
   if (rows.length === 0) return [];
 
-  // 各日の最安値がどのセットだったかは、旧アーカイブ分にはNULLしか無いことがある。
-  // その場合はセットアイコン無しで表示側がフォールバックする。
-  const scryfallIds = [...new Set(rows.map((r) => r.scryfallId).filter((id): id is string => id !== null))];
+  // 各日の最安値がどのセットだったかは、旧アーカイブ分にはscryfall_idキー自体が無い
+  // （nullではなくJS上undefinedになる）ことがある。undefinedが1件でも混ざると
+  // .in()の対象がPostgreSQLに不正なUUID文字列"undefined"として送られ、クエリ全体が
+  // エラーになり（結果、全期間分のsetCodeが解決できなくなる）、実際にAmmit Eternalの
+  // 通常価格系列で発生していた。文字列以外は確実に除外する。
+  const scryfallIds = [...new Set(rows.map((r) => r.scryfallId).filter((id): id is string => typeof id === "string"))];
   const setCodeByScryfallId = new Map<string, string>();
   const setNameByScryfallId = new Map<string, string>();
   if (scryfallIds.length > 0) {
