@@ -4,9 +4,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useLocale } from "@/i18n/useLocale";
+import { getDictionary } from "@/i18n/getDictionary";
 import { useMemo, useState } from "react";
 import type { WeeklyMoverRow, MoverCategory } from "@/lib/dbWeeklyMovers";
-import { formatLabelJa, FORMATS } from "@/lib/formats";
+import { formatLabel, FORMATS } from "@/lib/formats";
 import RankingFilterPanel, {
   EMPTY_RANKING_FILTERS,
   GearIcon,
@@ -62,6 +63,8 @@ export default function WeeklyMoversList({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [showFilters, setShowFilters] = useState(false);
+  const locale = useLocale();
+  const t = getDictionary(locale).weeklyMovers;
 
   const filters = useMemo(() => parseFiltersFromParams(searchParams), [searchParams]);
   const page = Math.max(0, Number(searchParams.get("wmPage") ?? "0") || 0);
@@ -106,7 +109,7 @@ export default function WeeklyMoversList({
           <button
             type="button"
             onClick={() => setShowFilters((v) => !v)}
-            aria-label="フィルター"
+            aria-label={t.filterLabel}
             className="flex h-8 w-8 items-center justify-center rounded-md border border-neutral-300 text-neutral-500 hover:border-neutral-500 hover:text-neutral-700"
           >
             <GearIcon />
@@ -129,7 +132,7 @@ export default function WeeklyMoversList({
       </div>
       {filtered.length === 0 && (
         <p className="py-6 text-center text-sm text-neutral-500">
-          この条件に該当するカードはありません。
+          {t.noMatch}
         </p>
       )}
 
@@ -173,18 +176,19 @@ function MoverRow({
   const changeText = useJpy
     ? `${sign}¥${Math.round(row.changeValue).toLocaleString()}`
     : `${sign}${row.changeValue.toFixed(1)}${category === "usage" ? "pt" : "%"}`;
+  const locale = useLocale();
+  const t = getDictionary(locale).weeklyMovers;
   // TrendingRankingList.tsxの「採用率(Format) +X.Xpt」表記に揃える
-  const formatLabel = row.format
-    ? (isFormat(row.format) ? formatLabelJa(row.format) : row.format)
+  const moverFormatLabel = row.format
+    ? (isFormat(row.format) ? formatLabel(row.format, locale) : row.format)
     : row.finish === "foil"
       ? "Foil"
       : row.finish === "nonfoil"
-        ? "通常"
+        ? t.normalFinish
         : null;
   // カード詳細ページ（その他プリント・使用デッキ欄あり）へ飛ばし、動いたプリント自体を
   // 最初から選択済みにする（プリント詳細ページ単体はその他プリント・使用デッキ欄が無く
   // 情報量で劣るという指摘のため、2026-08-27）。
-  const locale = useLocale();
   const href = row.scryfallId
     ? `/${locale}/cards/${row.oracleId}?print=${row.scryfallId}${row.finish === "foil" ? "&finish=foil" : ""}`
     : `/${locale}/cards/${row.oracleId}`;
@@ -215,7 +219,7 @@ function MoverRow({
         <p className="truncate text-xs text-neutral-500">{row.nameEn}</p>
         {/* 日本の相場表記に合わせ、上昇=赤・下降=青（2026-08-29、ユーザー指摘） */}
         <p className={`font-numeric mt-1 text-sm font-semibold ${row.changeValue >= 0 ? "text-red-700" : "text-blue-700"}`}>
-          {formatLabel && <span className="font-sans mr-1 font-normal text-neutral-500">{formatLabel}</span>}
+          {moverFormatLabel && <span className="font-sans mr-1 font-normal text-neutral-500">{moverFormatLabel}</span>}
           {changeText}
         </p>
         {row.priceJpy != null && row.priceJpy > 0 && (
