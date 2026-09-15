@@ -321,7 +321,7 @@ async function CurrentBannedTab({ format, colors }: { format: Format; colors: Co
                   制限
                 </span>
               )}
-              <p className="truncate text-center text-xs font-medium">{card.nameJa ?? card.name}</p>
+              <p className="line-clamp-2 text-center text-[11px] leading-tight font-medium">{card.nameJa ?? card.name}</p>
             </Link>
           ))}
         </div>
@@ -393,7 +393,7 @@ async function ReservedListTab({ colors }: { colors: ColorFilter[] }) {
                       {card.nameJa ?? card.name}
                     </div>
                   )}
-                  <p className="truncate text-center text-xs font-medium">{card.nameJa ?? card.name}</p>
+                  <p className="line-clamp-2 text-center text-[11px] leading-tight font-medium">{card.nameJa ?? card.name}</p>
                 </Link>
               ))}
             </div>

@@ -302,14 +302,20 @@ export async function getEarliestPrintSets(
 ): Promise<Map<string, { setCode: string; setName: string; releasedAt: string | null }>> {
   if (oracleIds.length === 0) return new Map();
 
-  const rows: { oracle_id: string; released_at: string | null; set_code: string; sets: { set_name: string } | null }[] = [];
+  const rows: {
+    oracle_id: string;
+    released_at: string | null;
+    set_code: string;
+    sets: { set_name: string } | null;
+    is_normal_frame: boolean;
+  }[] = [];
   const PAGE_SIZE = 1000;
   for (let i = 0; i < oracleIds.length; i += ORACLE_ID_CHUNK) {
     const chunk = oracleIds.slice(i, i + ORACLE_ID_CHUNK);
     for (let offset = 0; ; offset += PAGE_SIZE) {
       const { data: page, error } = await supabase
         .from("card_prints")
-        .select("oracle_id, released_at, set_code, sets(set_name)")
+        .select("oracle_id, released_at, set_code, sets(set_name), is_normal_frame")
         .in("oracle_id", chunk)
         .order("released_at", { ascending: true })
         .range(offset, offset + PAGE_SIZE - 1)
@@ -321,10 +327,24 @@ export async function getEarliestPrintSets(
     }
   }
 
-  const result = new Map<string, { setCode: string; setName: string; releasedAt: string | null }>();
+  // getEarliestCardImagesと同じ考え方（is_normal_frame優先、無ければ全体の最古にフォールバック）。
+  // 単純に「最古のreleased_at」だけで選ぶと、ジャッジ促進版・プロモ版等がまれに通常版より
+  // 早いreleased_atを持つケースで誤ったセットに分類されていた（ガイアの揺籃の地→Judge Gift Cards、
+  // 稲妻のドラゴン→Urza's Saga Promosになっていた不具合、2026-09-15）。
+  const rowsByOracle = new Map<string, typeof rows>();
   for (const r of rows) {
-    if (result.has(r.oracle_id)) continue; // released_at昇順なので最初の行が最古
-    result.set(r.oracle_id, { setCode: r.set_code, setName: r.sets?.set_name ?? r.set_code, releasedAt: r.released_at });
+    if (!rowsByOracle.has(r.oracle_id)) rowsByOracle.set(r.oracle_id, []);
+    rowsByOracle.get(r.oracle_id)!.push(r);
+  }
+
+  const result = new Map<string, { setCode: string; setName: string; releasedAt: string | null }>();
+  for (const [oracleId, group] of rowsByOracle) {
+    const normal = group.filter((r) => r.is_normal_frame);
+    // released_at昇順で取得しているので、先頭が最古
+    const best = (normal.length > 0 ? normal : group)[0];
+    if (best) {
+      result.set(oracleId, { setCode: best.set_code, setName: best.sets?.set_name ?? best.set_code, releasedAt: best.released_at });
+    }
   }
   return result;
 }
