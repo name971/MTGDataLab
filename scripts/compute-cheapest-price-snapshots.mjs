@@ -132,7 +132,9 @@ async function main() {
   // （画像選定側のgetLatestPricesForPrintsは行の有無を問わずR2を試すため、非対称だった）。
   // card_printsの使用可能プリント全件を土台にし、card_print_current_prices側の値を
   // 上書きする形にして両者を揃える。
-  const allLegalRows = await supabaseGet("card_prints?not_tournament_legal=eq.false&select=scryfall_id,oracle_id");
+  const allLegalRows = await supabaseGet(
+    "card_prints?not_tournament_legal=eq.false&select=scryfall_id,oracle_id,set_code",
+  );
   const usdByScryfallId = new Map(printRows.map((r) => [r.scryfall_id, { usd: r.usd, usd_foil: r.usd_foil }]));
   const printRowsAll = allLegalRows.map((r) => ({
     scryfall_id: r.scryfall_id,
@@ -174,6 +176,37 @@ async function main() {
     }
     bestByOracle.set(row.oracle_id, entry);
   }
+
+  // Alpha/Beta/Unlimitedしか存在しないオラクル（Power Nine等）は、素の「全プリント中の
+  // 最安値」だと日によってAlpha/Beta/Unlimitedのどれが最安かが入れ替わり、実勢とは無関係な
+  // 見た目上の価格ジャンプが起きる（2026-09-15検証、Black Lotusで実測+89.8%、Mox Pearlは
+  // 実測+733.3%）。Alpha/Betaは現存数が極端に少なく出品自体が途切れがちな一方、Unlimitedは
+  // 印刷数が桁違いに多く出品が安定して存在し続けるため、この3セットしか無いオラクルに限り
+  // 「全プリント中の最安値」ではなく常にUnlimited版の価格を使う（ユーザー提案、対象を
+  // lea/leb/2edのみのオラクルに絞ることで、後年に再録されたカード（The One Ring等、
+  // 切り替わり時の変動幅は実測6.2%程度で無視できる）には影響しない）。
+  const EARLY_SET_CODES = new Set(["lea", "leb", "2ed"]);
+  const legalSetCodesByOracle = new Map();
+  const scryfallIdBySetAndOracle = new Map(); // `${oracleId}:${setCode}` -> scryfallId
+  for (const row of allLegalRows) {
+    if (notTournamentLegalIds.has(row.scryfall_id)) continue;
+    if (!legalSetCodesByOracle.has(row.oracle_id)) legalSetCodesByOracle.set(row.oracle_id, new Set());
+    legalSetCodesByOracle.get(row.oracle_id).add(row.set_code);
+    scryfallIdBySetAndOracle.set(`${row.oracle_id}:${row.set_code}`, row.scryfall_id);
+  }
+  let unlimitedPinnedCount = 0;
+  for (const [oracleId, setCodes] of legalSetCodesByOracle) {
+    if (![...setCodes].every((c) => EARLY_SET_CODES.has(c))) continue;
+    if (!setCodes.has("2ed")) continue;
+    const unlimitedScryfallId = scryfallIdBySetAndOracle.get(`${oracleId}:2ed`);
+    const usd = usdByScryfallId.get(unlimitedScryfallId)?.usd ?? r2FallbackByScryfallId.get(unlimitedScryfallId) ?? null;
+    if (usd == null) continue; // Unlimited自体も価格不明なら通常の最安値ロジックに委ねる
+    const entry = bestByOracle.get(oracleId) ?? { normal: null, foil: null };
+    entry.normal = { usd: Number(usd), scryfallId: unlimitedScryfallId };
+    bestByOracle.set(oracleId, entry);
+    unlimitedPinnedCount++;
+  }
+  console.log(`Alpha/Beta/Unlimitedのみのオラクル: ${unlimitedPinnedCount}件をUnlimited価格に固定`);
 
   const cacheRows = [];
   const archiveRows = [];
