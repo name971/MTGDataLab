@@ -121,9 +121,10 @@ export async function getOtherPrintsForCard(
 }
 
 /**
- * 「カードデータ」欄のメイン画像を選ぶ。トーナメント使用可能な全プリントを価格が安い順に見ていき、
- * その版に一致する日本語版画像（image_uri_normal_ja）があれば採用する。無ければ次に安いプリントで
- * 同じ判定を繰り返し、どのプリントにも日本語版が無ければ一番安いプリントの英語版画像を使う。
+ * 「カードデータ」欄のメイン画像を選ぶ。トーナメント使用可能な全プリントの中で本当に一番安い
+ * プリントの画像を使う（そのプリント自身に日本語版画像があればそちらを、無ければ英語版画像を使う）。
+ * 以前は「安い順に見て日本語版画像がある最初の1枚」を採用しており、表示している価格（最安値）と
+ * 画像（日本語版がある版）のプリントが食い違うことがあった（ユーザー指摘、2026-09-15）。
  * card_printsに行が無い（scripts/rebuild-card-prints.mjs未反映）オラクルはnullを返す
  * （呼び出し側でcardsテーブルの代表プリント画像にフォールバックする想定）。
  */
@@ -157,11 +158,10 @@ export async function getBestCardImage(oracleId: string): Promise<string | null>
     .filter((r) => priceOf(r.scryfall_id) !== undefined)
     .sort((a, b) => priceOf(a.scryfall_id)! - priceOf(b.scryfall_id)!);
 
-  for (const r of priced) {
-    if (r.image_uri_normal_ja) return r.image_uri_normal_ja;
-  }
-  // どのプリントにも日本語版画像が無ければ、一番安いプリント（価格不明な行しか無ければ先頭の行）の英語版画像を使う
-  return (priced[0] ?? rows[0]).image_uri_normal ?? null;
+  // 本当の最安値プリント（価格不明な行しか無ければ先頭の行）自身の画像を使う。
+  // 日本語版画像があればそちら、無ければ英語版画像。
+  const cheapest = priced[0] ?? rows[0];
+  return cheapest.image_uri_normal_ja ?? cheapest.image_uri_normal ?? null;
 }
 
 const ORACLE_ID_CHUNK = 150; // .in()にUUIDを大量に並べるとURLが長すぎてPostgRESTが400を返すため
@@ -169,7 +169,7 @@ const ORACLE_ID_CHUNK = 150; // .in()にUUIDを大量に並べるとURLが長す
 /**
  * getBestCardImageの複数オラクル一括版。ランキング・注目カード等の一覧ページ用に、
  * オラクルの件数に関わらず一定回数のクエリで済ませる（1件ずつ問い合わせるN+1を避ける）。
- * 選定ロジックはgetBestCardImageと同じ（安い順に見て日本語版画像がある最初の1枚を採用）。
+ * 選定ロジックはgetBestCardImageと同じ（本当に一番安いプリント自身の画像を使う）。
  * 画像が決まらなかったオラクルはMapに含めない（呼び出し側でcardsテーブルの代表プリント画像に
  * フォールバックする想定）。
  */
@@ -225,8 +225,8 @@ export async function getBestCardImages(oracleIds: string[]): Promise<Map<string
       .filter((r) => priceOf(r.scryfall_id) !== undefined)
       .sort((a, b) => priceOf(a.scryfall_id)! - priceOf(b.scryfall_id)!);
 
-    const jaHit = priced.find((r) => r.image_uri_normal_ja);
-    const imageUrl = jaHit?.image_uri_normal_ja ?? (priced[0] ?? group[0]).image_uri_normal;
+    const cheapest = priced[0] ?? group[0];
+    const imageUrl = cheapest.image_uri_normal_ja ?? cheapest.image_uri_normal;
     if (imageUrl) result.set(oracleId, imageUrl);
   }
   return result;
