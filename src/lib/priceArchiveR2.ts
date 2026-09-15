@@ -126,6 +126,33 @@ export async function getR2ArchivedPriceHistory(
 }
 
 /**
+ * 複数オラクル分の「直近で分かっている最安値」だけを取得する（card_current_prices未登録の
+ * オラクル向けフォールバック用、src/lib/dbDeckDetail.ts参照）。TCGCSVの日次取得対象外の
+ * 低流動性プリント（Alpha/Beta等）中心のオラクルはcard_current_prices自体に行が無く、
+ * デッキ合計金額の計算でそのカードが0円扱いになってしまっていたため、
+ * 「価格が古くても、分かっている最後の値を使う」フォールバックとして用意した。
+ * getR2LatestPricesForPrintsと同じくオラクルごとに並列でGetObjectする。
+ */
+export async function getR2LatestPricesForOracles(
+  oracleIds: string[],
+): Promise<Map<string, { date: string; jpy: number }>> {
+  const result = new Map<string, { date: string; jpy: number }>();
+  if (oracleIds.length === 0) return result;
+
+  const bucket = await getR2Bucket();
+  if (!bucket) return result;
+
+  await Promise.all(
+    oracleIds.map(async (oracleId) => {
+      const rows = await readCardFile<OracleCardRow>(bucket, R2_ORACLE_CARD_PREFIX, oracleId);
+      const latest = [...rows].reverse().find((r) => r.jpy_est != null);
+      if (latest) result.set(oracleId, { date: latest.date, jpy: Number(latest.jpy_est) });
+    }),
+  );
+  return result;
+}
+
+/**
  * 複数オラクル分・指定日以降の価格系列を一括取得する。オラクルごとに並列でGetObjectするため、
  * 対象件数が多い（数十〜百件規模）ページではラウンドトリップ数がそのまま増えて数秒〜十数秒
  * かかる。3日前比の変化率だけで足りる用途（カードランキング等）は、代わりに

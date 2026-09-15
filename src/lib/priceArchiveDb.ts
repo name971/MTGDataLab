@@ -2,6 +2,7 @@ import type { PricePoint } from "./dbPriceHistory";
 import { supabase } from "./supabase";
 import {
   getR2ArchivedPriceHistory,
+  getR2LatestPricesForOracles,
   getR2PrintPriceHistory,
   getR2RecentPriceHistoryForOracles,
 } from "./priceArchiveR2";
@@ -49,6 +50,16 @@ export async function getArchivedPriceHistory(
     setCode: row.scryfallId ? setCodeByScryfallId.get(row.scryfallId) : undefined,
     setName: row.scryfallId ? setNameByScryfallId.get(row.scryfallId) : undefined,
   }));
+}
+
+/**
+ * 複数オラクル分の「直近で分かっている最安値」だけを取得する（card_current_prices未登録の
+ * オラクル向けフォールバック、src/lib/dbDeckDetail.ts参照）。
+ */
+export async function getLatestPricesForOracles(
+  oracleIds: string[],
+): Promise<Map<string, { date: string; jpy: number }>> {
+  return getR2LatestPricesForOracles(oracleIds);
 }
 
 /**

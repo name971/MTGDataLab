@@ -1,6 +1,7 @@
 import { supabase } from "./supabase";
 import { getBestCardImages } from "./dbCardPrints";
 import { getR2ArchivedDeckCards } from "./deckCardsArchiveR2";
+import { getLatestPricesForOracles } from "./priceArchiveDb";
 
 export interface DbDeckCard {
   oracleId: string | null;
@@ -248,6 +249,16 @@ export async function getDeckDetailFromDb(deckId: number): Promise<DbDeckDetail 
     }
     for (const p of priceRows ?? []) {
       if (!priceByOracle.has(p.oracle_id)) priceByOracle.set(p.oracle_id, Number(p.jpy_est));
+    }
+
+    // card_current_prices未登録のオラクル（TCGCSV日次取得対象外の低流動性プリント中心）は
+    // このままだと「価格データなし」扱いになり、デッキ合計金額の計算で実質0円扱いされて
+    // しまう（2026-09-15ユーザー指摘）。R2の価格アーカイブに残っている直近の値（古くても可）
+    // があればそちらにフォールバックする。
+    const missingOracleIds = oracleIds.filter((id) => !priceByOracle.has(id));
+    if (missingOracleIds.length > 0) {
+      const fallbackPrices = await getLatestPricesForOracles(missingOracleIds);
+      for (const [oracleId, { jpy }] of fallbackPrices) priceByOracle.set(oracleId, jpy);
     }
   }
 
