@@ -52,6 +52,16 @@ const ja = {
     mlRankingInfo:
       "7日以内に一定以上値上がり・値下がりする確率を機械学習モデルで予測し、確率が高い順に並べています（トーナメントで使用実績のあるカードが対象）。過去のTop10的中率: 高騰予想は約73%、暴落予想は約95%。",
   },
+  mlRanking: {
+    surgeTab: "高騰予想",
+    crashTab: "暴落予想",
+    predictedOn: (date: string) => `予想日 ${date}`,
+    filterLabel: "フィルター",
+    prevPage: "前へ",
+    nextPage: "次へ",
+    currentChangeTooltip: "予測時点からの現時点での変化率",
+    maxChangeTooltip: "予測時点から今日までの間で一番良かった結果（モデルが予測している指標）",
+  },
   legality: {
     statusTitle: { legal: "合法", not_legal: "非合法", banned: "禁止", restricted: "制限（1枚まで）" },
     printNotLegalTitle: "このプリントは使用不可",

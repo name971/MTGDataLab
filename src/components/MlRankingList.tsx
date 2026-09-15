@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useLocale } from "@/i18n/useLocale";
+import { getDictionary } from "@/i18n/getDictionary";
 import { useMemo, useState } from "react";
 import type { MlRankingRow } from "@/lib/dbMlRanking";
 import RankingFilterPanel, {
@@ -38,6 +39,8 @@ export default function MlRankingList({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [showFilters, setShowFilters] = useState(false);
+  const locale = useLocale();
+  const t = getDictionary(locale).mlRanking;
 
   // タブ/ページの状態をURLクエリに持たせる。カード詳細に遷移してブラウザで
   // 戻った時に見ていた状態のままにするため（クライアント側のuseStateだけだと、
@@ -82,7 +85,7 @@ export default function MlRankingList({
                 : "border-neutral-300 text-neutral-700 hover:border-neutral-500"
             }`}
           >
-            高騰予想
+            {t.surgeTab}
           </button>
           <button
             type="button"
@@ -93,7 +96,7 @@ export default function MlRankingList({
                 : "border-neutral-300 text-neutral-700 hover:border-neutral-500"
             }`}
           >
-            暴落予想
+            {t.crashTab}
           </button>
         </div>
 
@@ -102,14 +105,14 @@ export default function MlRankingList({
               （2026-08-29、ユーザー指摘: 歯車の左に予想日があった方が親切） */}
           {allRows[0] && (
             <span className="font-numeric whitespace-nowrap text-xs text-neutral-500">
-              予想日 {allRows[0].calculatedAt}
+              {t.predictedOn(allRows[0].calculatedAt)}
             </span>
           )}
           <div className="relative">
             <button
               type="button"
               onClick={() => setShowFilters((v) => !v)}
-              aria-label="フィルター"
+              aria-label={t.filterLabel}
               className="flex h-8 w-8 items-center justify-center rounded-md border border-neutral-300 text-neutral-500 hover:border-neutral-500 hover:text-neutral-700"
             >
               <GearIcon />
@@ -148,7 +151,7 @@ export default function MlRankingList({
             disabled={page === 0}
             className="rounded-md border border-neutral-300 px-3 py-1 disabled:opacity-40"
           >
-            前へ
+            {t.prevPage}
           </button>
           <span className="text-neutral-500">
             {page + 1} / {pageCount}
@@ -159,7 +162,7 @@ export default function MlRankingList({
             disabled={page >= pageCount - 1}
             className="rounded-md border border-neutral-300 px-3 py-1 disabled:opacity-40"
           >
-            次へ
+            {t.nextPage}
           </button>
         </div>
       )}
@@ -214,6 +217,7 @@ function MlRankingCard({
   // カードそのものを見分けられることが重要なので、アートクロップではなくカード全体の画像を使う。
   // Scryfallの画像URLは/<バリエーション>/front/<...>.jpgという共通構造なので置換で導出できる。
   const locale = useLocale();
+  const t = getDictionary(locale).mlRanking;
   const normalImageUrl = row.artCropUrl.replace("/art_crop/", "/normal/");
   const barColor = direction === "up" ? "bg-emerald-500" : "bg-blue-500";
   const emphasisColor = direction === "up" ? "text-neutral-900" : "text-neutral-900";
@@ -293,7 +297,7 @@ function MlRankingCard({
                 （ユーザー提案、同日） */}
             {row.currentPctChange != null && (
               <span
-                title="予測時点からの現時点での変化率"
+                title={t.currentChangeTooltip}
                 className={`font-numeric shrink-0 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[clamp(9px,5cqw,10px)] font-bold ${pctBadgeClass(row.currentPctChange, CURRENT_BADGE_CLASS)}`}
               >
                 {row.currentPctChange >= 0 ? "+" : ""}
@@ -302,7 +306,7 @@ function MlRankingCard({
             )}
             {row.extremePctChange != null && (
               <span
-                title="予測時点から今日までの間で一番良かった結果（モデルが予測している指標）"
+                title={t.maxChangeTooltip}
                 className={`font-numeric shrink-0 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[clamp(9px,5cqw,10px)] font-bold ${pctBadgeClass(row.extremePctChange, MAX_BADGE_CLASS)}`}
               >
                 MAX{pctSign(row.extremePctChange, direction)}

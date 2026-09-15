@@ -53,6 +53,16 @@ const en: typeof ja = {
     mlRankingInfo:
       "Predicted with a machine learning model on the probability of a significant price move (up or down) within 7 days, ranked by confidence (tournament-played cards only). Historical Top 10 accuracy: ~73% for surges, ~95% for crashes.",
   },
+  mlRanking: {
+    surgeTab: "Surge forecast",
+    crashTab: "Crash forecast",
+    predictedOn: (date: string) => `Predicted on ${date}`,
+    filterLabel: "Filter",
+    prevPage: "Prev",
+    nextPage: "Next",
+    currentChangeTooltip: "Change since the prediction was made, as of now",
+    maxChangeTooltip: "The best result between the prediction and today (what the model predicts)",
+  },
   legality: {
     statusTitle: { legal: "Legal", not_legal: "Not legal", banned: "Banned", restricted: "Restricted (max 1)" },
     printNotLegalTitle: "This print is not tournament legal",
