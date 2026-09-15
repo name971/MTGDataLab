@@ -2,14 +2,10 @@
 
 import { useMemo, useState } from "react";
 import type { PricePoint } from "@/lib/dbPriceHistory";
+import { useLocale } from "@/i18n/useLocale";
+import { getDictionary } from "@/i18n/getDictionary";
 
 type Period = "7" | "30" | "90" | "all";
-const PERIOD_OPTIONS: { key: Period; label: string }[] = [
-  { key: "7", label: "7日" },
-  { key: "30", label: "30日" },
-  { key: "90", label: "90日" },
-  { key: "all", label: "全期間" },
-];
 
 const WIDTH = 600;
 const HEIGHT = 280;
@@ -34,6 +30,14 @@ export default function PriceHistoryChart({
   iconUrlBySetCode: Record<string, string>;
 }) {
   const [period, setPeriod] = useState<Period>("30");
+  const locale = useLocale();
+  const t = getDictionary(locale).priceHistoryChart;
+  const PERIOD_OPTIONS: { key: Period; label: string }[] = [
+    { key: "7", label: t.period7d },
+    { key: "30", label: t.period30d },
+    { key: "90", label: t.period90d },
+    { key: "all", label: t.periodAll },
+  ];
 
   const fullHistory = finish === "foil" ? enFoilHistory : enHistory;
 
@@ -50,7 +54,7 @@ export default function PriceHistoryChart({
   if (!hasAnyData) {
     return (
       <div className="rounded-lg border border-dashed border-neutral-300 p-4 text-xs text-neutral-500">
-        価格推移データがまだありません（日次スナップショットの蓄積待ち）。
+        {t.noDataYet}
       </div>
     );
   }
@@ -77,10 +81,10 @@ export default function PriceHistoryChart({
 
       {fullHistory.length === 0 ? (
         <p className="py-6 text-center text-xs text-neutral-500">
-          {finish === "foil" ? "この系列のFoil価格データはありません。" : "この系列の価格データはありません。"}
+          {finish === "foil" ? t.noFoilData : t.noNormalData}
         </p>
       ) : points.length === 0 ? (
-        <p className="py-6 text-center text-xs text-neutral-500">この期間のデータはありません。</p>
+        <p className="py-6 text-center text-xs text-neutral-500">{t.noDataForPeriod}</p>
       ) : (
         <ChartSvg points={points} iconUrlBySetCode={iconUrlBySetCode} />
       )}

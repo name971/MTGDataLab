@@ -52,6 +52,16 @@ const ja = {
     mlRankingInfo:
       "7日以内に一定以上値上がり・値下がりする確率を機械学習モデルで予測し、確率が高い順に並べています（トーナメントで使用実績のあるカードが対象）。過去のTop10的中率: 高騰予想は約73%、暴落予想は約95%。",
   },
+  priceHistoryChart: {
+    period7d: "7日",
+    period30d: "30日",
+    period90d: "90日",
+    periodAll: "全期間",
+    noDataYet: "価格推移データがまだありません（日次スナップショットの蓄積待ち）。",
+    noFoilData: "この系列のFoil価格データはありません。",
+    noNormalData: "この系列の価格データはありません。",
+    noDataForPeriod: "この期間のデータはありません。",
+  },
   weeklyMovers: {
     filterLabel: "フィルター",
     noMatch: "この条件に該当するカードはありません。",

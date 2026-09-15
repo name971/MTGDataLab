@@ -53,6 +53,16 @@ const en: typeof ja = {
     mlRankingInfo:
       "Predicted with a machine learning model on the probability of a significant price move (up or down) within 7 days, ranked by confidence (tournament-played cards only). Historical Top 10 accuracy: ~73% for surges, ~95% for crashes.",
   },
+  priceHistoryChart: {
+    period7d: "7d",
+    period30d: "30d",
+    period90d: "90d",
+    periodAll: "All",
+    noDataYet: "No price history yet (waiting for daily snapshots to accumulate).",
+    noFoilData: "No foil price data for this print.",
+    noNormalData: "No price data for this print.",
+    noDataForPeriod: "No data for this period.",
+  },
   weeklyMovers: {
     filterLabel: "Filter",
     noMatch: "No cards match these filters.",
