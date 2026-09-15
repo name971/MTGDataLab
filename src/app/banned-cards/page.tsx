@@ -7,6 +7,7 @@ import {
   getCurrentlyBannedCards,
   getReservedListCards,
   type BannedCardWithCard,
+  type ReservedListCard,
 } from "@/lib/dbBannedCards";
 
 // 色フィルタの選択肢。"C"は無色（mana_costにWUBRGどれも含まれないカード）を表す特別扱いで、
@@ -337,41 +338,57 @@ async function ReservedListTab({ colors }: { colors: ColorFilter[] }) {
     if (next.length > 0) params.set("colors", next.join(","));
     return `/banned-cards?${params.toString()}`;
   };
+
+  // 発売日昇順（getReservedListCardsの並び順）を保ったままセットごとにグループ化する
+  const groups: { setName: string; cards: ReservedListCard[] }[] = [];
+  for (const card of cards) {
+    const last = groups[groups.length - 1];
+    if (last && last.setName === card.setName) last.cards.push(card);
+    else groups.push({ setName: card.setName, cards: [card] });
+  }
+
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-neutral-500">
-        {allCards.length.toLocaleString()}枚（価格が高い順）。Wizards of the Coastが将来的にも再録しないと
+        {allCards.length.toLocaleString()}枚（セットの発売日順）。Wizards of the Coastが将来的にも再録しないと
         約束しているカード一覧。
       </p>
       <ColorFilterRow selected={colors} buildColorHref={buildColorHref} />
       {cards.length === 0 && (
         <p className="text-sm text-neutral-500">選択した色に一致するカードはありません。</p>
       )}
-      <div className="grid grid-cols-3 gap-3 sm:grid-cols-5 lg:grid-cols-8">
-        {cards.map((card) => (
-          <Link
-            key={card.oracleId}
-            href={`/cards/${card.oracleId}`}
-            className="flex flex-col items-center gap-1 rounded-lg p-1.5 hover:bg-neutral-50"
-          >
-            {card.imageUrl ? (
-              <Image
-                src={toSmallImageUrl(card.imageUrl)}
-                alt={card.name}
-                width={146}
-                height={204}
-                className="w-full rounded-md"
-              />
-            ) : (
-              <div className="flex aspect-[223/311] w-full items-center justify-center rounded-md bg-neutral-100 text-center text-xs text-neutral-400">
-                {card.nameJa ?? card.name}
-              </div>
-            )}
-            <p className="truncate text-center text-xs font-medium">{card.nameJa ?? card.name}</p>
-            {card.priceJpy != null && (
-              <p className="text-xs text-neutral-500">¥{card.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}</p>
-            )}
-          </Link>
+      <div className="flex flex-col gap-5">
+        {groups.map((group) => (
+          <div key={group.setName} className="flex flex-col gap-2">
+            <h2 className="text-sm font-semibold text-neutral-700">
+              {group.setName}
+              <span className="ml-1.5 font-normal text-neutral-400">({group.cards.length})</span>
+            </h2>
+            <div className="grid grid-cols-3 gap-3 sm:grid-cols-5 lg:grid-cols-8">
+              {group.cards.map((card) => (
+                <Link
+                  key={card.oracleId}
+                  href={`/cards/${card.oracleId}`}
+                  className="flex flex-col items-center gap-1 rounded-lg p-1.5 hover:bg-neutral-50"
+                >
+                  {card.imageUrl ? (
+                    <Image
+                      src={toSmallImageUrl(card.imageUrl)}
+                      alt={card.name}
+                      width={146}
+                      height={204}
+                      className="w-full rounded-md"
+                    />
+                  ) : (
+                    <div className="flex aspect-[223/311] w-full items-center justify-center rounded-md bg-neutral-100 text-center text-xs text-neutral-400">
+                      {card.nameJa ?? card.name}
+                    </div>
+                  )}
+                  <p className="truncate text-center text-xs font-medium">{card.nameJa ?? card.name}</p>
+                </Link>
+              ))}
+            </div>
+          </div>
         ))}
       </div>
     </div>

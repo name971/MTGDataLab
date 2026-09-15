@@ -195,7 +195,12 @@ export async function getBestCardImages(oracleIds: string[]): Promise<Map<string
         // 呼び出しごとにばらつかないよう固定する
         .order("scryfall_id", { ascending: true })
         .range(offset, offset + PAGE_SIZE - 1);
-      if (error) break;
+      // 2026-09-15: 以前はここでbreakしてエラーを握りつぶし、そのオラクル群を「画像なし」
+      // 扱いにしていた。呼び出し元は画像なし=フィルタで除外/空表示にできるため、Supabaseの
+      // 一時的な失敗がISRキャッシュに「該当データなし」として長時間（revalidate次第で数時間）
+      // 焼き付いてしまう（禁止カードページのStandardタブが時々空に見える不具合の原因）。
+      // 例外を投げてISR再生成自体を失敗させ、直前の正常なキャッシュを保持させる。
+      if (error) throw new Error(`getBestCardImages: card_prints取得失敗: ${error.message}`);
       if (!page || page.length === 0) break;
       rows.push(...page);
       if (page.length < PAGE_SIZE) break;
@@ -255,7 +260,8 @@ export async function getEarliestCardImages(
         .not("image_uri_normal", "is", null)
         .order("released_at", { ascending: true })
         .range(offset, offset + PAGE_SIZE - 1);
-      if (error) break;
+      // getBestCardImagesと同じ理由（2026-09-15）でエラーを握りつぶさず例外を投げる
+      if (error) throw new Error(`getEarliestCardImages: card_prints取得失敗: ${error.message}`);
       if (!page || page.length === 0) break;
       rows.push(...page);
       if (page.length < PAGE_SIZE) break;
@@ -283,6 +289,42 @@ export async function getEarliestCardImages(
     if (best?.image_uri_normal) {
       result.set(oracleId, { imageUrl: best.image_uri_normal, releasedAt: best.released_at });
     }
+  }
+  return result;
+}
+
+/**
+ * getEarliestCardImagesのセット版。再録禁止カード一覧をセット（初出セット）ごとに
+ * グループ分けする用途向けに、オラクルごとの最古プリントのset_code/set_nameを返す。
+ */
+export async function getEarliestPrintSets(
+  oracleIds: string[],
+): Promise<Map<string, { setCode: string; setName: string; releasedAt: string | null }>> {
+  if (oracleIds.length === 0) return new Map();
+
+  const rows: { oracle_id: string; released_at: string | null; set_code: string; sets: { set_name: string } | null }[] = [];
+  const PAGE_SIZE = 1000;
+  for (let i = 0; i < oracleIds.length; i += ORACLE_ID_CHUNK) {
+    const chunk = oracleIds.slice(i, i + ORACLE_ID_CHUNK);
+    for (let offset = 0; ; offset += PAGE_SIZE) {
+      const { data: page, error } = await supabase
+        .from("card_prints")
+        .select("oracle_id, released_at, set_code, sets(set_name)")
+        .in("oracle_id", chunk)
+        .order("released_at", { ascending: true })
+        .range(offset, offset + PAGE_SIZE - 1)
+        .returns<typeof rows>();
+      if (error) throw new Error(`getEarliestPrintSets: card_prints取得失敗: ${error.message}`);
+      if (!page || page.length === 0) break;
+      rows.push(...page);
+      if (page.length < PAGE_SIZE) break;
+    }
+  }
+
+  const result = new Map<string, { setCode: string; setName: string; releasedAt: string | null }>();
+  for (const r of rows) {
+    if (result.has(r.oracle_id)) continue; // released_at昇順なので最初の行が最古
+    result.set(r.oracle_id, { setCode: r.set_code, setName: r.sets?.set_name ?? r.set_code, releasedAt: r.released_at });
   }
   return result;
 }

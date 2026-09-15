@@ -907,6 +907,40 @@ bool列フィルタが一時的に重くなっていたと見られる。実際�
 
 ---
 
+## 2026-09-15 禁止カードページのStandardタブが時々空に見える（Supabaseエラーの握りつぶし＋無インデックス全件スキャン）
+
+**症状**: ユーザー指摘「禁止カードのところスタンダードのところが表示されないときある」。
+
+**原因（2つ重なっていた）**:
+1. `getCurrentlyBannedCards`（`src/lib/dbBannedCards.ts`）が`cards`テーブルへのクエリで
+   `error`を一切見ておらず、`data ?? []`で握りつぶしていた。同様に`getBestCardImages`/
+   `getEarliestCardImages`（`src/lib/dbCardPrints.ts`）も`if (error) break`でページング中の
+   失敗を「もう次のページが無い」と同じ扱いにしていた。このページは`revalidate=21600`
+   （6時間）のISRキャッシュのため、一度の失敗が「Standardに禁止/制限カードはありません」
+   という誤表示のまま最大6時間焼き付いていた。
+2. 実際に本番で再現させたところ、`cards`テーブルへの`lang='en'`絞り込み+`legalities`
+   JSONB抽出のOR条件クエリが`statement timeout`していた（`cards`に`lang`列の
+   インデックスが無く、全件シーケンシャルスキャン+行ごとのJSON抽出になっていたため）。
+   2026-08-31の「無インデックスのbool列フィルタが負荷スパイクでタイムアウト」と
+   同種のパターン。
+
+**教訓**: Supabase-jsは`{ data, error }`を返すだけで例外を投げないため、`error`を
+見ないコードは「一時的な失敗」と「本当に0件」を区別できない（2026-09-06の
+Commanderの件と同じ構造）。このリポジトリに繰り返し現れるアンチパターンで、
+今回`dbCardPrints.ts`の2関数にも同じ握りつぶしが残っていたことが分かった。
+
+**対応（機械的対策）**:
+- `getCurrentlyBannedCards`・`getBestCardImages`・`getEarliestCardImages`の3箇所で
+  `error`を見て例外を投げるよう変更。ISR再生成中の例外はNext.jsが直前の正常な
+  キャッシュを保持する（キャッシュをおかしな空データで上書きしない）ため、
+  一時的な失敗が「数時間表示が消える」形で表面化しなくなる。
+- `cards (lang)`にインデックスを追加（本番Supabaseに適用済み、`db/schema.sql`にも追記）。
+  タイムアウトの根本原因自体を解消。
+- 同じ握りつぶしパターンが他の`src/lib/db*.ts`に残っていないかは今回は全件監査して
+  いない（範囲が広いため次回該当箇所を触る機会に確認する）。
+
+---
+
 ## 2026-09-11 `ml/fetch_data.py`がSupabaseの一時的な500で丸ごと落ちていた
 
 **症状**: 注目カードランキングを手動更新（`python ml/fetch_data.py && python ml/predict_and_publish.py`）

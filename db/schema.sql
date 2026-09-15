@@ -114,6 +114,9 @@ CREATE INDEX IF NOT EXISTS idx_cards_mana_value ON cards (mana_value);
 CREATE INDEX idx_cards_oracle_id ON cards (oracle_id);
 CREATE INDEX idx_cards_name ON cards (name);
 CREATE INDEX idx_cards_set_code ON cards (set_code);
+-- lang='en'絞り込み+legalities JSONB抽出を組み合わせるクエリ（getCurrentlyBannedCards等）が
+-- 無インデックスの全件スキャンでstatement timeoutしていたため追加（2026-09-15、docs/incident-log.md参照）
+CREATE INDEX idx_cards_lang ON cards (lang);
 
 -- 「代表プリント」を1枚選ぶためのビュー的な考え方はアプリ側で実装
 -- （直近セットの再録 or 一番安いプリントを代表として採用、等）

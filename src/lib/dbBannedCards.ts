@@ -1,5 +1,5 @@
 import { supabase } from "./supabase";
-import { getEarliestCardImages, getBestCardImages } from "./dbCardPrints";
+import { getEarliestCardImages, getEarliestPrintSets } from "./dbCardPrints";
 import { getCatalogOraclesByNames } from "./catalogDb";
 import { BANNED_CARDS, type BannedCardEntry } from "./bannedCards";
 import { formatSlug, type Format } from "./formats";
@@ -94,13 +94,19 @@ export interface CurrentBannedCard {
  */
 export async function getCurrentlyBannedCards(format: Format): Promise<CurrentBannedCard[]> {
   const key = formatSlug(format);
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("cards")
     .select(
       "oracle_id, name, legalities, released_at, image_uri_normal, type_line, mana_cost, card_oracles(printed_name_ja)",
     )
     .eq("lang", "en")
     .or(`legalities->>${key}.eq.banned,legalities->>${key}.eq.restricted`);
+  // 2026-09-15: 以前はerrorを見ておらず、Supabaseの一時的な失敗が「該当カード0件」と
+  // 区別できなかった。このページはrevalidate=21600（6時間）のISRキャッシュのため、
+  // 一度の失敗が数時間「Standardに禁止カードがありません」という誤表示のまま焼き付いていた
+  // （ユーザー指摘「スタンダードのところが表示されないときある」）。例外を投げて
+  // ISR再生成を失敗させ、直前の正常なキャッシュを保持させる。
+  if (error) throw new Error(`getCurrentlyBannedCards: cards取得失敗: ${error.message}`);
 
   const byOracle = new Map<string, CurrentBannedCard>();
   for (const row of data ?? []) {
@@ -148,17 +154,18 @@ export interface ReservedListCard {
   nameJa: string | null;
   name: string;
   imageUrl: string | null;
-  priceJpy: number | null;
   colors: string[];
+  setCode: string;
+  setName: string;
+  releasedAt: string | null;
 }
+
+const ORACLE_ID_CHUNK = 150; // .in()にUUIDを大量に並べるとURLが長すぎてSupabase/undici側でエラーになるため分割
 
 /** 「再録禁止カード」タブ用。card_oracles.is_reservedはimport-deck-cards.mjs等が
  * Scryfallバルクデータの各プリントから拾って埋めている（1プリントでもreserved=trueなら
- * そのオラクルはリザーブドリスト対象、db/schema.sql参照）。
- * リザーブドリストのカードは現行フォーマットのデッキで使われないものが大半で、
- * card_current_prices（デッキ使用実績があるカード中心にキャッシュされる、
- * dbTrendingCards.ts等参照）にほぼ載っていないため、代わりにcard_print_current_prices
- * （Scryfallバルクの日次スナップショット、全カード対象）から最安値を拾う。 */
+ * そのオラクルはリザーブドリスト対象、db/schema.sql参照）。セット（初出セット）ごとに
+ * グループ分けして表示する（発売日昇順）。 */
 export async function getReservedListCards(): Promise<ReservedListCard[]> {
   const { data: oracles } = await supabase
     .from("card_oracles")
@@ -167,56 +174,31 @@ export async function getReservedListCards(): Promise<ReservedListCard[]> {
   if (!oracles || oracles.length === 0) return [];
 
   const oracleIds = oracles.map((o) => o.oracle_id);
-  // リザーブドリストは571件（2026-08時点）あり、.in()に全件のoracle_idを1回のURLに
-  // 乗せるとリクエストURLが16KBを超えてSupabase/undici側でエラーになる（実際に発生・
-  // HeadersOverflowError、2026-08-30発覚）。他のスクリプトのDECK_ID_CHUNK等と同じく
-  // チャンクに分けて複数回に分けて投げる。
-  const ORACLE_ID_CHUNK = 150;
-  const priceRows: { oracle_id: string; usd: number | null; usd_foil: number | null }[] = [];
+  const manaCostRows: { oracle_id: string; mana_cost: string | null }[] = [];
   for (let i = 0; i < oracleIds.length; i += ORACLE_ID_CHUNK) {
     const chunk = oracleIds.slice(i, i + ORACLE_ID_CHUNK);
-    const { data } = await supabase
-      .from("card_print_current_prices")
-      .select("oracle_id, usd, usd_foil")
-      .in("oracle_id", chunk);
-    if (data) priceRows.push(...data);
+    const { data } = await supabase.from("cards").select("oracle_id, mana_cost").eq("lang", "en").in("oracle_id", chunk);
+    if (data) manaCostRows.push(...data);
   }
-  const [imageByOracle, { data: fxRows }, manaCostRows] = await Promise.all([
-    getBestCardImages(oracleIds),
-    supabase.from("exchange_rates").select("usd_to_jpy").order("date", { ascending: false }).limit(1),
-    (async () => {
-      const rows: { oracle_id: string; mana_cost: string | null }[] = [];
-      for (let i = 0; i < oracleIds.length; i += ORACLE_ID_CHUNK) {
-        const chunk = oracleIds.slice(i, i + ORACLE_ID_CHUNK);
-        const { data } = await supabase.from("cards").select("oracle_id, mana_cost").eq("lang", "en").in("oracle_id", chunk);
-        if (data) rows.push(...data);
-      }
-      return rows;
-    })(),
+  const [imageByOracle, setByOracle] = await Promise.all([
+    getEarliestCardImages(oracleIds),
+    getEarliestPrintSets(oracleIds),
   ]);
-  const usdToJpy = fxRows?.[0]?.usd_to_jpy != null ? Number(fxRows[0].usd_to_jpy) : 150;
   const manaCostByOracle = new Map(manaCostRows.map((r) => [r.oracle_id, r.mana_cost]));
-
-  const cheapestUsdByOracle = new Map<string, number>();
-  for (const p of priceRows ?? []) {
-    const candidates = [p.usd, p.usd_foil].filter((v): v is number => v != null).map(Number);
-    if (candidates.length === 0) continue;
-    const cheapest = Math.min(...candidates);
-    const existing = cheapestUsdByOracle.get(p.oracle_id);
-    if (existing == null || cheapest < existing) cheapestUsdByOracle.set(p.oracle_id, cheapest);
-  }
 
   return oracles
     .map((o) => {
-      const usd = cheapestUsdByOracle.get(o.oracle_id);
+      const set = setByOracle.get(o.oracle_id);
       return {
         oracleId: o.oracle_id,
         nameJa: o.printed_name_ja,
         name: o.name,
-        imageUrl: imageByOracle.get(o.oracle_id) ?? null,
-        priceJpy: usd != null ? Math.round(usd * usdToJpy) : null,
+        imageUrl: imageByOracle.get(o.oracle_id)?.imageUrl ?? null,
         colors: colorsFromManaCost(manaCostByOracle.get(o.oracle_id)),
+        setCode: set?.setCode ?? "",
+        setName: set?.setName ?? "不明",
+        releasedAt: set?.releasedAt ?? null,
       } satisfies ReservedListCard;
     })
-    .sort((a, b) => (b.priceJpy ?? -1) - (a.priceJpy ?? -1));
+    .sort((a, b) => (a.releasedAt ?? "9999").localeCompare(b.releasedAt ?? "9999") || a.name.localeCompare(b.name));
 }
