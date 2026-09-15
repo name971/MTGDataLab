@@ -21,9 +21,15 @@ import {
   mergeOraclePriceRows,
   monthsBetween,
   readOraclePriceMonths,
+  readPrintCardFile,
   writeRecentPriceChanges,
   runWithConcurrency,
 } from "./lib/r2PriceArchive.mjs";
+
+// R2読み取り（カード単位ファイル1件ずつのGetObject）の同時実行数。Supabase向けの
+// DB_CONCURRENCYとは別軸（R2は無料枠10M件/月のClass B読み取りなので並列数を上げても
+// 実害は薄いが、念のため抑えめにする）。
+const R2_FALLBACK_CONCURRENCY = 20;
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -120,13 +126,34 @@ async function main() {
   );
   console.log(`${printRows.length}件のプリント現在価格を走査`);
 
+  // 2026-09-15判明: Alpha/Beta/UnlimitedのPower Nine等、TCGCSVの日次価格取得
+  // （snapshot-print-prices.mjs）が対象にしていないプリントはcard_print_current_prices側の
+  // usdが常にnullのまま=このオラクルは価格が一切無いものとして扱われ、価格グラフごと
+  // 表示されなくなっていた（Mox Jet/Mox Sapphire、ユーザー指摘）。一方でこれらのプリントは
+  // 過去のTCGCSV一括バックフィル（ml/fetch_tcgcsv_history.py）によりR2
+  // （print-history/{scryfallId}.ndjson.gz）には価格履歴が残っていることが多い。
+  // 使用不可版を除いた「価格が無いプリント」だけを対象に、R2から最後に分かっている価格を
+  // フォールバックとして拾う。
+  const missingPriceIds = printRows
+    .filter((r) => r.usd == null && !notTournamentLegalIds.has(r.scryfall_id))
+    .map((r) => r.scryfall_id);
+  console.log(`${missingPriceIds.length}件が現在価格未取得のためR2フォールバックを試行中...`);
+  const r2FallbackByScryfallId = new Map(); // scryfall_id -> usd
+  await runWithConcurrency(missingPriceIds, R2_FALLBACK_CONCURRENCY, async (scryfallId) => {
+    const rows = await readPrintCardFile(scryfallId);
+    const latest = [...rows].reverse().find((r) => r.usd != null);
+    if (latest) r2FallbackByScryfallId.set(scryfallId, Number(latest.usd));
+  });
+  console.log(`  ${r2FallbackByScryfallId.size}件をR2の履歴から補完`);
+
   // オラクル単位で最安値（通常・Foilそれぞれ）を求める
   const bestByOracle = new Map(); // oracle_id -> { normal: {usd, scryfallId}|null, foil: {...}|null }
   for (const row of printRows) {
     if (notTournamentLegalIds.has(row.scryfall_id)) continue;
+    const usd = row.usd ?? r2FallbackByScryfallId.get(row.scryfall_id) ?? null;
     const entry = bestByOracle.get(row.oracle_id) ?? { normal: null, foil: null };
-    if (row.usd != null && (!entry.normal || row.usd < entry.normal.usd)) {
-      entry.normal = { usd: Number(row.usd), scryfallId: row.scryfall_id };
+    if (usd != null && (!entry.normal || usd < entry.normal.usd)) {
+      entry.normal = { usd: Number(usd), scryfallId: row.scryfall_id };
     }
     if (row.usd_foil != null && (!entry.foil || row.usd_foil < entry.foil.usd)) {
       entry.foil = { usd: Number(row.usd_foil), scryfallId: row.scryfall_id };
