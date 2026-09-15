@@ -220,10 +220,12 @@ function CardListRow({ card, arenaMode }: { card: DeckCardDisplay; arenaMode: bo
           {card.quantity}x{" "}
           {card.oracleId ? (
             <Link href={`/${locale}/cards/${card.oracleId}`} className="hover:underline">
-              {card.nameJa ?? card.nameEn}
+              {locale === "ja" ? (card.nameJa ?? card.nameEn) : card.nameEn}
             </Link>
+          ) : locale === "ja" ? (
+            (card.nameJa ?? card.nameEn)
           ) : (
-            card.nameJa ?? card.nameEn
+            card.nameEn
           )}
         </span>
         <ManaCost cost={card.manaCost} />
@@ -313,7 +315,7 @@ function CardGridTile({ card }: { card: DeckCardDisplay }) {
         </div>
       )}
       <p className="text-center text-xs">
-        {card.quantity}x {card.nameJa ?? card.nameEn}
+        {card.quantity}x {locale === "ja" ? (card.nameJa ?? card.nameEn) : card.nameEn}
       </p>
     </>
   );

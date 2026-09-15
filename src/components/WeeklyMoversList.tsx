@@ -214,9 +214,9 @@ function MoverRow({
       <div className="flex flex-col gap-1 p-2">
         <p className="truncate text-sm font-medium">
           <span className="mr-1.5 text-accent-text">{row.rank}</span>
-          {row.nameJa}
+          {locale === "ja" ? row.nameJa : row.nameEn}
         </p>
-        <p className="truncate text-xs text-neutral-500">{row.nameEn}</p>
+        {locale === "ja" && <p className="truncate text-xs text-neutral-500">{row.nameEn}</p>}
         {/* 日本の相場表記に合わせ、上昇=赤・下降=青（2026-08-29、ユーザー指摘） */}
         <p className={`font-numeric mt-1 text-sm font-semibold ${row.changeValue >= 0 ? "text-red-700" : "text-blue-700"}`}>
           {moverFormatLabel && <span className="font-sans mr-1 font-normal text-neutral-500">{moverFormatLabel}</span>}

@@ -109,8 +109,10 @@ export default function SearchBar() {
                 <div className="h-7 w-7 shrink-0 rounded bg-neutral-100" />
               )}
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-neutral-900">{card.nameJa}</p>
-                <p className="truncate text-xs text-neutral-500">{card.nameEn}</p>
+                <p className="truncate text-sm font-medium text-neutral-900">
+                  {locale === "ja" ? card.nameJa : card.nameEn}
+                </p>
+                {locale === "ja" && <p className="truncate text-xs text-neutral-500">{card.nameEn}</p>}
               </div>
             </Link>
           ))}

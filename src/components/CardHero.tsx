@@ -452,12 +452,12 @@ export default function CardHero({
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="flex flex-wrap items-center gap-x-2 text-xl font-medium">
-                  <span>{defaultPrint.nameJa ?? defaultPrint.nameEn}</span>
+                  <span>{locale === "ja" ? (defaultPrint.nameJa ?? defaultPrint.nameEn) : defaultPrint.nameEn}</span>
                   {defaultPrint.manaCost && (
                     <ManaText text={defaultPrint.manaCost} symbolSize={20} align="middle" />
                   )}
                 </p>
-                {defaultPrint.nameJa && (
+                {locale === "ja" && defaultPrint.nameJa && (
                   <p className="text-sm text-neutral-500">{defaultPrint.nameEn}</p>
                 )}
               </div>

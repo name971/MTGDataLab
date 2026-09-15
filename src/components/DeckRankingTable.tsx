@@ -193,8 +193,8 @@ function ArchetypeCard({
         )}
       </div>
       <div className="flex flex-col gap-1 p-2">
-        <p className="truncate text-sm font-medium">{row.nameJa}</p>
-        <p className="truncate text-xs text-neutral-500">{row.nameEn}</p>
+        <p className="truncate text-sm font-medium">{locale === "ja" ? row.nameJa : row.nameEn}</p>
+        {locale === "ja" && <p className="truncate text-xs text-neutral-500">{row.nameEn}</p>}
         <div className="mt-1 flex items-start justify-between text-sm">
           <span className="flex flex-col">
             <span className="text-xs text-neutral-400">{t.usageRateLabel}</span>

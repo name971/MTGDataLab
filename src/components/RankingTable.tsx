@@ -193,9 +193,9 @@ function CardRankRow({
       <div className="flex flex-col gap-1 p-2">
         <p className="truncate text-sm font-medium">
           <span className="mr-1.5 text-neutral-400">{rank}</span>
-          {row.nameJa}
+          {locale === "ja" ? row.nameJa : row.nameEn}
         </p>
-        <p className="truncate text-xs text-neutral-500">{row.nameEn}</p>
+        {locale === "ja" && <p className="truncate text-xs text-neutral-500">{row.nameEn}</p>}
         <div className="mt-1 flex items-start justify-between text-sm">
           <span className="flex flex-col">
             <span className="whitespace-nowrap text-[10px] text-neutral-400">{t.priceChange3d}</span>

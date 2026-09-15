@@ -237,9 +237,9 @@ function MlRankingCard({
       <div className="flex flex-col gap-1 p-2">
         <p className="truncate text-sm font-medium">
           <span className="mr-1.5 text-accent-text">{rank}</span>
-          {row.nameJa}
+          {locale === "ja" ? row.nameJa : row.nameEn}
         </p>
-        <p className="truncate text-xs text-neutral-500">{row.nameEn}</p>
+        {locale === "ja" && <p className="truncate text-xs text-neutral-500">{row.nameEn}</p>}
 
         {/* 棒の高さ＝確率、棒の真下に「確率%」「+X%↑/↓」を2段で紐付けて、
             どの数字がどの閾値かを視線移動なしで対応させる（2026-08-16 ユーザーフィードバック）。

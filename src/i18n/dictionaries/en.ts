@@ -53,6 +53,11 @@ const en: typeof ja = {
     mlRankingInfo:
       "Predicted with a machine learning model on the probability of a significant price move (up or down) within 7 days, ranked by confidence (tournament-played cards only). Historical Top 10 accuracy: ~73% for surges, ~95% for crashes.",
   },
+  trendingCard: {
+    priceCategory: "Price Surge",
+    usageCategory: "Play Rate Surge",
+    streakDays: (n: number) => `${n}d streak`,
+  },
   searchPage: {
     metaTitle: "Search - MTG DataLab",
     resultsFor: (query: string) => `Results for: ${query}`,

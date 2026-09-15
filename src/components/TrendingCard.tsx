@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { Locale } from "@/i18n/config";
+import { getDictionary } from "@/i18n/getDictionary";
 
 /**
  * 取引量は無料データソースが存在しないため launch では対象外（docs/spec.md 2章）。
@@ -19,17 +20,17 @@ export interface TrendingCardData {
   asOfDate: string;
 }
 
-const CATEGORY_LABEL: Record<TrendingCardData["category"], string> = {
-  price: "価格上昇",
-  usage: "採用率上昇",
-};
-
 const CATEGORY_BADGE_CLASS: Record<TrendingCardData["category"], string> = {
   price: "bg-accent-soft text-accent-text",
   usage: "bg-purple-50 text-purple-800",
 };
 
 export default function TrendingCard({ card, locale }: { card: TrendingCardData; locale: Locale }) {
+  const t = getDictionary(locale).trendingCard;
+  const CATEGORY_LABEL: Record<TrendingCardData["category"], string> = {
+    price: t.priceCategory,
+    usage: t.usageCategory,
+  };
   // Scryfallの画像URLは /<バリエーション>/front/<...>.jpg という共通構造なので、
   // art_cropの1枚絵ではなくカード全体（normal）の画像に差し替える
   const normalImageUrl = card.artCropUrl.replace("/art_crop/", "/normal/");
@@ -48,10 +49,10 @@ export default function TrendingCard({ card, locale }: { card: TrendingCardData;
           </span>
           {/* このセクションの主眼は「何日連続で上がり続けているか」なので、1日目でも常に表示する */}
           <span className="inline-block rounded bg-neutral-200 px-1.5 py-0.5 text-[10px] font-medium text-neutral-700">
-            {card.streakDays}日連続
+            {t.streakDays(card.streakDays)}
           </span>
         </div>
-        <p className="mt-1 truncate text-sm font-medium">{card.nameJa}</p>
+        <p className="mt-1 truncate text-sm font-medium">{locale === "ja" ? card.nameJa : card.nameEn}</p>
         <p className="font-numeric text-sm">
           ¥{card.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}{" "}
           {/* 日本の相場表記に合わせ、上昇=赤・下降=青（2026-08-29、ユーザー指摘） */}
