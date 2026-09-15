@@ -46,6 +46,21 @@ const ja = {
     printsListTitle: (name: string | null, shown: number, total: number) =>
       `${name ?? ""}のプリント一覧（${shown}/${total}種）`,
   },
+  deckDetail: {
+    kindLabel: { creature: "クリーチャー", spell: "呪文", land: "土地" },
+    commanderLabel: "統率者",
+    sideboardLabel: "サイドボード",
+    mainboardLabel: "メインボード",
+    arenaConvertedPrefix: "Arena換算 ",
+    listViewTab: "リスト（画像なし）",
+    imageViewTab: "画像（グリッド）",
+    arenaWildcardTooltip: "ワイルドカード換算：レア¥1,500/4枚、神話レア¥3,000/4枚、コモン・アンコモン¥0",
+    arenaModeToggle: "MTG Arena換算で表示",
+    noPriceData: "価格データなし",
+    noImage: "画像なし",
+    sectionTitle: (title: string, count: number) => `${title}（${count}）`,
+    total: (amount: string) => `合計: ${amount}`,
+  },
 };
 
 export default ja;

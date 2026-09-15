@@ -47,6 +47,21 @@ const en: typeof ja = {
     printsListTitle: (name: string | null, shown: number, total: number) =>
       `${name ?? ""} prints (${shown}/${total})`,
   },
+  deckDetail: {
+    kindLabel: { creature: "Creatures", spell: "Spells", land: "Lands" },
+    commanderLabel: "Commander",
+    sideboardLabel: "Sideboard",
+    mainboardLabel: "Mainboard",
+    arenaConvertedPrefix: "Arena est. ",
+    listViewTab: "List (no images)",
+    imageViewTab: "Images (grid)",
+    arenaWildcardTooltip: "Wildcard estimate: Rare ¥1,500/4, Mythic ¥3,000/4, Common/Uncommon ¥0",
+    arenaModeToggle: "Show MTG Arena estimate",
+    noPriceData: "No price data",
+    noImage: "No image",
+    sectionTitle: (title: string, count: number) => `${title} (${count})`,
+    total: (amount: string) => `Total: ${amount}`,
+  },
 };
 
 export default en;

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { totalPriceJpy, totalArenaPriceJpy, arenaPriceJpy, formatJpy } from "@/lib/deckPricing";
 import { useLocale } from "@/i18n/useLocale";
+import { getDictionary } from "@/i18n/getDictionary";
 import ManaCost from "./ManaCost";
 import DeckStatsBar from "./DeckStatsBar";
 
@@ -26,11 +27,6 @@ export interface DeckCardDisplay {
 type Tab = "list" | "image";
 type CardKind = "creature" | "spell" | "land";
 
-const KIND_LABEL: Record<CardKind, string> = {
-  creature: "クリーチャー",
-  spell: "呪文",
-  land: "土地",
-};
 const KIND_ORDER: CardKind[] = ["creature", "spell", "land"];
 
 /** 土地・クリーチャー以外は全て「呪文」扱い（type_line不明のカードも呪文に含める） */
@@ -108,6 +104,8 @@ export default function DeckDetailView({
    * 表示することで、MTG Arena換算トグルとの連動漏れを防ぐ。 */
   headerContent?: ReactNode;
 }) {
+  const locale = useLocale();
+  const t = getDictionary(locale).deckDetail;
   const [tab, setTab] = useState<Tab>("image");
   // MTG Arenaで実際に組む対象はローテーション中のStandardが中心なため、換算表示はStandardのみ出す。
   const isStandard = format === "Standard";
@@ -121,7 +119,7 @@ export default function DeckDetailView({
   // Commanderはboard='side'に統率者が入る（TopDeck.ggのdeckObjの"Commanders"キー由来）。
   // サイドボードという概念自体がCommanderには存在しないため表示ラベルを変える。
   const isCommander = format === "Commander";
-  const sideboardTitle = isCommander ? "統率者" : "サイドボード";
+  const sideboardTitle = isCommander ? t.commanderLabel : t.sideboardLabel;
 
   return (
     <div className="flex flex-col gap-4">
@@ -134,7 +132,7 @@ export default function DeckDetailView({
             </div>
           )}
           <p className="whitespace-nowrap text-lg font-semibold">
-            {arenaMode && "Arena換算 "}
+            {arenaMode && t.arenaConvertedPrefix}
             {formatJpy(grandTotalJpy)}
           </p>
         </div>
@@ -149,7 +147,7 @@ export default function DeckDetailView({
               : "border-neutral-300 text-neutral-600 hover:border-neutral-500"
           }`}
         >
-          リスト（画像なし）
+          {t.listViewTab}
         </button>
         <button
           onClick={() => setTab("image")}
@@ -159,11 +157,11 @@ export default function DeckDetailView({
               : "border-neutral-300 text-neutral-600 hover:border-neutral-500"
           }`}
         >
-          画像（グリッド）
+          {t.imageViewTab}
         </button>
         {isStandard && (
           <label
-            title="ワイルドカード換算：レア¥1,500/4枚、神話レア¥3,000/4枚、コモン・アンコモン¥0"
+            title={t.arenaWildcardTooltip}
             className="ml-auto flex w-fit cursor-help items-center gap-2 rounded-md border border-neutral-300 px-3 py-1.5 text-neutral-600"
           >
             <input
@@ -172,7 +170,7 @@ export default function DeckDetailView({
               onChange={(e) => setArenaMode(e.target.checked)}
               className="h-4 w-4"
             />
-            MTG Arena換算で表示
+            {t.arenaModeToggle}
           </label>
         )}
       </div>
@@ -184,7 +182,7 @@ export default function DeckDetailView({
           {isCommander && sideboard.length > 0 && (
             <DeckCardList title={sideboardTitle} cards={sideboard} grouped={false} arenaMode={arenaMode} />
           )}
-          <DeckCardList title="メインボード" cards={mainboard} grouped arenaMode={arenaMode} />
+          <DeckCardList title={t.mainboardLabel} cards={mainboard} grouped arenaMode={arenaMode} />
           {!isCommander && sideboard.length > 0 && (
             <DeckCardList title={sideboardTitle} cards={sideboard} grouped={false} arenaMode={arenaMode} />
           )}
@@ -194,7 +192,7 @@ export default function DeckDetailView({
           {isCommander && sideboard.length > 0 && (
             <DeckCardGrid title={sideboardTitle} cards={sideboard} grouped={false} arenaMode={arenaMode} />
           )}
-          <DeckCardGrid title="メインボード" cards={mainboard} grouped arenaMode={arenaMode} />
+          <DeckCardGrid title={t.mainboardLabel} cards={mainboard} grouped arenaMode={arenaMode} />
           {!isCommander && sideboard.length > 0 && (
             <DeckCardGrid title={sideboardTitle} cards={sideboard} grouped={false} arenaMode={arenaMode} />
           )}
@@ -213,6 +211,7 @@ function CardListRow({ card, arenaMode }: { card: DeckCardDisplay; arenaMode: bo
   // arenaMode中はレアリティさえ分かれば必ず金額が出せる（不明なレアリティ・コモン/アンコモンは0円）ため、
   // 実勢価格が無いカードでも「価格データなし」にはならない
   const locale = useLocale();
+  const t = getDictionary(locale).deckDetail;
   const unitPriceJpy = arenaMode ? arenaPriceJpy(card.rarity) : card.priceJpy;
   return (
     <li key={`${card.nameEn}-${card.board}`} className="contents">
@@ -243,7 +242,7 @@ function CardListRow({ card, arenaMode }: { card: DeckCardDisplay; arenaMode: bo
         </>
       ) : (
         <span className="col-span-3 whitespace-nowrap border-b border-neutral-100 py-1 text-right text-neutral-400">
-          価格データなし
+          {t.noPriceData}
         </span>
       )}
     </li>
@@ -261,17 +260,17 @@ function DeckCardList({
   grouped: boolean;
   arenaMode: boolean;
 }) {
+  const locale = useLocale();
+  const t = getDictionary(locale).deckDetail;
   return (
     <div>
-      <p className="mb-2 text-sm font-medium text-neutral-700">
-        {title}（{totalQuantity(cards)}）
-      </p>
+      <p className="mb-2 text-sm font-medium text-neutral-700">{t.sectionTitle(title, totalQuantity(cards))}</p>
       {grouped ? (
         <div className="columns-1 gap-6 sm:columns-2">
           {groupByKind(cards).map((group) => (
             <div key={group.kind} className="mb-4 break-inside-avoid">
               <p className="mb-1 text-xs font-medium text-neutral-500">
-                {KIND_LABEL[group.kind]}（{totalQuantity(group.cards)}）
+                {t.sectionTitle(t.kindLabel[group.kind], totalQuantity(group.cards))}
               </p>
               <ul className="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 text-sm">
                 {group.cards.map((card) => (
@@ -289,7 +288,7 @@ function DeckCardList({
         </ul>
       )}
       <p className="mt-2 text-right text-sm font-medium text-neutral-700">
-        合計: {formatJpy(arenaMode ? totalArenaPriceJpy(cards) : totalPriceJpy(cards))}
+        {t.total(formatJpy(arenaMode ? totalArenaPriceJpy(cards) : totalPriceJpy(cards)))}
       </p>
     </div>
   );
@@ -297,6 +296,7 @@ function DeckCardList({
 
 function CardGridTile({ card }: { card: DeckCardDisplay }) {
   const locale = useLocale();
+  const t = getDictionary(locale).deckDetail;
   const content = (
     <>
       {card.imageNormalUrl ? (
@@ -309,7 +309,7 @@ function CardGridTile({ card }: { card: DeckCardDisplay }) {
         />
       ) : (
         <div className="flex aspect-[223/311] w-full items-center justify-center rounded-md bg-neutral-100 text-[10px] text-neutral-400">
-          画像なし
+          {t.noImage}
         </div>
       )}
       <p className="text-center text-xs">
@@ -342,17 +342,17 @@ function DeckCardGrid({
   grouped: boolean;
   arenaMode: boolean;
 }) {
+  const locale = useLocale();
+  const t = getDictionary(locale).deckDetail;
   return (
     <div>
-      <p className="mb-2 text-sm font-medium text-neutral-700">
-        {title}（{totalQuantity(cards)}）
-      </p>
+      <p className="mb-2 text-sm font-medium text-neutral-700">{t.sectionTitle(title, totalQuantity(cards))}</p>
       {grouped ? (
         <div className="flex flex-col gap-4">
           {groupByKind(cards).map((group) => (
             <div key={group.kind}>
               <p className="mb-1 text-xs font-medium text-neutral-500">
-                {KIND_LABEL[group.kind]}（{totalQuantity(group.cards)}）
+                {t.sectionTitle(t.kindLabel[group.kind], totalQuantity(group.cards))}
               </p>
               <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
                 {group.cards.map((card) => (
@@ -370,7 +370,7 @@ function DeckCardGrid({
         </div>
       )}
       <p className="mt-2 text-right text-sm font-medium text-neutral-700">
-        合計: {formatJpy(arenaMode ? totalArenaPriceJpy(cards) : totalPriceJpy(cards))}
+        {t.total(formatJpy(arenaMode ? totalArenaPriceJpy(cards) : totalPriceJpy(cards)))}
       </p>
     </div>
   );
