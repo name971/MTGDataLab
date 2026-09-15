@@ -46,6 +46,16 @@ const ja = {
     printsListTitle: (name: string | null, shown: number, total: number) =>
       `${name ?? ""}のプリント一覧（${shown}/${total}種）`,
   },
+  home: {
+    trendingHeading: "継続注目カード",
+    mlRankingHeading: "注目カードランキング",
+    mlRankingInfo:
+      "7日以内に一定以上値上がり・値下がりする確率を機械学習モデルで予測し、確率が高い順に並べています（トーナメントで使用実績のあるカードが対象）。過去のTop10的中率: 高騰予想は約73%、暴落予想は約95%。",
+  },
+  legality: {
+    statusTitle: { legal: "合法", not_legal: "非合法", banned: "禁止", restricted: "制限（1枚まで）" },
+    printNotLegalTitle: "このプリントは使用不可",
+  },
   deckDetail: {
     kindLabel: { creature: "クリーチャー", spell: "呪文", land: "土地" },
     commanderLabel: "統率者",

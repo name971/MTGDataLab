@@ -47,6 +47,16 @@ const en: typeof ja = {
     printsListTitle: (name: string | null, shown: number, total: number) =>
       `${name ?? ""} prints (${shown}/${total})`,
   },
+  home: {
+    trendingHeading: "Cards on a Streak",
+    mlRankingHeading: "Cards to Watch",
+    mlRankingInfo:
+      "Predicted with a machine learning model on the probability of a significant price move (up or down) within 7 days, ranked by confidence (tournament-played cards only). Historical Top 10 accuracy: ~73% for surges, ~95% for crashes.",
+  },
+  legality: {
+    statusTitle: { legal: "Legal", not_legal: "Not legal", banned: "Banned", restricted: "Restricted (max 1)" },
+    printNotLegalTitle: "This print is not tournament legal",
+  },
   deckDetail: {
     kindLabel: { creature: "Creatures", spell: "Spells", land: "Lands" },
     commanderLabel: "Commander",

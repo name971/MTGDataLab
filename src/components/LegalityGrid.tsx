@@ -1,17 +1,14 @@
-import { FORMATS, formatSlug, formatLabelJa } from "@/lib/formats";
+"use client";
+
+import { FORMATS, formatSlug, formatLabel } from "@/lib/formats";
+import { useLocale } from "@/i18n/useLocale";
+import { getDictionary } from "@/i18n/getDictionary";
 
 const STATUS_LABEL: Record<string, string> = {
   legal: "✓",
   not_legal: "–",
   banned: "✕",
   restricted: "1",
-};
-
-const STATUS_TITLE: Record<string, string> = {
-  legal: "合法",
-  not_legal: "非合法",
-  banned: "禁止",
-  restricted: "制限（1枚まで）",
 };
 
 const STATUS_CLASS: Record<string, string> = {
@@ -30,16 +27,18 @@ export default function LegalityGrid({
    * このプリント自体はどのフォーマットでも使用できないため、全項目を使用不可表示にする */
   disabled?: boolean;
 }) {
+  const locale = useLocale();
+  const t = getDictionary(locale).legality;
   return (
     <dl className="flex flex-col gap-1.5 text-sm">
       {FORMATS.map((format) => {
         const status = disabled ? "print_not_legal" : (legalities[formatSlug(format)] ?? "not_legal");
         return (
           <div key={format} className="flex items-center justify-between gap-2">
-            <dt className="text-neutral-600">{formatLabelJa(format)}</dt>
+            <dt className="text-neutral-600">{formatLabel(format, locale)}</dt>
             <dd
               className={`font-semibold ${disabled ? "text-red-800" : (STATUS_CLASS[status] ?? "text-neutral-400")}`}
-              title={disabled ? "このプリントは使用不可" : (STATUS_TITLE[status] ?? status)}
+              title={disabled ? t.printNotLegalTitle : (t.statusTitle[status as keyof typeof t.statusTitle] ?? status)}
             >
               {disabled ? "✕" : (STATUS_LABEL[status] ?? status)}
             </dd>

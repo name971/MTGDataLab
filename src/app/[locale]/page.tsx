@@ -7,6 +7,7 @@ import MlRankingList from "@/components/MlRankingList";
 import InfoTooltip from "@/components/InfoTooltip";
 import MaintenanceBanner from "@/components/MaintenanceBanner";
 import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
+import { getDictionary } from "@/i18n/getDictionary";
 
 // 集計バッチは1日1回しか回らないため、鮮度より egress 削減を優先して長めにキャッシュする（ISR）
 export const revalidate = 3600;
@@ -66,6 +67,7 @@ const SAMPLE_TRENDING_CARDS: TrendingCardData[] = [
 export default async function TopPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale: rawLocale } = await params;
   const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
+  const t = getDictionary(locale).home;
   // DB接続そのものが失敗した場合（データがまだ無いだけの場合と区別、dbTrendingCards.ts参照）は
   // サンプルデータへ黙ってフォールバックせず、メンテナンス中であることを表示する
   // （2026-08-17、DB障害中もサイトが正常に見えてしまっていたインシデントの再発防止）。
@@ -99,7 +101,7 @@ export default async function TopPage({ params }: { params: Promise<{ locale: st
 
       {trendingCards.length > 0 && (
         <section>
-          <h2 className="mb-5 text-2xl font-bold tracking-tight text-neutral-900">継続注目カード</h2>
+          <h2 className="mb-5 text-2xl font-bold tracking-tight text-neutral-900">{t.trendingHeading}</h2>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 sm:gap-5">
             {trendingCards.map((card) => (
               <TrendingCard key={card.oracleId} card={card} locale={locale} />
@@ -111,8 +113,8 @@ export default async function TopPage({ params }: { params: Promise<{ locale: st
       {(mlRankingUp.length > 0 || mlRankingDown.length > 0) && (
         <section>
           <h2 className="mb-5 flex items-center gap-1.5 text-2xl font-bold tracking-tight text-neutral-900">
-            注目カードランキング
-            <InfoTooltip text="7日以内に一定以上値上がり・値下がりする確率を機械学習モデルで予測し、確率が高い順に並べています（トーナメントで使用実績のあるカードが対象）。過去のTop10的中率: 高騰予想は約73%、暴落予想は約95%。" />
+            {t.mlRankingHeading}
+            <InfoTooltip text={t.mlRankingInfo} />
           </h2>
           <Suspense fallback={null}>
             <MlRankingList up={mlRankingUp} down={mlRankingDown} />
