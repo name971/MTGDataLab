@@ -199,13 +199,15 @@ async function resolveCardByParam(oracleId: string): Promise<ResolvedCard | null
 export async function generateMetadata({
   params,
 }: {
-  params: Promise<{ oracleId: string }>;
+  params: Promise<{ locale: string; oracleId: string }>;
 }) {
-  const { oracleId } = await params;
+  const { locale: rawLocale, oracleId } = await params;
+  const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
   const card = await resolveCardByParam(oracleId);
   if (!card) return { title: "MTG DataLab" };
 
-  return { title: `${card.nameJa ?? card.nameEn} - MTG DataLab` };
+  const name = locale === "ja" ? (card.nameJa ?? card.nameEn) : card.nameEn;
+  return { title: `${name} - MTG DataLab` };
 }
 
 const USAGE_PERIOD_OPTIONS = [7, 30] as const;
