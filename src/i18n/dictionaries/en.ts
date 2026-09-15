@@ -53,6 +53,21 @@ const en: typeof ja = {
     mlRankingInfo:
       "Predicted with a machine learning model on the probability of a significant price move (up or down) within 7 days, ranked by confidence (tournament-played cards only). Historical Top 10 accuracy: ~73% for surges, ~95% for crashes.",
   },
+  trending: {
+    metaTitle: "Weekly Rankings - MTG DataLab",
+    priceCategory: "Price Movers",
+    usageCategory: "Play Rate Movers",
+    heading: "Weekly Rankings",
+    subheading: "Top 300 by change over the last 7 days, updated daily",
+    pctRankingLabel: "% ranking",
+    jpyRankingLabel: "Price change ranking",
+    jpyUnit: "¥",
+    upRankingLabel: "Rising ranking",
+    downRankingLabel: "Falling ranking",
+    upLabel: "Rising",
+    downLabel: "Falling",
+    noData: "No data yet. Check back later.",
+  },
   deckRanking: {
     sortByUsage: "By Play Rate",
     sortByPrice: "By Median Price",

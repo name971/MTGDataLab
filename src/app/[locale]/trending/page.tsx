@@ -2,16 +2,16 @@ import Link from "next/link";
 import { getWeeklyMovers, type MoverCategory } from "@/lib/dbWeeklyMovers";
 import WeeklyMoversList from "@/components/WeeklyMoversList";
 import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
+import { getDictionary } from "@/i18n/getDictionary";
 
 // 集計バッチ（compute-weekly-movers.mjs）は1日1回しか回らないため、長めにキャッシュする
 export const revalidate = 21600;
 
-export const metadata = { title: "週間ランキング - MTG DataLab" };
-
-const CATEGORIES: { key: MoverCategory; label: string }[] = [
-  { key: "price", label: "値上がりランキング" },
-  { key: "usage", label: "採用率ランキング" },
-];
+export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }) {
+  const { locale: rawLocale } = await params;
+  const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
+  return { title: getDictionary(locale).trending.metaTitle };
+}
 
 function resolveCategory(raw: string | undefined): MoverCategory {
   return raw === "usage" ? "usage" : "price";
@@ -35,6 +35,11 @@ export default async function TrendingRankingPage({
 }) {
   const { locale: rawLocale } = await params;
   const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
+  const t = getDictionary(locale).trending;
+  const CATEGORIES: { key: MoverCategory; label: string }[] = [
+    { key: "price", label: t.priceCategory },
+    { key: "usage", label: t.usageCategory },
+  ];
   const sp = await searchParams;
   const category = resolveCategory(sp.category);
   const metric = resolveMetric(sp.metric);
@@ -48,8 +53,8 @@ export default async function TrendingRankingPage({
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-neutral-900">週間ランキング</h1>
-        <p className="text-sm text-neutral-500">直近7日間の変化でTop300を毎日更新</p>
+        <h1 className="text-2xl font-bold tracking-tight text-neutral-900">{t.heading}</h1>
+        <p className="text-sm text-neutral-500">{t.subheading}</p>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -72,7 +77,7 @@ export default async function TrendingRankingPage({
           <div className="flex gap-1">
             <Link
               href={`/${locale}/trending?category=${category}&metric=pct`}
-              aria-label="%ランキング"
+              aria-label={t.pctRankingLabel}
               className={`rounded-md border px-2.5 py-1.5 text-sm ${
                 metric === "pct"
                   ? "border-accent bg-accent-soft text-accent-text"
@@ -83,14 +88,14 @@ export default async function TrendingRankingPage({
             </Link>
             <Link
               href={`/${locale}/trending?category=${category}&metric=jpy`}
-              aria-label="金額差ランキング"
+              aria-label={t.jpyRankingLabel}
               className={`rounded-md border px-2.5 py-1.5 text-sm ${
                 metric === "jpy"
                   ? "border-accent bg-accent-soft text-accent-text"
                   : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
               }`}
             >
-              円
+              {t.jpyUnit}
             </Link>
           </div>
         )}
@@ -98,25 +103,25 @@ export default async function TrendingRankingPage({
           <div className="flex gap-1">
             <Link
               href={`/${locale}/trending?category=usage&dir=up`}
-              aria-label="上昇ランキング"
+              aria-label={t.upRankingLabel}
               className={`rounded-md border px-2.5 py-1.5 text-sm ${
                 usageDirection === "up"
                   ? "border-accent bg-accent-soft text-accent-text"
                   : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
               }`}
             >
-              上昇
+              {t.upLabel}
             </Link>
             <Link
               href={`/${locale}/trending?category=usage&dir=down`}
-              aria-label="下降ランキング"
+              aria-label={t.downRankingLabel}
               className={`rounded-md border px-2.5 py-1.5 text-sm ${
                 usageDirection === "down"
                   ? "border-accent bg-accent-soft text-accent-text"
                   : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
               }`}
             >
-              下降
+              {t.downLabel}
             </Link>
           </div>
         )}
@@ -126,7 +131,7 @@ export default async function TrendingRankingPage({
         <WeeklyMoversList rows={rows} category={category} priceMetric={metric} />
       ) : (
         <p className="py-6 text-center text-sm text-neutral-500">
-          まだ集計データがありません。しばらくしてから見に来てください。
+          {t.noData}
         </p>
       )}
     </div>

@@ -52,6 +52,21 @@ const ja = {
     mlRankingInfo:
       "7日以内に一定以上値上がり・値下がりする確率を機械学習モデルで予測し、確率が高い順に並べています（トーナメントで使用実績のあるカードが対象）。過去のTop10的中率: 高騰予想は約73%、暴落予想は約95%。",
   },
+  trending: {
+    metaTitle: "週間ランキング - MTG DataLab",
+    priceCategory: "値上がりランキング",
+    usageCategory: "採用率ランキング",
+    heading: "週間ランキング",
+    subheading: "直近7日間の変化でTop300を毎日更新",
+    pctRankingLabel: "%ランキング",
+    jpyRankingLabel: "金額差ランキング",
+    jpyUnit: "円",
+    upRankingLabel: "上昇ランキング",
+    downRankingLabel: "下降ランキング",
+    upLabel: "上昇",
+    downLabel: "下降",
+    noData: "まだ集計データがありません。しばらくしてから見に来てください。",
+  },
   deckRanking: {
     sortByUsage: "採用率順",
     sortByPrice: "平均価格順",
