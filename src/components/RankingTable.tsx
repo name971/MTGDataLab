@@ -62,8 +62,11 @@ export default function RankingTable({ rows }: { rows: RankingRow[] }) {
     [filtered, sortKey, priceSortDir],
   );
 
-  const maxPrice = Math.max(...sorted.map((r) => r.priceJpy));
-  const minPrice = Math.min(...sorted.map((r) => r.priceJpy));
+  // priceJpy=0は「価格未取得」（Black Lotus等、トーナメント使用可能な版に価格データが
+  // 一切無いカード）を表す慣例。最大/最小価格のハイライト計算には含めない。
+  const pricedValues = sorted.map((r) => r.priceJpy).filter((p) => p > 0);
+  const maxPrice = pricedValues.length > 0 ? Math.max(...pricedValues) : null;
+  const minPrice = pricedValues.length > 0 ? Math.min(...pricedValues) : null;
 
   // 採用率はフォーマットによって分布が全く違う（Standardは上位40%前後、Commanderは
   // 統率者以外だと数%）ので、絶対値の閾値ではなく表示中のリスト内での相対順位（上位/中位/下位）
@@ -134,7 +137,7 @@ export default function RankingTable({ rows }: { rows: RankingRow[] }) {
             row={row}
             rank={index + 1}
             priceHighlight={
-              row.priceJpy === maxPrice ? "max" : row.priceJpy === minPrice ? "min" : null
+              row.priceJpy > 0 && row.priceJpy === maxPrice ? "max" : row.priceJpy > 0 && row.priceJpy === minPrice ? "min" : null
             }
             usageTier={usageTiersByOracleId.get(row.oracleId) ?? "low"}
           />
@@ -207,10 +210,12 @@ function CardRankRow({
               ? "font-semibold text-red-600"
               : priceHighlight === "min"
                 ? "font-semibold text-blue-600"
-                : ""
+                : row.priceJpy === 0
+                  ? "text-neutral-400"
+                  : ""
           }`}
         >
-          ¥{row.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
+          {row.priceJpy > 0 ? `¥${row.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}` : "価格不明"}
         </p>
       </div>
     </Link>

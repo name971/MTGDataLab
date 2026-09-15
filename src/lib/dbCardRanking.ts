@@ -158,16 +158,18 @@ export async function getCardRankingFromDb(
   const rows = topOracleIds
     .map((oracleId) => {
       const oracle = nameByOracle.get(oracleId);
-      const priceJpy = priceByOracle.get(oracleId);
       const artCropUrl = artCropByOracle.get(oracleId);
-      // 価格・画像・名前のいずれかが無いカードはランキング表示に耐えないので除外する
-      if (!oracle || priceJpy === undefined || !artCropUrl) return null;
+      // 画像・名前が無いカードはランキング表示に耐えないので除外するが、価格は無くても
+      // 「価格不明」のまま出す（Black Lotus等、トーナメント使用可能な版に価格データが
+      // 一切無いカードが採用率で上位なのにランキングから消えてしまっていたため、2026-09-15）。
+      // priceJpy=0は「未取得」を表す（WeeklyMoversList等と同じ慣例、実売¥0のカードは無い）。
+      if (!oracle || !artCropUrl) return null;
       return {
         oracleId,
         nameJa: oracle.printed_name_ja ?? oracle.name,
         nameEn: oracle.name,
         artCropUrl,
-        priceJpy,
+        priceJpy: priceByOracle.get(oracleId) ?? 0,
         priceChangePct: recentChanges.get(oracleId)?.priceChange3dPct ?? 0,
         usageRatePct: latestUsageByOracle.get(oracleId) ?? 0,
         colors: colorsFromManaCost(manaCostByOracle.get(oracleId)),
