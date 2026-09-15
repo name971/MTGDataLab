@@ -1,30 +1,31 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { TrendingRankingRow } from "@/lib/dbTrendingRanking";
+import type { Locale } from "@/i18n/config";
 
 // 日本の相場表記に合わせ、上昇=赤・下降=青（2026-08-29、デザイン刷新）
 function changeClass(value: number) {
   return `font-numeric ${value >= 0 ? "text-red-700" : "text-blue-700"}`;
 }
 
-export default function TrendingRankingList({ rows }: { rows: TrendingRankingRow[] }) {
+export default function TrendingRankingList({ rows, locale }: { rows: TrendingRankingRow[]; locale: Locale }) {
   return (
     <div className="grid grid-cols-3 gap-3 sm:gap-4 lg:grid-cols-5">
       {rows.map((row, index) => (
-        <TrendingRankRow key={row.oracleId} row={row} rank={index + 1} />
+        <TrendingRankRow key={row.oracleId} row={row} rank={index + 1} locale={locale} />
       ))}
     </div>
   );
 }
 
-function TrendingRankRow({ row, rank }: { row: TrendingRankingRow; rank: number }) {
+function TrendingRankRow({ row, rank, locale }: { row: TrendingRankingRow; rank: number; locale: Locale }) {
   // カードそのものを見分けられることが重要なので、アートクロップではなくカード全体の画像を使う。
   // Scryfallの画像URLは/<バリエーション>/front/<...>.jpgという共通構造なので置換で導出できる。
   const normalImageUrl = row.artCropUrl.replace("/art_crop/", "/normal/");
 
   return (
     <Link
-      href={`/cards/${row.oracleId}`}
+      href={`/${locale}/cards/${row.oracleId}`}
       className="flex flex-col overflow-hidden rounded-lg border border-neutral-200 hover:border-neutral-400"
     >
       <Image

@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useLocale } from "@/i18n/useLocale";
 import { useMemo, useState } from "react";
 import type { WeeklyMoverRow, MoverCategory } from "@/lib/dbWeeklyMovers";
 import { formatLabelJa, FORMATS } from "@/lib/formats";
@@ -183,9 +184,10 @@ function MoverRow({
   // カード詳細ページ（その他プリント・使用デッキ欄あり）へ飛ばし、動いたプリント自体を
   // 最初から選択済みにする（プリント詳細ページ単体はその他プリント・使用デッキ欄が無く
   // 情報量で劣るという指摘のため、2026-08-27）。
+  const locale = useLocale();
   const href = row.scryfallId
-    ? `/cards/${row.oracleId}?print=${row.scryfallId}${row.finish === "foil" ? "&finish=foil" : ""}`
-    : `/cards/${row.oracleId}`;
+    ? `/${locale}/cards/${row.oracleId}?print=${row.scryfallId}${row.finish === "foil" ? "&finish=foil" : ""}`
+    : `/${locale}/cards/${row.oracleId}`;
   return (
     <Link
       href={href}

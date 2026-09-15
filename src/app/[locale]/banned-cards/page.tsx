@@ -10,6 +10,7 @@ import {
   type ReservedListCard,
 } from "@/lib/dbBannedCards";
 import { getIconUrlBySetCodes } from "@/lib/dbCardPrints";
+import { isLocale, DEFAULT_LOCALE, type Locale } from "@/i18n/config";
 
 // 色フィルタの選択肢。"C"は無色（mana_costにWUBRGどれも含まれないカード）を表す特別扱いで、
 // COLOR_ORDER（W/U/B/R/G）そのものには含まれない。
@@ -88,6 +89,7 @@ function isFormat(v: string | undefined): v is Format {
 }
 
 function buildHref(
+  locale: Locale,
   tab: TabKey,
   format: Format,
   sortDir: "asc" | "desc",
@@ -103,7 +105,7 @@ function buildHref(
   if (next.fillGaps) params.set("fillGaps", "1");
   if (next.view !== "list") params.set("view", next.view);
   const qs = params.toString();
-  return qs ? `/banned-cards?${qs}` : "/banned-cards";
+  return qs ? `/${locale}/banned-cards?${qs}` : `/${locale}/banned-cards`;
 }
 
 function cardTitle(card: BannedCardWithCard): string {
@@ -123,12 +125,12 @@ function toSmallImageUrl(url: string): string {
 
 // カード画像の縦横比（通常のカード比率）。next/imageのwidth/heightは実画像取得用のヒントとして
 // 固定値64x90を渡しつつ、実際の表示サイズはstyleのheight（CSS式もしくは数値px）で決める。
-function CardThumb({ card, heightStyle }: { card: BannedCardWithCard; heightStyle: string }) {
+function CardThumb({ card, heightStyle, locale }: { card: BannedCardWithCard; heightStyle: string; locale: Locale }) {
   const borderClass = card.status === "restricted" ? "border-amber-500" : "border-neutral-200";
   return (
     <Link
       key={card.oracleId}
-      href={`/cards/${card.oracleId}`}
+      href={`/${locale}/cards/${card.oracleId}`}
       className="group relative block shrink-0 hover:z-20"
       title={cardTitle(card)}
     >
@@ -220,10 +222,14 @@ function planCompactColumns(
 }
 
 export default async function BannedCardsPage({
+  params,
   searchParams,
 }: {
+  params: Promise<{ locale: string }>;
   searchParams: Promise<{ tab?: string; format?: string; sort?: string; fillGaps?: string; view?: string; colors?: string }>;
 }) {
+  const { locale: rawLocale } = await params;
+  const locale: Locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
   const sp = await searchParams;
   const tab: TabKey = isTab(sp.tab) ? sp.tab : "current";
   const format: Format = isFormat(sp.format) ? sp.format : "Standard";
@@ -240,7 +246,7 @@ export default async function BannedCardsPage({
         {TABS.map((t) => (
           <Link
             key={t.key}
-            href={buildHref(tab, format, sortDir, fillGaps, view, { tab: t.key })}
+            href={buildHref(locale, tab, format, sortDir, fillGaps, view, { tab: t.key })}
             className={`rounded-md border px-3 py-1.5 text-sm ${
               t.key === tab
                 ? "border-neutral-500 bg-neutral-100 text-neutral-900"
@@ -252,16 +258,24 @@ export default async function BannedCardsPage({
         ))}
       </div>
 
-      {tab === "current" && <CurrentBannedTab format={format} colors={colors} />}
-      {tab === "reserved" && <ReservedListTab colors={colors} />}
+      {tab === "current" && <CurrentBannedTab format={format} colors={colors} locale={locale} />}
+      {tab === "reserved" && <ReservedListTab colors={colors} locale={locale} />}
       {tab === "history" && (
-        <HistoryTab tab={tab} format={format} sortDir={sortDir} fillGaps={fillGaps} view={view} />
+        <HistoryTab tab={tab} format={format} sortDir={sortDir} fillGaps={fillGaps} view={view} locale={locale} />
       )}
     </div>
   );
 }
 
-async function CurrentBannedTab({ format, colors }: { format: Format; colors: ColorFilter[] }) {
+async function CurrentBannedTab({
+  format,
+  colors,
+  locale,
+}: {
+  format: Format;
+  colors: ColorFilter[];
+  locale: Locale;
+}) {
   const allCards = await getCurrentlyBannedCards(format);
   const cards = allCards.filter((c) => matchesColorFilter(c.colors, colors));
   const buildColorHref = (next: ColorFilter[]) => {
@@ -269,7 +283,7 @@ async function CurrentBannedTab({ format, colors }: { format: Format; colors: Co
     if (format !== "Standard") params.set("format", format);
     if (next.length > 0) params.set("colors", next.join(","));
     const qs = params.toString();
-    return qs ? `/banned-cards?${qs}` : "/banned-cards";
+    return qs ? `/${locale}/banned-cards?${qs}` : `/${locale}/banned-cards`;
   };
   return (
     <div className="flex flex-col gap-3">
@@ -277,7 +291,7 @@ async function CurrentBannedTab({ format, colors }: { format: Format; colors: Co
         {FORMATS.map((f) => (
           <Link
             key={f}
-            href={buildHref("current", f, "desc", false, "list", {})}
+            href={buildHref(locale, "current", f, "desc", false, "list", {})}
             className={`rounded-md border px-3 py-1 text-sm ${
               f === format
                 ? "border-neutral-500 bg-neutral-100 text-neutral-900"
@@ -300,7 +314,7 @@ async function CurrentBannedTab({ format, colors }: { format: Format; colors: Co
           {cards.map((card) => (
             <Link
               key={card.oracleId}
-              href={`/cards/${card.oracleId}`}
+              href={`/${locale}/cards/${card.oracleId}`}
               className="group relative flex flex-col items-center gap-1 rounded-lg p-1.5 hover:bg-neutral-50"
             >
               {card.imageUrl ? (
@@ -330,14 +344,14 @@ async function CurrentBannedTab({ format, colors }: { format: Format; colors: Co
   );
 }
 
-async function ReservedListTab({ colors }: { colors: ColorFilter[] }) {
+async function ReservedListTab({ colors, locale }: { colors: ColorFilter[]; locale: Locale }) {
   const allCards = await getReservedListCards();
   const cards = allCards.filter((c) => matchesColorFilter(c.colors, colors));
   const buildColorHref = (next: ColorFilter[]) => {
     const params = new URLSearchParams();
     params.set("tab", "reserved");
     if (next.length > 0) params.set("colors", next.join(","));
-    return `/banned-cards?${params.toString()}`;
+    return `/${locale}/banned-cards?${params.toString()}`;
   };
 
   // 発売日昇順（getReservedListCardsの並び順）を保ったままセットごとにグループ化する
@@ -377,7 +391,7 @@ async function ReservedListTab({ colors }: { colors: ColorFilter[] }) {
               {group.cards.map((card) => (
                 <Link
                   key={card.oracleId}
-                  href={`/cards/${card.oracleId}`}
+                  href={`/${locale}/cards/${card.oracleId}`}
                   className="flex flex-col items-center gap-1 rounded-lg p-1.5 hover:bg-neutral-50"
                 >
                   {card.imageUrl ? (
@@ -410,12 +424,14 @@ async function HistoryTab({
   sortDir,
   fillGaps,
   view,
+  locale,
 }: {
   tab: TabKey;
   format: Format;
   sortDir: "asc" | "desc";
   fillGaps: boolean;
   view: "list" | "compact";
+  locale: Locale;
 }) {
   const yearGroups = await getBannedCardsByYear(format, { sortDir, fillGaps });
   const hasRestricted = yearGroups.some((g) => g.cards.some((c) => c.status === "restricted"));
@@ -430,7 +446,7 @@ async function HistoryTab({
           {FORMATS.map((f) => (
             <Link
               key={f}
-              href={buildHref(tab, format, sortDir, fillGaps, view, { format: f })}
+              href={buildHref(locale, tab, format, sortDir, fillGaps, view, { format: f })}
               className={`rounded-md border px-3 py-1 text-sm ${
                 f === format
                   ? "border-neutral-500 bg-neutral-100 text-neutral-900"
@@ -443,7 +459,7 @@ async function HistoryTab({
         </div>
         <div className="flex flex-wrap gap-1.5">
           <Link
-            href={buildHref(tab, format, sortDir, fillGaps, view, { view: view === "compact" ? "list" : "compact" })}
+            href={buildHref(locale, tab, format, sortDir, fillGaps, view, { view: view === "compact" ? "list" : "compact" })}
             className={`rounded-md border px-3 py-1 text-sm ${
               view === "compact"
                 ? "border-neutral-500 bg-neutral-100 text-neutral-900"
@@ -453,13 +469,13 @@ async function HistoryTab({
             {view === "compact" ? "リスト表示" : "1画面で見る"}
           </Link>
           <Link
-            href={buildHref(tab, format, sortDir, fillGaps, view, { sortDir: sortDir === "desc" ? "asc" : "desc" })}
+            href={buildHref(locale, tab, format, sortDir, fillGaps, view, { sortDir: sortDir === "desc" ? "asc" : "desc" })}
             className="rounded-md border border-neutral-300 px-3 py-1 text-sm text-neutral-500 hover:border-neutral-500"
           >
             {sortDir === "desc" ? "古い順に並び替え" : "新しい順に並び替え"}
           </Link>
           <Link
-            href={buildHref(tab, format, sortDir, fillGaps, view, { fillGaps: !fillGaps })}
+            href={buildHref(locale, tab, format, sortDir, fillGaps, view, { fillGaps: !fillGaps })}
             className={`rounded-md border px-3 py-1 text-sm ${
               fillGaps
                 ? "border-neutral-500 bg-neutral-100 text-neutral-900"
@@ -491,7 +507,7 @@ async function HistoryTab({
                 {(columnsByYear.get(year) ?? []).map((col, ci) => (
                   <div key={ci} className="flex flex-col gap-1">
                     {col.map((card) => (
-                      <CardThumb key={card.oracleId} card={card} heightStyle={compactHeight} />
+                      <CardThumb key={card.oracleId} card={card} heightStyle={compactHeight} locale={locale} />
                     ))}
                   </div>
                 ))}
@@ -509,7 +525,7 @@ async function HistoryTab({
               <div className="w-14 shrink-0 text-sm font-semibold text-neutral-700">{year}</div>
               <div className="flex min-h-[90px] flex-1 flex-wrap gap-1.5">
                 {cards.map((card) => (
-                  <CardThumb key={card.oracleId} card={card} heightStyle={LIST_CARD_HEIGHT_PX} />
+                  <CardThumb key={card.oracleId} card={card} heightStyle={LIST_CARD_HEIGHT_PX} locale={locale} />
                 ))}
               </div>
             </div>

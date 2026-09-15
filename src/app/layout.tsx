@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import { Zen_Kaku_Gothic_New, Inter } from "next/font/google";
 import "./globals.css";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
 
 // デザイン刷新（2026-08-29、ミニマル路線）: 本文の大半が日本語のため、Latin専用の
 // Geistではなく日本語グリフを持つフォントに統一する。ウェイトは太字見出し用に900まで。
@@ -42,11 +40,11 @@ export default function RootLayout({
           {...({ value: "da22ae37-f54c-458a-ad6f-18d963df84a6" } as Record<string, string>)}
         />
       </head>
-      <body className="flex min-h-full flex-col bg-white text-neutral-900">
-        <Header />
-        <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">{children}</main>
-        <Footer />
-      </body>
+      {/* ヘッダー・フッター・メインのpx/py等のチャンクは英語版(app/[locale])と
+          日本語版(現状はapp/[locale]配下に統一済み)どちらもapp/[locale]/layout.tsxが持つ。
+          ここ(ルートレイアウト)は/auth・/api等、ロケール配下に無いルートも含めて全体に
+          必要なhtml/body/フォント/共通metaタグだけを持つ。 */}
+      <body className="flex min-h-full flex-col bg-white text-neutral-900">{children}</body>
     </html>
   );
 }

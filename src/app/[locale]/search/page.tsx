@@ -4,14 +4,19 @@ import { searchCardsInDb } from "@/lib/searchCards";
 import { searchSampleCards } from "@/lib/sampleSearchIndex";
 import { slugForCardName } from "@/lib/sampleCards";
 import { meetsMinQueryLength } from "@/lib/searchQuery";
+import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
 
 export const metadata = { title: "検索 - MTG DataLab" };
 
 export default async function SearchPage({
+  params,
   searchParams,
 }: {
+  params: Promise<{ locale: string }>;
   searchParams: Promise<{ q?: string }>;
 }) {
+  const { locale: rawLocale } = await params;
+  const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
   const { q } = await searchParams;
   const query = q ?? "";
 
@@ -31,7 +36,7 @@ export default async function SearchPage({
     <div className="flex flex-col gap-4">
       <div className="flex items-baseline gap-3">
         <h1 className="text-xl font-semibold">検索結果: {query}</h1>
-        <Link href="/search/advanced" className="text-sm text-neutral-500 hover:underline">
+        <Link href={`/${locale}/search/advanced`} className="text-sm text-neutral-500 hover:underline">
           高度検索 →
         </Link>
       </div>
@@ -41,7 +46,7 @@ export default async function SearchPage({
           {results.map((card) => (
             <Link
               key={card.oracleId}
-              href={`/cards/${card.oracleId}`}
+              href={`/${locale}/cards/${card.oracleId}`}
               className="flex items-center gap-3 rounded-lg border border-neutral-200 p-3 hover:border-neutral-400"
             >
               {card.artCropUrl && (

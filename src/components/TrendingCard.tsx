@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import type { Locale } from "@/i18n/config";
 
 /**
  * 取引量は無料データソースが存在しないため launch では対象外（docs/spec.md 2章）。
@@ -28,14 +29,14 @@ const CATEGORY_BADGE_CLASS: Record<TrendingCardData["category"], string> = {
   usage: "bg-purple-50 text-purple-800",
 };
 
-export default function TrendingCard({ card }: { card: TrendingCardData }) {
+export default function TrendingCard({ card, locale }: { card: TrendingCardData; locale: Locale }) {
   // Scryfallの画像URLは /<バリエーション>/front/<...>.jpg という共通構造なので、
   // art_cropの1枚絵ではなくカード全体（normal）の画像に差し替える
   const normalImageUrl = card.artCropUrl.replace("/art_crop/", "/normal/");
 
   return (
     <Link
-      href={`/cards/${card.oracleId}`}
+      href={`/${locale}/cards/${card.oracleId}`}
       className="flex flex-col gap-2 rounded-2xl bg-neutral-50 p-3 transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-neutral-200/60"
     >
       <div className="min-w-0">

@@ -2,8 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useLocale } from "@/i18n/useLocale";
+import { getDictionary } from "@/i18n/getDictionary";
 
 export default function AuthButton() {
+  const locale = useLocale();
+  const t = getDictionary(locale);
   const [email, setEmail] = useState<string | null | undefined>(undefined);
   const supabase = createClient();
 
@@ -29,7 +33,7 @@ export default function AuthButton() {
         }
         className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:border-neutral-500"
       >
-        ログイン
+        {t.login}
       </button>
     );
   }
@@ -42,7 +46,7 @@ export default function AuthButton() {
         onClick={() => supabase.auth.signOut()}
         className="text-neutral-400 hover:text-neutral-600"
       >
-        ログアウト
+        {t.logout}
       </button>
     </div>
   );

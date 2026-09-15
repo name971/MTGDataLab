@@ -24,6 +24,7 @@ import { getCatalogOracleById } from "@/lib/catalogDb";
 import { getLatestPricesForPrints } from "@/lib/dbCardPrintPrices";
 import { translateTypeLine } from "@/lib/typeGlossary";
 import CardHero from "@/components/CardHero";
+import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
 
 // 価格・採用率データは1日1回のバッチでしか更新されないため、長めにキャッシュしてegressを抑える
 export const revalidate = 3600;
@@ -238,10 +239,11 @@ export default async function CardDetailPage({
   params,
   searchParams,
 }: {
-  params: Promise<{ oracleId: string }>;
+  params: Promise<{ locale: string; oracleId: string }>;
   searchParams: Promise<{ period?: string; print?: string; finish?: string }>;
 }) {
-  const { oracleId } = await params;
+  const { locale: rawLocale, oracleId } = await params;
+  const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
   const { period, print, finish } = await searchParams;
   const usagePeriodDays = resolveUsagePeriod(period);
 
@@ -368,7 +370,7 @@ export default async function CardDetailPage({
               {USAGE_PERIOD_OPTIONS.map((p) => (
                 <Link
                   key={p}
-                  href={`/cards/${oracleId}${p !== 7 ? `?period=${p}` : ""}`}
+                  href={`/${locale}/cards/${oracleId}${p !== 7 ? `?period=${p}` : ""}`}
                   className={`rounded-md border px-2 py-0.5 text-xs ${
                     p === usagePeriodDays
                       ? "border-neutral-500 bg-neutral-100 text-neutral-900"
@@ -385,7 +387,7 @@ export default async function CardDetailPage({
               {formatUsageCounts.map((f) => (
                 <li key={f.format} className="flex items-center justify-between gap-2">
                   <Link
-                    href={`/cards/${oracleId}/decks?format=${encodeURIComponent(f.format)}&period=${usagePeriodDays}`}
+                    href={`/${locale}/cards/${oracleId}/decks?format=${encodeURIComponent(f.format)}&period=${usagePeriodDays}`}
                     className="hover:underline"
                   >
                     {f.format}
@@ -417,7 +419,7 @@ export default async function CardDetailPage({
               <ul className="flex flex-col gap-1.5 text-sm">
                 {relatedArchetypes.map((a) => (
                   <li key={a.archetypeId}>
-                    <Link href={`/decks/${a.archetypeId}`} className="hover:underline">
+                    <Link href={`/${locale}/decks/${a.archetypeId}`} className="hover:underline">
                       {a.archetypeNameJa}
                     </Link>
                   </li>

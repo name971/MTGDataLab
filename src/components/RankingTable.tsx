@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { RankingRow } from "@/lib/sampleRankingData";
+import { useLocale } from "@/i18n/useLocale";
 
 /**
  * 取引量は無料データソースが存在しないため launch では対象外（docs/spec.md 2章）。
@@ -171,11 +172,12 @@ function CardRankRow({
 }) {
   // カードそのものを見分けられることが重要なので、アートクロップではなくカード全体の画像を使う。
   // Scryfallの画像URLは/<バリエーション>/front/<...>.jpgという共通構造なので置換で導出できる。
+  const locale = useLocale();
   const normalImageUrl = row.artCropUrl.replace("/art_crop/", "/normal/");
 
   return (
     <Link
-      href={`/cards/${row.oracleId}`}
+      href={`/${locale}/cards/${row.oracleId}`}
       className="flex flex-col overflow-hidden rounded-lg border border-neutral-200 hover:border-neutral-400"
     >
       <Image

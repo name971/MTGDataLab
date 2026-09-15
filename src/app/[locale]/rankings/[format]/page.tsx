@@ -4,6 +4,7 @@ import { FORMATS, formatSlug, formatLabelJa, type Format } from "@/lib/formats";
 import { getFormatSettings } from "@/lib/formatSettings";
 import { getCardRankingFromDb } from "@/lib/dbCardRanking";
 import RankingTable from "@/components/RankingTable";
+import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
 
 // 集計バッチは1日1回しか回らないため、長めにキャッシュしてegressを抑える
 export const revalidate = 21600;
@@ -34,10 +35,11 @@ export default async function FormatRankingPage({
   params,
   searchParams,
 }: {
-  params: Promise<{ format: string }>;
+  params: Promise<{ locale: string; format: string }>;
   searchParams: Promise<{ period?: string }>;
 }) {
-  const { format: slug } = await params;
+  const { locale: rawLocale, format: slug } = await params;
+  const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
   const format = resolveFormat(slug);
   if (!format) notFound();
 
@@ -55,7 +57,7 @@ export default async function FormatRankingPage({
         {FORMATS.map((f) => (
           <Link
             key={f}
-            href={`/rankings/${formatSlug(f)}${periodDays !== 30 ? `?period=${periodDays}` : ""}`}
+            href={`/${locale}/rankings/${formatSlug(f)}${periodDays !== 30 ? `?period=${periodDays}` : ""}`}
             className={`rounded-md border px-3 py-1.5 text-sm ${
               f === format
                 ? "border-neutral-500 bg-neutral-100 text-neutral-900"
@@ -72,7 +74,7 @@ export default async function FormatRankingPage({
         {PERIOD_OPTIONS.map((p) => (
           <Link
             key={p}
-            href={`/rankings/${formatSlug(format)}?period=${p}`}
+            href={`/${locale}/rankings/${formatSlug(format)}?period=${p}`}
             className={`rounded-md border px-2 py-1 text-xs ${
               p === periodDays
                 ? "border-neutral-500 bg-neutral-100 text-neutral-900"

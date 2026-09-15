@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { totalPriceJpy, totalArenaPriceJpy, arenaPriceJpy, formatJpy } from "@/lib/deckPricing";
+import { useLocale } from "@/i18n/useLocale";
 import ManaCost from "./ManaCost";
 import DeckStatsBar from "./DeckStatsBar";
 
@@ -211,6 +212,7 @@ export default function DeckDetailView({
 function CardListRow({ card, arenaMode }: { card: DeckCardDisplay; arenaMode: boolean }) {
   // arenaMode中はレアリティさえ分かれば必ず金額が出せる（不明なレアリティ・コモン/アンコモンは0円）ため、
   // 実勢価格が無いカードでも「価格データなし」にはならない
+  const locale = useLocale();
   const unitPriceJpy = arenaMode ? arenaPriceJpy(card.rarity) : card.priceJpy;
   return (
     <li key={`${card.nameEn}-${card.board}`} className="contents">
@@ -218,7 +220,7 @@ function CardListRow({ card, arenaMode }: { card: DeckCardDisplay; arenaMode: bo
         <span className="truncate">
           {card.quantity}x{" "}
           {card.oracleId ? (
-            <Link href={`/cards/${card.oracleId}`} className="hover:underline">
+            <Link href={`/${locale}/cards/${card.oracleId}`} className="hover:underline">
               {card.nameJa ?? card.nameEn}
             </Link>
           ) : (
@@ -294,6 +296,7 @@ function DeckCardList({
 }
 
 function CardGridTile({ card }: { card: DeckCardDisplay }) {
+  const locale = useLocale();
   const content = (
     <>
       {card.imageNormalUrl ? (
@@ -318,7 +321,7 @@ function CardGridTile({ card }: { card: DeckCardDisplay }) {
   if (card.oracleId) {
     return (
       <Link
-        href={`/cards/${card.oracleId}`}
+        href={`/${locale}/cards/${card.oracleId}`}
         className="flex flex-col items-center gap-1 hover:opacity-80"
       >
         {content}

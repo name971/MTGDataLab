@@ -4,6 +4,7 @@ import { advancedSearchCards, MV_BUCKETS, PAGE_SIZE } from "@/lib/dbAdvancedSear
 import { RARITY_LABEL_JA } from "@/lib/scryfall";
 import { FORMATS, formatLabelJa } from "@/lib/formats";
 import { COLOR_ORDER } from "@/lib/manaColors";
+import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
 import {
   COMMON_TYPES,
   PERIODS,
@@ -31,10 +32,14 @@ function buildHref(sp: RawSearchParams, overrides: Record<string, string | undef
 }
 
 export default async function AdvancedSearchPage({
+  params,
   searchParams,
 }: {
+  params: Promise<{ locale: string }>;
   searchParams: Promise<RawSearchParams>;
 }) {
+  const { locale: rawLocale } = await params;
+  const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
   const sp = await searchParams;
   const filters = parseAdvancedSearchFilters(sp);
   const page = parsePage(sp);
@@ -61,7 +66,7 @@ export default async function AdvancedSearchPage({
     <div className="flex flex-col gap-6">
       <div className="flex items-baseline gap-3">
         <h1 className="text-xl font-semibold">高度検索</h1>
-        <Link href="/search" className="text-sm text-neutral-500 hover:underline">
+        <Link href={`/${locale}/search`} className="text-sm text-neutral-500 hover:underline">
           通常検索に戻る
         </Link>
       </div>
@@ -354,7 +359,7 @@ export default async function AdvancedSearchPage({
               {results.map((card) => (
                 <Link
                   key={card.oracleId}
-                  href={`/cards/${card.oracleId}`}
+                  href={`/${locale}/cards/${card.oracleId}`}
                   className="flex flex-col overflow-hidden rounded-lg border border-neutral-200 hover:border-neutral-400"
                 >
                   {card.imageUrl && (

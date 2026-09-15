@@ -6,6 +6,7 @@ import { getMlRankingFromDb } from "@/lib/dbMlRanking";
 import MlRankingList from "@/components/MlRankingList";
 import InfoTooltip from "@/components/InfoTooltip";
 import MaintenanceBanner from "@/components/MaintenanceBanner";
+import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
 
 // 集計バッチは1日1回しか回らないため、鮮度より egress 削減を優先して長めにキャッシュする（ISR）
 export const revalidate = 3600;
@@ -62,7 +63,9 @@ const SAMPLE_TRENDING_CARDS: TrendingCardData[] = [
   },
 ];
 
-export default async function TopPage() {
+export default async function TopPage({ params }: { params: Promise<{ locale: string }> }) {
+  const { locale: rawLocale } = await params;
+  const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
   // DB接続そのものが失敗した場合（データがまだ無いだけの場合と区別、dbTrendingCards.ts参照）は
   // サンプルデータへ黙ってフォールバックせず、メンテナンス中であることを表示する
   // （2026-08-17、DB障害中もサイトが正常に見えてしまっていたインシデントの再発防止）。
@@ -99,7 +102,7 @@ export default async function TopPage() {
           <h2 className="mb-5 text-2xl font-bold tracking-tight text-neutral-900">継続注目カード</h2>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 sm:gap-5">
             {trendingCards.map((card) => (
-              <TrendingCard key={card.oracleId} card={card} />
+              <TrendingCard key={card.oracleId} card={card} locale={locale} />
             ))}
           </div>
         </section>

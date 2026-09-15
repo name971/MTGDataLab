@@ -9,6 +9,7 @@ import { SAMPLE_CARD_SLUGS } from "@/lib/sampleCards";
 import PriceHistoryChart from "@/components/PriceHistoryChart";
 import LegalityGrid from "@/components/LegalityGrid";
 import ManaText from "@/components/ManaText";
+import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
 
 /**
  * URLの[oracleId]は「サンプル22枚のスラグ（例: "ragavan"）」と「実データのUUID」の
@@ -33,9 +34,10 @@ const SQUARE_CORNER_SET_CODES = new Set(["ced", "cei"]);
 export default async function CardPrintDetailPage({
   params,
 }: {
-  params: Promise<{ oracleId: string; scryfallId: string }>;
+  params: Promise<{ locale: string; oracleId: string; scryfallId: string }>;
 }) {
-  const { oracleId, scryfallId } = await params;
+  const { locale: rawLocale, oracleId, scryfallId } = await params;
+  const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
 
   const [print, card, priceHistory, foilPriceHistory] = await Promise.all([
     getCardPrintByScryfallId(scryfallId),
@@ -63,7 +65,7 @@ export default async function CardPrintDetailPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <Link href={`/cards/${oracleId}`} className="text-sm text-neutral-500 hover:underline">
+      <Link href={`/${locale}/cards/${oracleId}`} className="text-sm text-neutral-500 hover:underline">
         ← {nameJa ?? nameEn} に戻る
       </Link>
 

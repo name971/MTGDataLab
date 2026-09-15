@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useLocale } from "@/i18n/useLocale";
 import { useMemo, useState } from "react";
 import type { MlRankingRow } from "@/lib/dbMlRanking";
 import RankingFilterPanel, {
@@ -212,13 +213,14 @@ function MlRankingCard({
 }) {
   // カードそのものを見分けられることが重要なので、アートクロップではなくカード全体の画像を使う。
   // Scryfallの画像URLは/<バリエーション>/front/<...>.jpgという共通構造なので置換で導出できる。
+  const locale = useLocale();
   const normalImageUrl = row.artCropUrl.replace("/art_crop/", "/normal/");
   const barColor = direction === "up" ? "bg-emerald-500" : "bg-blue-500";
   const emphasisColor = direction === "up" ? "text-neutral-900" : "text-neutral-900";
 
   return (
     <Link
-      href={`/cards/${row.oracleId}`}
+      href={`/${locale}/cards/${row.oracleId}`}
       className="flex flex-col overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-neutral-200/60"
     >
       <Image

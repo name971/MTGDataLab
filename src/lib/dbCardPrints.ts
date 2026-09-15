@@ -149,14 +149,23 @@ export async function getBestCardImage(oracleId: string): Promise<string | null>
   if (rows.length === 0) return null;
 
   const prices = await getLatestPricesForPrints(rows.map((r) => r.scryfall_id));
-  // 「安い順」の判定には通常価格を優先しつつ、通常価格が無いFoil専用プリント（Secret Lair等）も
-  // Foil価格で価格ありとして扱う。通常価格だけを見ていると、Foil専用カードは全プリントが
-  // 「価格不明」扱いになってJA画像チェックが素通りされ、日本語版があっても英語版画像に
-  // フォールバックしてしまっていた。
+  // 通常価格が無いFoil専用プリント（Secret Lair等）も、そのプリント自身の価格が全く
+  // 不明にならないようFoil価格で「価格あり」として扱う。ただし通常価格を持つプリントと
+  // Foil価格しか無いプリントを同じ数値軸で単純比較すると、プロモのFoil価格が通常版の
+  // 通常価格よりたまたま安いだけで選ばれてしまう（Ammit Eternal: 通常版$2.18 vs
+  // プロモ版のFoil $1.93、表示価格は通常版のものなのに画像はプロモ版になっていた、
+  // 2026-09-15）。通常価格を持つプリントを常に優先し、どのプリントにも通常価格が
+  // 無い場合だけFoil価格で順位付けする。
+  const hasNormalPrice = (scryfallId: string) => prices.normal.get(scryfallId) !== undefined;
   const priceOf = (scryfallId: string) => prices.normal.get(scryfallId) ?? prices.foil.get(scryfallId);
   const priced = rows
     .filter((r) => priceOf(r.scryfall_id) !== undefined)
-    .sort((a, b) => priceOf(a.scryfall_id)! - priceOf(b.scryfall_id)!);
+    .sort((a, b) => {
+      const aNormal = hasNormalPrice(a.scryfall_id);
+      const bNormal = hasNormalPrice(b.scryfall_id);
+      if (aNormal !== bNormal) return aNormal ? -1 : 1;
+      return priceOf(a.scryfall_id)! - priceOf(b.scryfall_id)!;
+    });
 
   // 本当の最安値プリント（価格不明な行しか無ければ先頭の行）自身の画像を使う。
   // 日本語版画像があればそちら、無ければ英語版画像。
@@ -216,14 +225,20 @@ export async function getBestCardImages(oracleIds: string[]): Promise<Map<string
     rowsByOracle.get(r.oracle_id)!.push(r);
   }
 
-  // getBestCardImageと同じ理由で、通常価格が無いFoil専用プリントもFoil価格で「価格あり」として扱う
+  // getBestCardImageと同じ理由・同じ修正（2026-09-15、通常価格を持つプリントを常に優先）
+  const hasNormalPrice = (scryfallId: string) => prices.normal.get(scryfallId) !== undefined;
   const priceOf = (scryfallId: string) => prices.normal.get(scryfallId) ?? prices.foil.get(scryfallId);
 
   const result = new Map<string, string>();
   for (const [oracleId, group] of rowsByOracle) {
     const priced = group
       .filter((r) => priceOf(r.scryfall_id) !== undefined)
-      .sort((a, b) => priceOf(a.scryfall_id)! - priceOf(b.scryfall_id)!);
+      .sort((a, b) => {
+        const aNormal = hasNormalPrice(a.scryfall_id);
+        const bNormal = hasNormalPrice(b.scryfall_id);
+        if (aNormal !== bNormal) return aNormal ? -1 : 1;
+        return priceOf(a.scryfall_id)! - priceOf(b.scryfall_id)!;
+      });
 
     const cheapest = priced[0] ?? group[0];
     const imageUrl = cheapest.image_uri_normal_ja ?? cheapest.image_uri_normal;

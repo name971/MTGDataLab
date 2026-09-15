@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { meetsMinQueryLength } from "@/lib/searchQuery";
+import { useLocale } from "@/i18n/useLocale";
+import { getDictionary } from "@/i18n/getDictionary";
 
 const DEBOUNCE_MS = 200;
 
@@ -17,6 +19,8 @@ interface Suggestion {
 
 export default function SearchBar() {
   const router = useRouter();
+  const locale = useLocale();
+  const t = getDictionary(locale);
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [isOpen, setIsOpen] = useState(false);
@@ -62,7 +66,7 @@ export default function SearchBar() {
     e.preventDefault();
     if (!meetsMinQueryLength(query.trim())) return;
     setIsOpen(false);
-    router.push(`/search?q=${encodeURIComponent(query.trim())}`);
+    router.push(`/${locale}/search?q=${encodeURIComponent(query.trim())}`);
   }
 
   return (
@@ -73,14 +77,14 @@ export default function SearchBar() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => suggestions.length > 0 && setIsOpen(true)}
-          placeholder="カード名を検索"
+          placeholder={t.searchPlaceholder}
           className="w-full rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-900 placeholder:text-neutral-400"
         />
         <button
           type="submit"
           className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-900 hover:border-neutral-500"
         >
-          検索
+          {t.searchButton}
         </button>
       </form>
 
@@ -89,7 +93,7 @@ export default function SearchBar() {
           {suggestions.map((card) => (
             <Link
               key={card.oracleId}
-              href={`/cards/${card.oracleId}`}
+              href={`/${locale}/cards/${card.oracleId}`}
               onClick={() => setIsOpen(false)}
               className="flex items-center gap-2 px-3 py-2 text-left hover:bg-neutral-50"
             >

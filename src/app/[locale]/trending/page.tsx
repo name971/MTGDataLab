@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getWeeklyMovers, type MoverCategory } from "@/lib/dbWeeklyMovers";
 import WeeklyMoversList from "@/components/WeeklyMoversList";
+import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
 
 // 集計バッチ（compute-weekly-movers.mjs）は1日1回しか回らないため、長めにキャッシュする
 export const revalidate = 21600;
@@ -26,10 +27,14 @@ function resolveUsageDirection(raw: string | undefined): "up" | "down" {
 }
 
 export default async function TrendingRankingPage({
+  params,
   searchParams,
 }: {
+  params: Promise<{ locale: string }>;
   searchParams: Promise<{ category?: string; metric?: string; dir?: string }>;
 }) {
+  const { locale: rawLocale } = await params;
+  const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
   const sp = await searchParams;
   const category = resolveCategory(sp.category);
   const metric = resolveMetric(sp.metric);
@@ -52,7 +57,7 @@ export default async function TrendingRankingPage({
           {CATEGORIES.map((c) => (
             <Link
               key={c.key}
-              href={`/trending?category=${c.key}`}
+              href={`/${locale}/trending?category=${c.key}`}
               className={`rounded-md border px-3 py-1.5 text-sm ${
                 c.key === category
                   ? "border-accent bg-accent-soft text-accent-text"
@@ -66,7 +71,7 @@ export default async function TrendingRankingPage({
         {category === "price" && (
           <div className="flex gap-1">
             <Link
-              href={`/trending?category=${category}&metric=pct`}
+              href={`/${locale}/trending?category=${category}&metric=pct`}
               aria-label="%ランキング"
               className={`rounded-md border px-2.5 py-1.5 text-sm ${
                 metric === "pct"
@@ -77,7 +82,7 @@ export default async function TrendingRankingPage({
               %
             </Link>
             <Link
-              href={`/trending?category=${category}&metric=jpy`}
+              href={`/${locale}/trending?category=${category}&metric=jpy`}
               aria-label="金額差ランキング"
               className={`rounded-md border px-2.5 py-1.5 text-sm ${
                 metric === "jpy"
@@ -92,7 +97,7 @@ export default async function TrendingRankingPage({
         {category === "usage" && (
           <div className="flex gap-1">
             <Link
-              href="/trending?category=usage&dir=up"
+              href={`/${locale}/trending?category=usage&dir=up`}
               aria-label="上昇ランキング"
               className={`rounded-md border px-2.5 py-1.5 text-sm ${
                 usageDirection === "up"
@@ -103,7 +108,7 @@ export default async function TrendingRankingPage({
               上昇
             </Link>
             <Link
-              href="/trending?category=usage&dir=down"
+              href={`/${locale}/trending?category=usage&dir=down`}
               aria-label="下降ランキング"
               className={`rounded-md border px-2.5 py-1.5 text-sm ${
                 usageDirection === "down"

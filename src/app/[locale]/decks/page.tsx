@@ -5,6 +5,7 @@ import { getFormatSettings } from "@/lib/formatSettings";
 import { getRecentDecksFromDb } from "@/lib/dbDeckDetail";
 import { getArchetypesFromDb } from "@/lib/dbArchetypeStats";
 import DeckRankingTable from "@/components/DeckRankingTable";
+import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
 
 // 集計バッチは1日1回しか回らないため、長めにキャッシュしてegressを抑える
 export const revalidate = 21600;
@@ -24,10 +25,14 @@ function resolvePeriod(raw: string | undefined): PeriodDays {
 export const metadata = { title: "デッキランキング - MTG DataLab" };
 
 export default async function DeckRankingPage({
+  params,
   searchParams,
 }: {
+  params: Promise<{ locale: string }>;
   searchParams: Promise<{ format?: string; period?: string }>;
 }) {
+  const { locale: rawLocale } = await params;
+  const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
   const { format: formatParam, period } = await searchParams;
   const format = resolveFormat(formatParam);
   const periodDays = resolvePeriod(period);
@@ -92,7 +97,7 @@ export default async function DeckRankingPage({
         {FORMATS.map((f) => (
           <Link
             key={f}
-            href={`/decks?format=${formatSlug(f)}${periodDays !== 30 ? `&period=${periodDays}` : ""}`}
+            href={`/${locale}/decks?format=${formatSlug(f)}${periodDays !== 30 ? `&period=${periodDays}` : ""}`}
             className={`rounded-md border px-3 py-1.5 text-sm ${
               f === format
                 ? "border-neutral-500 bg-neutral-100 text-neutral-900"
@@ -109,7 +114,7 @@ export default async function DeckRankingPage({
         {PERIOD_OPTIONS.map((p) => (
           <Link
             key={p}
-            href={`/decks?format=${formatSlug(format)}&period=${p}`}
+            href={`/${locale}/decks?format=${formatSlug(format)}&period=${p}`}
             className={`rounded-md border px-2 py-1 text-xs ${
               p === periodDays
                 ? "border-neutral-500 bg-neutral-100 text-neutral-900"
@@ -139,7 +144,7 @@ export default async function DeckRankingPage({
           <ul className="flex flex-col gap-1 text-sm">
             {recentDecks.map((deck) => (
               <li key={deck.deckId}>
-                <Link href={`/decks/${deck.deckId}`} className="hover:underline">
+                <Link href={`/${locale}/decks/${deck.deckId}`} className="hover:underline">
                   {deck.playerName}
                 </Link>
                 <span className="text-neutral-500">

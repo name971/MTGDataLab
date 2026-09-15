@@ -8,6 +8,7 @@ import {
 } from "@/lib/dbDeckDetail";
 import DeckDetailView from "@/components/DeckDetailView";
 import { FORMATS, formatLabelJa, type Format } from "@/lib/formats";
+import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
 
 function formatLabelJaSafe(format: string): string {
   return FORMATS.includes(format as Format) ? formatLabelJa(format as Format) : format;
@@ -76,9 +77,10 @@ export async function generateMetadata({
 export default async function ArchetypeDetailPage({
   params,
 }: {
-  params: Promise<{ archetypeId: string }>;
+  params: Promise<{ locale: string; archetypeId: string }>;
 }) {
-  const { archetypeId } = await params;
+  const { locale: rawLocale, archetypeId } = await params;
+  const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
   const numericId = Number(archetypeId);
   if (!Number.isInteger(numericId)) notFound();
 
@@ -105,7 +107,7 @@ export default async function ArchetypeDetailPage({
       </div>
 
       <Link
-        href={`/decks?format=${archetype.format.toLowerCase()}`}
+        href={`/${locale}/decks?format=${archetype.format.toLowerCase()}`}
         className="text-sm text-neutral-500 hover:underline"
       >
         ← デッキランキングに戻る
@@ -118,7 +120,7 @@ export default async function ArchetypeDetailPage({
           headerContent={
             <p className="text-sm text-neutral-500">
               代表デッキ（最多勝率）:{" "}
-              <Link href={`/decks/${bestDeck.deckId}`} className="hover:underline">
+              <Link href={`/${locale}/decks/${bestDeck.deckId}`} className="hover:underline">
                 {bestDeckDetail.playerName}
               </Link>{" "}
               （{bestDeckDetail.standing}） ・ {bestDeckDetail.eventName}
@@ -141,7 +143,7 @@ export default async function ArchetypeDetailPage({
                   {formatDateShort(deck.eventDate)}
                 </span>
                 <span className="min-w-0">
-                  <Link href={`/decks/${deck.deckId}`} className="hover:underline">
+                  <Link href={`/${locale}/decks/${deck.deckId}`} className="hover:underline">
                     {deck.playerName}
                   </Link>
                   <span className="text-neutral-500">
@@ -164,7 +166,7 @@ export default async function ArchetypeDetailPage({
                       {formatDateShort(deck.eventDate)}
                     </span>
                     <span className="min-w-0">
-                      <Link href={`/decks/${deck.deckId}`} className="hover:underline">
+                      <Link href={`/${locale}/decks/${deck.deckId}`} className="hover:underline">
                         {deck.playerName}
                       </Link>
                       <span className="text-neutral-500">

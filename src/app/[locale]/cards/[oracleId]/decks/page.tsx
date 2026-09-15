@@ -4,6 +4,7 @@ import { getCardDetailByOracleId, getCardDetailFromDb, type DbCardDetail } from 
 import { getDecksByCardAndFormat } from "@/lib/dbDeckDetail";
 import { SAMPLE_CARD_SLUGS } from "@/lib/sampleCards";
 import { FORMATS, formatLabelJa, type Format } from "@/lib/formats";
+import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
 
 function formatLabelJaSafe(format: string): string {
   return FORMATS.includes(format as Format) ? formatLabelJa(format as Format) : format;
@@ -43,10 +44,11 @@ export default async function CardDecksPage({
   params,
   searchParams,
 }: {
-  params: Promise<{ oracleId: string }>;
+  params: Promise<{ locale: string; oracleId: string }>;
   searchParams: Promise<{ format?: string; period?: string }>;
 }) {
-  const { oracleId } = await params;
+  const { locale: rawLocale, oracleId } = await params;
+  const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
   const { format, period } = await searchParams;
   if (!format) notFound();
   const periodDays = resolvePeriod(period);
@@ -60,7 +62,7 @@ export default async function CardDecksPage({
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <Link href={`/cards/${oracleId}`} className="text-sm text-neutral-500 hover:underline">
+        <Link href={`/${locale}/cards/${oracleId}`} className="text-sm text-neutral-500 hover:underline">
           ← {cardName}に戻る
         </Link>
         <h1 className="mt-1 text-xl font-semibold">
@@ -73,7 +75,7 @@ export default async function CardDecksPage({
         {PERIOD_OPTIONS.map((p) => (
           <Link
             key={p}
-            href={`/cards/${oracleId}/decks?format=${encodeURIComponent(format)}&period=${p}`}
+            href={`/${locale}/cards/${oracleId}/decks?format=${encodeURIComponent(format)}&period=${p}`}
             className={`rounded-md border px-2 py-1 text-xs ${
               p === periodDays
                 ? "border-neutral-500 bg-neutral-100 text-neutral-900"
@@ -93,7 +95,7 @@ export default async function CardDecksPage({
                 {formatDateShort(deck.eventDate)}
               </span>
               <span className="min-w-0">
-                <Link href={`/decks/${deck.deckId}`} className="hover:underline">
+                <Link href={`/${locale}/decks/${deck.deckId}`} className="hover:underline">
                   {deck.playerName}
                 </Link>
                 <span className="text-neutral-500">
