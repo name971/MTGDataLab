@@ -53,6 +53,15 @@ const en: typeof ja = {
     mlRankingInfo:
       "Predicted with a machine learning model on the probability of a significant price move (up or down) within 7 days, ranked by confidence (tournament-played cards only). Historical Top 10 accuracy: ~73% for surges, ~95% for crashes.",
   },
+  cardDetail: {
+    priceExtremes: (minJpy: string, minDate: string, maxJpy: string, maxDate: string) =>
+      `Low: ¥${minJpy} (${minDate}) / High: ¥${maxJpy} (${maxDate})\n※Low/high within the recorded range of daily snapshots`,
+    usageDeckHeading: "Decks Playing This Card",
+    periodDays: (n: number) => `${n}d`,
+    deckCountUnit: (n: number) => `${n}`,
+    changePctNote: "※(  ) shows the change in play rate vs. the prior period",
+    noDecksUsingCard: "No decks currently playing this card.",
+  },
   priceHistoryChart: {
     period7d: "7d",
     period30d: "30d",

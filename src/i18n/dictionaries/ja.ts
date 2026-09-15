@@ -52,6 +52,15 @@ const ja = {
     mlRankingInfo:
       "7日以内に一定以上値上がり・値下がりする確率を機械学習モデルで予測し、確率が高い順に並べています（トーナメントで使用実績のあるカードが対象）。過去のTop10的中率: 高騰予想は約73%、暴落予想は約95%。",
   },
+  cardDetail: {
+    priceExtremes: (minJpy: string, minDate: string, maxJpy: string, maxDate: string) =>
+      `最安値: ¥${minJpy}（${minDate}） ／ 最高値: ¥${maxJpy}（${maxDate}）\n※日次スナップショットの記録が残っている範囲内での最高値・最安値です`,
+    usageDeckHeading: "使用デッキ",
+    periodDays: (n: number) => `${n}日`,
+    deckCountUnit: (n: number) => `${n}件`,
+    changePctNote: "※（）は直前の同じ期間との採用率の変化率",
+    noDecksUsingCard: "現在このカードを使用しているデッキは登録されていません。",
+  },
   priceHistoryChart: {
     period7d: "7日",
     period30d: "30日",

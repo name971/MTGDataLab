@@ -11,7 +11,7 @@ import {
   resolveCombinedOracleText,
   resolveCombinedPrintedText,
   resolveImageUris,
-  RARITY_LABEL_JA,
+  rarityLabel,
 } from "@/lib/scryfall";
 import { toJpy } from "@/lib/fx";
 import { SAMPLE_CARD_SLUGS } from "@/lib/sampleCards";
@@ -25,6 +25,7 @@ import { getLatestPricesForPrints } from "@/lib/dbCardPrintPrices";
 import { translateTypeLine } from "@/lib/typeGlossary";
 import CardHero from "@/components/CardHero";
 import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
+import { getDictionary } from "@/i18n/getDictionary";
 
 // 価格・採用率データは1日1回のバッチでしか更新されないため、長めにキャッシュしてegressを抑える
 export const revalidate = 3600;
@@ -244,6 +245,7 @@ export default async function CardDetailPage({
 }) {
   const { locale: rawLocale, oracleId } = await params;
   const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
+  const t = getDictionary(locale).cardDetail;
   const { period, print, finish } = await searchParams;
   const usagePeriodDays = resolveUsagePeriod(period);
 
@@ -310,14 +312,24 @@ export default async function CardDetailPage({
   const allRarities = [...new Set([card.rarity, ...otherPrints.map((p) => p.rarity).filter((r) => r !== null)])];
   const allRarityLabels = allRarities
     .sort((a, b) => RARITY_ORDER.indexOf(a as (typeof RARITY_ORDER)[number]) - RARITY_ORDER.indexOf(b as (typeof RARITY_ORDER)[number]))
-    .map((r) => RARITY_LABEL_JA[r] ?? r)
+    .map((r) => rarityLabel(r, locale))
     .join(" / ");
 
   const priceExtremesText = priceExtremes
-    ? `最安値: ¥${priceExtremes.minJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}（${formatDateSlash(priceExtremes.minDate)}） ／ 最高値: ¥${priceExtremes.maxJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}（${formatDateSlash(priceExtremes.maxDate)}）\n※日次スナップショットの記録が残っている範囲内での最高値・最安値です`
+    ? t.priceExtremes(
+        priceExtremes.minJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 }),
+        formatDateSlash(priceExtremes.minDate),
+        priceExtremes.maxJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 }),
+        formatDateSlash(priceExtremes.maxDate),
+      )
     : null;
   const priceExtremesFoilText = priceExtremesFoil
-    ? `最安値: ¥${priceExtremesFoil.minJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}（${formatDateSlash(priceExtremesFoil.minDate)}） ／ 最高値: ¥${priceExtremesFoil.maxJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}（${formatDateSlash(priceExtremesFoil.maxDate)}）\n※日次スナップショットの記録が残っている範囲内での最高値・最安値です`
+    ? t.priceExtremes(
+        priceExtremesFoil.minJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 }),
+        formatDateSlash(priceExtremesFoil.minDate),
+        priceExtremesFoil.maxJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 }),
+        formatDateSlash(priceExtremesFoil.maxDate),
+      )
     : null;
 
   return (
@@ -365,7 +377,7 @@ export default async function CardDetailPage({
               事故が繰り返し起きたため、そもそも揃える対象の行を無くす構造にした
               （両ボックスとも「見出し→即リスト」の同じ形になる）。 */}
           <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="whitespace-nowrap text-sm font-medium text-neutral-500">使用デッキ</h2>
+            <h2 className="whitespace-nowrap text-sm font-medium text-neutral-500">{t.usageDeckHeading}</h2>
             <div className="flex shrink-0 items-center gap-1">
               {USAGE_PERIOD_OPTIONS.map((p) => (
                 <Link
@@ -377,7 +389,7 @@ export default async function CardDetailPage({
                       : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
                   }`}
                 >
-                  {p}日
+                  {t.periodDays(p)}
                 </Link>
               ))}
             </div>
@@ -393,7 +405,7 @@ export default async function CardDetailPage({
                     {f.format}
                   </Link>
                   <span className="flex shrink-0 items-baseline justify-end">
-                    <span className="w-10 text-right font-numeric tabular-nums">{f.deckCount}件</span>
+                    <span className="w-10 text-right font-numeric tabular-nums">{t.deckCountUnit(f.deckCount)}</span>
                     <span
                       className={`ml-1 w-16 shrink-0 text-right text-xs font-numeric tabular-nums ${
                         f.changePct === null ? "" : f.changePct < 0 ? "text-blue-700" : "text-red-700"
@@ -412,7 +424,7 @@ export default async function CardDetailPage({
             </ul>
           ) : null}
           {formatUsageCounts.some((f) => f.changePct !== null) && (
-            <p className="mt-2 text-xs text-neutral-400">※（）は直前の同じ期間との採用率の変化率</p>
+            <p className="mt-2 text-xs text-neutral-400">{t.changePctNote}</p>
           )}
           {formatUsageCounts.length === 0 &&
             (relatedArchetypes.length > 0 ? (
@@ -426,9 +438,7 @@ export default async function CardDetailPage({
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-neutral-500">
-                現在このカードを使用しているデッキは登録されていません。
-              </p>
+              <p className="text-sm text-neutral-500">{t.noDecksUsingCard}</p>
             ))}
         </div>
       </CardHero>
