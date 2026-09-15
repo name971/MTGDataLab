@@ -10,6 +10,15 @@
             "command": "node .claude/hooks/require-incident-log-read.mjs 2>/dev/null"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/require-ml-runbook-read.mjs 2>/dev/null"
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -19,6 +28,10 @@
           {
             "type": "command",
             "command": "node .claude/hooks/mark-incident-log-read.mjs 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "node .claude/hooks/mark-ml-runbook-read.mjs 2>/dev/null || true"
           }
         ]
       }
