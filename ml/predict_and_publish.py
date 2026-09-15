@@ -13,14 +13,16 @@ db/schema.sql参照）。それまでは最新1回分だけを保持しており
 グリッドサーチ（docs/price-prediction-plan.md 12-4章）で、閾値を緩めた方が
 実際のPrecision@Nが高かったことに合わせている。
 
-【重要・手動実行専用】一時期.github/workflows/daily-data-pipeline.ymlに組み込んで日次
-自動実行していたが、ml-ranking.ymlごと「運用しないため」削除済み（2026-08-XX、git log
-参照）。以前のこのdocstringは削除を反映せず「自動実行になった」という嘘の記述のまま
-残っており、それを信じて手動実行時にml/fetch_data.pyでのキャッシュ更新を省略し、
-2日前のデータのまま本番へ予測を書き込んでしまった事故があった（2026-08-27、
-docs/incident-log.md参照）。**このスクリプトを実行する前に、必ずml/fetch_data.pyを
-先に実行してキャッシュ（ml/data/*.parquet）を更新すること。** 下のensure_fresh_data()
-がキャッシュの鮮度をmtimeで機械的にチェックし、古すぎれば実行を中断する。
+【重要】2026-09-15、.github/workflows/weekly-ml-ranking.ymlで毎週金曜05:00 JST（曜日の
+選定理由はワークフローファイル参照）に自動実行するようになった。一時期
+daily-data-pipeline.ymlに組み込んで日次自動実行していたが、ml-ranking.ymlごと
+「運用しないため」削除し（2026-08-22）、その後長らく手動実行専用だった
+（この間、旧docstringが「自動実行になった」という嘘の記述のまま残っており、それを
+信じて手動実行時にml/fetch_data.pyでのキャッシュ更新を省略し、2日前のデータのまま
+本番へ予測を書き込んでしまった事故があった、2026-08-27、docs/incident-log.md参照）。
+週次自動実行に戻した今も、手動で実行する場合は**必ずml/fetch_data.pyを先に実行して
+キャッシュ（ml/data/*.parquet）を更新すること。** 下のensure_fresh_data()がキャッシュの
+鮮度をmtimeで機械的にチェックし、古すぎれば実行を中断する。
 
 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... \
       R2_BUCKET_NAME=... R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=... R2_ENDPOINT_URL=... \
