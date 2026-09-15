@@ -3,11 +3,12 @@ import { notFound } from "next/navigation";
 import { getCardDetailByOracleId, getCardDetailFromDb, type DbCardDetail } from "@/lib/cardData";
 import { getDecksByCardAndFormat } from "@/lib/dbDeckDetail";
 import { SAMPLE_CARD_SLUGS } from "@/lib/sampleCards";
-import { FORMATS, formatLabelJa, type Format } from "@/lib/formats";
-import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
+import { FORMATS, formatLabel, type Format } from "@/lib/formats";
+import { isLocale, DEFAULT_LOCALE, type Locale } from "@/i18n/config";
+import { getDictionary } from "@/i18n/getDictionary";
 
-function formatLabelJaSafe(format: string): string {
-  return FORMATS.includes(format as Format) ? formatLabelJa(format as Format) : format;
+function formatLabelSafe(format: string, locale: Locale): string {
+  return FORMATS.includes(format as Format) ? formatLabel(format as Format, locale) : format;
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -49,6 +50,7 @@ export default async function CardDecksPage({
 }) {
   const { locale: rawLocale, oracleId } = await params;
   const locale = isLocale(rawLocale) ? rawLocale : DEFAULT_LOCALE;
+  const t = getDictionary(locale).cardDecksPage;
   const { format, period } = await searchParams;
   if (!format) notFound();
   const periodDays = resolvePeriod(period);
@@ -57,21 +59,19 @@ export default async function CardDecksPage({
   if (!card) notFound();
   const decks = await getDecksByCardAndFormat(card.oracle.oracle_id, format, periodDays);
 
-  const cardName = card.oracle.printed_name_ja ?? card.oracle.name;
+  const cardName = locale === "ja" ? (card.oracle.printed_name_ja ?? card.oracle.name) : card.oracle.name;
 
   return (
     <div className="flex flex-col gap-4">
       <div>
         <Link href={`/${locale}/cards/${oracleId}`} className="text-sm text-neutral-500 hover:underline">
-          ← {cardName}に戻る
+          {t.backTo(cardName)}
         </Link>
-        <h1 className="mt-1 text-xl font-semibold">
-          {cardName}を使用したデッキ（{formatLabelJaSafe(format)}）
-        </h1>
+        <h1 className="mt-1 text-xl font-semibold">{t.heading(cardName, formatLabelSafe(format, locale))}</h1>
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-sm text-neutral-500">集計期間:</span>
+        <span className="text-sm text-neutral-500">{t.periodLabel}</span>
         {PERIOD_OPTIONS.map((p) => (
           <Link
             key={p}
@@ -82,7 +82,7 @@ export default async function CardDecksPage({
                 : "border-neutral-300 text-neutral-500 hover:border-neutral-500"
             }`}
           >
-            直近{p}日
+            {t.recentDays(p)}
           </Link>
         ))}
       </div>
@@ -107,7 +107,7 @@ export default async function CardDecksPage({
           ))}
         </ul>
       ) : (
-        <p className="text-sm text-neutral-500">この期間に該当するデッキはありません。</p>
+        <p className="text-sm text-neutral-500">{t.noData}</p>
       )}
     </div>
   );

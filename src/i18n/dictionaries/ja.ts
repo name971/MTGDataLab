@@ -52,6 +52,13 @@ const ja = {
     mlRankingInfo:
       "7日以内に一定以上値上がり・値下がりする確率を機械学習モデルで予測し、確率が高い順に並べています（トーナメントで使用実績のあるカードが対象）。過去のTop10的中率: 高騰予想は約73%、暴落予想は約95%。",
   },
+  cardDecksPage: {
+    backTo: (name: string) => `← ${name}に戻る`,
+    heading: (name: string, format: string) => `${name}を使用したデッキ（${format}）`,
+    periodLabel: "集計期間:",
+    recentDays: (n: number) => `直近${n}日`,
+    noData: "この期間に該当するデッキはありません。",
+  },
   cardRankingPage: {
     metaTitle: (formatName: string) => `${formatName} カードランキング - MTG DataLab`,
     metaTitleFallback: "MTG DataLab",
