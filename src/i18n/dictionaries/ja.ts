@@ -52,6 +52,16 @@ const ja = {
     mlRankingInfo:
       "7日以内に一定以上値上がり・値下がりする確率を機械学習モデルで予測し、確率が高い順に並べています（トーナメントで使用実績のあるカードが対象）。過去のTop10的中率: 高騰予想は約73%、暴落予想は約95%。",
   },
+  deckStats: {
+    landLabel: "土地",
+    unitCount: (n: number) => `${n}枚`,
+    totalUnitCount: (n: number) => `/${n}枚`,
+    colorRatioLabel: "色の割合",
+    colorlessLabel: "無色",
+    colorTooltip: (label: string, n: number) => `${label}: ${n}枚`,
+    manaCurveLabel: "マナカーブ（土地除く）",
+    cmcTooltip: (bucket: string, n: number) => `CMC ${bucket}: ${n}枚`,
+  },
   cardDetail: {
     priceExtremes: (minJpy: string, minDate: string, maxJpy: string, maxDate: string) =>
       `最安値: ¥${minJpy}（${minDate}） ／ 最高値: ¥${maxJpy}（${maxDate}）\n※日次スナップショットの記録が残っている範囲内での最高値・最安値です`,

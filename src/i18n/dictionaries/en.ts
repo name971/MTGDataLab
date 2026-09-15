@@ -53,6 +53,16 @@ const en: typeof ja = {
     mlRankingInfo:
       "Predicted with a machine learning model on the probability of a significant price move (up or down) within 7 days, ranked by confidence (tournament-played cards only). Historical Top 10 accuracy: ~73% for surges, ~95% for crashes.",
   },
+  deckStats: {
+    landLabel: "Lands",
+    unitCount: (n: number) => `${n}`,
+    totalUnitCount: (n: number) => `/${n}`,
+    colorRatioLabel: "Color Ratio",
+    colorlessLabel: "Colorless",
+    colorTooltip: (label: string, n: number) => `${label}: ${n}`,
+    manaCurveLabel: "Mana Curve (excl. lands)",
+    cmcTooltip: (bucket: string, n: number) => `CMC ${bucket}: ${n}`,
+  },
   cardDetail: {
     priceExtremes: (minJpy: string, minDate: string, maxJpy: string, maxDate: string) =>
       `Low: ¥${minJpy} (${minDate}) / High: ¥${maxJpy} (${maxDate})\n※Low/high within the recorded range of daily snapshots`,

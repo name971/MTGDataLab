@@ -1,5 +1,9 @@
+"use client";
+
 import { COLOR_ORDER, cmcFromManaCost } from "@/lib/manaColors";
 import type { DeckCardDisplay } from "./DeckDetailView";
+import { useLocale } from "@/i18n/useLocale";
+import { getDictionary } from "@/i18n/getDictionary";
 
 const COLOR_HEX: Record<string, string> = {
   W: "#f8f6d8",
@@ -29,6 +33,8 @@ function isLand(card: DeckCardDisplay): boolean {
  * ではなく、あくまで大まかな色の傾向を見るための簡易指標。
  */
 export default function DeckStatsBar({ mainboard }: { mainboard: DeckCardDisplay[] }) {
+  const locale = useLocale();
+  const t = getDictionary(locale).deckStats;
   const totalCount = mainboard.reduce((sum, c) => sum + c.quantity, 0);
   const landCount = mainboard.filter(isLand).reduce((sum, c) => sum + c.quantity, 0);
   const nonLandCards = mainboard.filter((c) => !isLand(c));
@@ -56,15 +62,15 @@ export default function DeckStatsBar({ mainboard }: { mainboard: DeckCardDisplay
     <div className="flex flex-col gap-4 rounded-lg border border-neutral-200 p-4 sm:flex-row sm:gap-8">
       <div className="flex shrink-0 flex-col gap-3 sm:w-48">
         <div>
-          <p className="text-xs text-neutral-500">土地</p>
+          <p className="text-xs text-neutral-500">{t.landLabel}</p>
           <p className="text-lg font-semibold">
             {landCount}
-            <span className="text-sm font-normal text-neutral-500">/{totalCount}枚</span>
+            <span className="text-sm font-normal text-neutral-500">{t.totalUnitCount(totalCount)}</span>
           </p>
         </div>
         {totalColorWeight > 0 && (
           <div>
-            <p className="mb-1 text-xs text-neutral-500">色の割合</p>
+            <p className="mb-1 text-xs text-neutral-500">{t.colorRatioLabel}</p>
             <div className="flex h-3 w-full overflow-hidden rounded-full">
               {COLOR_ORDER.filter((c) => colorCounts[c] > 0).map((c) => (
                 <div
@@ -73,7 +79,7 @@ export default function DeckStatsBar({ mainboard }: { mainboard: DeckCardDisplay
                     width: `${(colorCounts[c] / totalColorWeight) * 100}%`,
                     backgroundColor: COLOR_HEX[c],
                   }}
-                  title={`${c}: ${colorCounts[c]}枚`}
+                  title={t.colorTooltip(c, colorCounts[c])}
                 />
               ))}
               {colorlessCount > 0 && (
@@ -82,7 +88,7 @@ export default function DeckStatsBar({ mainboard }: { mainboard: DeckCardDisplay
                     width: `${(colorlessCount / totalColorWeight) * 100}%`,
                     backgroundColor: COLORLESS_HEX,
                   }}
-                  title={`無色: ${colorlessCount}枚`}
+                  title={t.colorTooltip(t.colorlessLabel, colorlessCount)}
                 />
               )}
             </div>
@@ -113,7 +119,7 @@ export default function DeckStatsBar({ mainboard }: { mainboard: DeckCardDisplay
       </div>
 
       <div className="flex-1">
-        <p className="mb-1 text-xs text-neutral-500">マナカーブ（土地除く）</p>
+        <p className="mb-1 text-xs text-neutral-500">{t.manaCurveLabel}</p>
         <div className="flex gap-2">
           {/* Y軸目盛り（0・中間・最大）でバーの高さがどれくらいの枚数かを軸から読めるようにする */}
           <div className="flex h-24 flex-col justify-between text-[10px] leading-none text-neutral-400">
@@ -133,7 +139,7 @@ export default function DeckStatsBar({ mainboard }: { mainboard: DeckCardDisplay
                   <div
                     className="w-full rounded-t bg-purple-300"
                     style={{ height: `${(curveCounts[bucket] / maxCurveCount) * 100}%` }}
-                    title={`CMC ${bucket}: ${curveCounts[bucket]}枚`}
+                    title={t.cmcTooltip(bucket, curveCounts[bucket])}
                   />
                 </div>
               </div>
