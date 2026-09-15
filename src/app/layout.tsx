@@ -35,6 +35,13 @@ export default function RootLayout({
       lang="ja"
       className={`${zenKakuGothicNew.variable} ${inter.variable} h-full antialiased`}
     >
+      <head>
+        {/* TCGplayer Affiliate Program (Impact.com) のサイト所有権確認用。削除しないこと。 */}
+        <meta
+          name="impact-site-verification"
+          {...({ value: "da22ae37-f54c-458a-ad6f-18d963df84a6" } as Record<string, string>)}
+        />
+      </head>
       <body className="flex min-h-full flex-col bg-white text-neutral-900">
         <Header />
         <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">{children}</main>
