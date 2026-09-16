@@ -169,7 +169,11 @@ async function main() {
   )) as { id: number }[];
 
   const deckCardsByDeckId = new Map<number, DeckCardRow[]>();
-  const DECK_ID_CHUNK = 200;
+  // 200だとStandard/Pioneer/Modernでcard_oracles(name)結合クエリがstatement timeout（57014）
+  // になることがあった（2026-09-16、直前のデッキ大量削除・MTGOインポート直後の負荷と重なって
+  // 発生）。Legacy/Vintage/Commanderは通っていたためフォーマット固有ではなく1クエリの重さの
+  // 問題と判断し、チャンクサイズを縮小してクエリ単体を軽くする。
+  const DECK_ID_CHUNK = 50;
   for (let i = 0; i < deckMetas.length; i += DECK_ID_CHUNK) {
     const idsChunk = deckMetas.slice(i, i + DECK_ID_CHUNK).map((d) => d.id);
     // supabaseGet（無ページング）はPostgRESTのデフォルト1000行で暗黙に切り捨てるため、
