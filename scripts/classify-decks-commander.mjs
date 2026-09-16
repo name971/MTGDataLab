@@ -7,6 +7,8 @@
  * 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... node scripts/classify-decks-commander.mjs
  */
 
+import { readDeckCardsFromR2 } from "./lib/r2DeckArchive.mjs";
+
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -115,6 +117,15 @@ async function main() {
       const name = c.card_name ?? c.card_oracles?.name;
       if (!byDeck.has(c.deck_id)) byDeck.set(c.deck_id, []);
       byDeck.get(c.deck_id).push({ ...c, name });
+    }
+    // 2026-09-16、deck_cardsのSupabase保持期間を30日→2日に短縮したため、未分類のまま
+    // 2日を超えて残っているデッキ（稀）はここに出てこない。R2アーカイブから個別に読む。
+    for (const d of batch) {
+      if (byDeck.has(d.id)) continue;
+      const rows = await readDeckCardsFromR2(d.id);
+      const sideRows = rows.filter((r) => r.board === "side");
+      if (sideRows.length === 0) continue;
+      byDeck.set(d.id, sideRows.map((r) => ({ ...r, name: r.card_name ?? r.oracle_id })));
     }
     for (const d of batch) {
       const commanderCards = (byDeck.get(d.id) ?? []).sort((a, b) =>

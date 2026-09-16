@@ -2,6 +2,7 @@ import { supabase } from "./supabase";
 import type { Format } from "./formats";
 import type { ArchetypeRow } from "./sampleDeckData";
 import { COLOR_ORDER, colorsFromManaCost } from "./manaColors";
+import { getR2ArchivedDeckCards } from "./deckCardsArchiveR2";
 
 // MTG Arenaのワイルドカード1枚あたりの実質価値をJPYに換算する目安。ワイルドカード4枚で
 // レア1500円/神話レア3000円ぶんの購入プランを単価に割り戻した値。コモン・アンコモンは
@@ -311,6 +312,25 @@ async function fetchArchetypeDeckCards(deckIdsByArchetype: Map<number, number[]>
   const rows: ArchetypeDeckCard[] = [];
   for (const { data } of firstPages) if (data) rows.push(...data);
   for (const { data } of restPages) if (data) rows.push(...data);
+
+  // 2026-09-16、deck_cardsのSupabase保持期間を30日→2日に短縮したため（decks自体は引き続き
+  // 30日保持）、2〜30日前のデッキはここでSupabaseから1行も取れずR2アーカイブ側にしか
+  // 残っていない。1件も無かったデッキだけR2へ個別GetObjectする（Cloudflare Workers上でも
+  // ネットワーク待ちはCPU時間にカウントされないため、件数が多くても実害は薄い。
+  // getR2LatestPricesForPrints等と同じ考え方）。
+  const foundDeckIds = new Set(rows.map((r) => r.deck_id));
+  const missingDeckIds = allDeckIds.filter((id) => !foundDeckIds.has(id));
+  if (missingDeckIds.length > 0) {
+    const r2Results = await Promise.all(
+      missingDeckIds.map(async (deckId) => ({ deckId, cards: await getR2ArchivedDeckCards(deckId) })),
+    );
+    for (const { deckId, cards } of r2Results) {
+      for (const c of cards) {
+        if (c.board !== "main") continue;
+        rows.push({ deck_id: deckId, oracle_id: c.oracle_id, quantity: c.quantity });
+      }
+    }
+  }
   return rows;
 }
 

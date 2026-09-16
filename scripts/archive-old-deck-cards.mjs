@@ -1,13 +1,16 @@
 /**
- * 30日より前のトーナメントのdeck_cardsをR2（deck-cards/{deckId}.ndjson.gz）へアーカイブし、
+ * 2日より前のトーナメントのdeck_cardsをR2（deck-cards/{deckId}.ndjson.gz）へアーカイブし、
  * Supabaseから削除する。deck_cardsはトーナメント取り込みのたびに無期限に増え続け、
- * DB容量（無料枠500MB）を最も圧迫するテーブルだった（2026-08-22判明、158MB/73万行）。
+ * DB容量（無料枠500MB）を最も圧迫するテーブルだった（2026-08-22判明、158MB/73万行、
+ * 2026-09-16判明・242MB/91万行）。
  *
- * 30日という閾値は、集計（compute-deck-stats.mjs、PERIOD_DAYS_OPTIONS=[7,30]）が実際に
- * 必要とする最大期間に合わせている。分類（classify-decks.ts/classify-decks-commander.mjs）は
- * 未分類デッキ（archetype_id IS NULL）だけを対象にするよう既に直したため、古いデッキの
- * deck_cardsには依存しない（2026-08-22修正）。アーカイブ後もデッキ詳細ページ
- * （/decks/[deckId]）はsrc/lib/dbDeckDetail.tsがR2へフォールバックして表示を続ける。
+ * 2026-09-16、それまでの30日保持（集計compute-deck-stats.mjsのPERIOD_DAYS_OPTIONS=[7,30]に
+ * 合わせていた）から2日へ大幅短縮した。集計（compute-deck-stats.mjs）・分類
+ * （classify-decks.ts/classify-decks-commander.mjs）は元々GitHub Actions上の日次バッチで
+ * 実行時間の制約が緩く、ユーザーの待ち時間に影響しないため、Supabaseに無いデッキ分は
+ * それぞれR2から1デッキ単位で読み直すフォールバックを追加した（各スクリプト参照）。
+ * デッキ詳細ページ（/decks/[deckId]）は元々src/lib/dbDeckDetail.tsがR2へフォールバックして
+ * 表示を続ける設計だったため変更不要。
  *
  * 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... \
  *      R2_BUCKET_NAME=... R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=... R2_ENDPOINT_URL=... \
@@ -24,7 +27,13 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   process.exit(1);
 }
 
-const ARCHIVE_OLDER_THAN_DAYS = 30;
+const ARCHIVE_OLDER_THAN_DAYS = 2;
+// decks/tournaments自体はdeck_cardsと違って軽い（14,043件で2.68MB）ため、こちらは従来通り
+// 30日保持する。デッキランキング（getArchetypesFromDb、7/30/90日タブ）・デッキ一覧の
+// 「実際のトーナメント戦績デッキ」表示がdecksテーブルの存在に依存しているため、deck_cards
+// と同じ2日で消すとこれらのページから古いデッキが消えてしまう（2026-09-16、この短縮作業中に
+// 発覚・回避）。
+const DECKS_DELETE_OLDER_THAN_DAYS = 30;
 // DB容量逼迫（500MB無料枠の95%）で200件単位のSELECTすらstatement timeoutした実績があるため、
 // 一時的に50件へ縮小（2026-08-27）。負荷が落ち着いたら200に戻して良い。
 const DECK_ID_CHUNK = 50;
@@ -105,18 +114,25 @@ async function main() {
 
   console.log(`完了: ${archivedDecks}デッキをR2へアーカイブ、${deletedRows}行をSupabaseから削除`);
 
-  // decks/tournamentsはdeck_cardsと違って削除処理が無く、無期限に増え続けていた
-  // （2026-08-27判明）。deck_cardsを消した後の空decks・古いtournamentsもここで刈る。
-  const deckIds = deckMetas.map((d) => d.id);
+  // decks/tournaments自体はdeck_cardsより長く（DECKS_DELETE_OLDER_THAN_DAYS）保持する
+  // （上のコメント参照）。
+  const decksCutoff = new Date();
+  decksCutoff.setDate(decksCutoff.getDate() - DECKS_DELETE_OLDER_THAN_DAYS);
+  const decksCutoffStr = isoDate(decksCutoff);
+
+  const oldDeckMetas = await supabaseGetAll(
+    `decks?tournaments.event_date=lt.${decksCutoffStr}&select=id,tournaments!inner(event_date)`,
+  );
+  const deckIds = oldDeckMetas.map((d) => d.id);
   let deletedDecks = 0;
   for (let i = 0; i < deckIds.length; i += DECK_ID_CHUNK) {
     const idsChunk = deckIds.slice(i, i + DECK_ID_CHUNK);
     await supabaseDelete(`decks?id=in.(${idsChunk.join(",")})`);
     deletedDecks += idsChunk.length;
   }
-  console.log(`decks削除: ${deletedDecks}件`);
+  console.log(`decks削除: ${deletedDecks}件（${decksCutoffStr}より前）`);
 
-  const oldTournaments = await supabaseGetAll(`tournaments?select=id&event_date=lt.${cutoffStr}`);
+  const oldTournaments = await supabaseGetAll(`tournaments?select=id&event_date=lt.${decksCutoffStr}`);
   if (oldTournaments.length > 0) {
     const tIds = oldTournaments.map((t) => t.id);
     for (let i = 0; i < tIds.length; i += DECK_ID_CHUNK) {

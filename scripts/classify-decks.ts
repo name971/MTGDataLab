@@ -14,6 +14,7 @@ import {
   type ArchetypeDefinition,
   type FallbackDefinition,
 } from "../src/lib/archetypeEngine";
+import { readDeckCardsFromR2 } from "./lib/r2DeckArchive.mjs";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -185,6 +186,48 @@ async function main() {
     for (const c of cards) {
       if (!deckCardsByDeckId.has(c.deck_id)) deckCardsByDeckId.set(c.deck_id, []);
       deckCardsByDeckId.get(c.deck_id)!.push(c);
+    }
+  }
+
+  // 2026-09-16、deck_cardsのSupabase保持期間を30日→2日に短縮（DB容量対策）。未分類のまま
+  // 2日を超えて残っているデッキ（稀）は既にR2へアーカイブ済みのため個別に読む。
+  // R2アーカイブ行はcard_oracles結合を持たず、oracle_id解決済みの行はcard_nameがNULL
+  // （import-deck-cards.mjs参照、容量節約のため）なので、そのようなoracle_idをまとめて
+  // card_oraclesから引き直して名前を復元する。
+  const missingIds = deckMetas.map((d) => d.id).filter((id) => !deckCardsByDeckId.has(id));
+  if (missingIds.length > 0) {
+    const r2RowsByDeckId = new Map<
+      number,
+      { card_name: string | null; oracle_id: string | null; board: "main" | "side"; quantity: number }[]
+    >();
+    for (const deckId of missingIds) {
+      const rows = await readDeckCardsFromR2(deckId);
+      if (rows.length > 0) r2RowsByDeckId.set(deckId, rows);
+    }
+    const needsNameOracleIds = [
+      ...new Set(
+        [...r2RowsByDeckId.values()].flat().filter((r) => !r.card_name && r.oracle_id).map((r) => r.oracle_id as string),
+      ),
+    ];
+    const nameByOracleId = new Map<string, string>();
+    const ORACLE_CHUNK = 150;
+    for (let i = 0; i < needsNameOracleIds.length; i += ORACLE_CHUNK) {
+      const chunk = needsNameOracleIds.slice(i, i + ORACLE_CHUNK);
+      const oracles = (await supabaseGetAll(
+        `card_oracles?select=oracle_id,name&oracle_id=in.(${chunk.join(",")})`,
+      )) as { oracle_id: string; name: string }[];
+      for (const o of oracles) nameByOracleId.set(o.oracle_id, o.name);
+    }
+    for (const [deckId, rows] of r2RowsByDeckId) {
+      deckCardsByDeckId.set(
+        deckId,
+        rows.map((r) => ({
+          card_name: r.card_name ?? (r.oracle_id ? (nameByOracleId.get(r.oracle_id) ?? null) : null),
+          quantity: r.quantity,
+          board: r.board,
+          card_oracles: null,
+        })),
+      );
     }
   }
   const decks = deckMetas.map((d) => ({ id: d.id, deck_cards: deckCardsByDeckId.get(d.id) ?? [] }));

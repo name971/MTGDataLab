@@ -174,8 +174,9 @@ export async function getDeckDetailFromDb(deckId: number): Promise<DbDeckDetail 
 
   if (cardsError) return null;
 
-  // 30日より前のデッキはscripts/archive-old-deck-cards.mjsによりdeck_cardsがR2へ
-  // アーカイブ・Supabaseから削除済みのため、無ければR2から読む（DB容量対策、2026-08-22）。
+  // 2日より前のデッキはscripts/archive-old-deck-cards.mjsによりdeck_cardsがR2へ
+  // アーカイブ・Supabaseから削除済みのため、無ければR2から読む
+  // （DB容量対策、2026-08-22導入・2026-09-16に30日→2日へ短縮）。
   const cards = dbCards && dbCards.length > 0 ? dbCards : await getR2ArchivedDeckCards(deckId);
   if (cards.length === 0) return null;
 

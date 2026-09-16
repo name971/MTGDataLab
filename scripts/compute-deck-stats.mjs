@@ -9,6 +9,7 @@
  */
 
 import { readOracleCardFile, runWithConcurrency } from "./lib/r2PriceArchive.mjs";
+import { readDeckCardsFromR2 } from "./lib/r2DeckArchive.mjs";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -128,6 +129,23 @@ async function main() {
       if (!deckCardsByDeckId.has(c.deck_id)) deckCardsByDeckId.set(c.deck_id, []);
       deckCardsByDeckId.get(c.deck_id).push(c);
     }
+  }
+  // 2026-09-16、deck_cardsのSupabase保持期間を30日→2日に短縮（DB容量対策）。集計対象の
+  // 期間（最大30日）のうち直近2日を超える分はarchive-old-deck-cards.mjsで既にR2へ
+  // 退避済みのため、Supabase側に見つからなかったデッキだけR2から個別に読む（このバッチは
+  // GitHub Actions上で実行時間の制約が緩いため、1デッキ1GetObjectでも実害が無い）。
+  const missingDeckIds = deckMetas.map((d) => d.id).filter((id) => !deckCardsByDeckId.has(id));
+  if (missingDeckIds.length > 0) {
+    console.log(`Supabaseに無い${missingDeckIds.length}デッキ分をR2アーカイブから補完中...`);
+    await runWithConcurrency(missingDeckIds, 20, async (deckId) => {
+      const rows = await readDeckCardsFromR2(deckId);
+      if (rows.length > 0) {
+        deckCardsByDeckId.set(
+          deckId,
+          rows.map((r) => ({ oracle_id: r.oracle_id, quantity: r.quantity, board: r.board })),
+        );
+      }
+    });
   }
   const decks = deckMetas.map((d) => ({ ...d, deck_cards: deckCardsByDeckId.get(d.id) ?? [] }));
 
