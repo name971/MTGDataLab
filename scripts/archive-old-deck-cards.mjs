@@ -18,6 +18,7 @@
  */
 
 import { writeDeckCardsToR2 } from "./lib/r2DeckArchive.mjs";
+import { runWithConcurrency } from "./lib/r2PriceArchive.mjs";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -102,10 +103,14 @@ async function main() {
       byDeckId.get(c.deck_id).push({ card_name: c.card_name, oracle_id: c.oracle_id, board: c.board, quantity: c.quantity });
     }
 
-    for (const [deckId, rows] of byDeckId) {
+    // 2026-09-16、30日分（少量）想定の逐次実行のままだと2日しきい値への短縮初回実行で
+    // 数万デッキが対象になり、体感で数時間かかっていた。R2への書き込みはI/O待ちが大半で
+    // CPU律速ではないため、他のR2バッチ（scripts/lib/r2PriceArchive.mjs参照）と同じく
+    // 並列化する。
+    await runWithConcurrency([...byDeckId.entries()], 16, async ([deckId, rows]) => {
       await writeDeckCardsToR2(deckId, rows);
       archivedDecks++;
-    }
+    });
 
     await supabaseDelete(`deck_cards?deck_id=in.(${[...byDeckId.keys()].join(",")})`);
     deletedRows += cards.length;
