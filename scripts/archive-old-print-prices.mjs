@@ -29,8 +29,8 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   process.exit(1);
 }
 
-// streak計算（scripts/compute-card-streaks.mjs）が必要とする直近60日はSupabase側に
-// 残しておく必要があるため、それより古い分だけをこのカットオフで吸い出す。
+// 直近分はSupabase側に残しておく必要があるため、それより古い分だけをこのカットオフで吸い出す
+// （card_print_pricesは2026-09-16時点で0行、実質未使用のテーブル）。
 const ARCHIVE_CUTOFF_DAYS = 60;
 const PAGE_SIZE = 1000;
 

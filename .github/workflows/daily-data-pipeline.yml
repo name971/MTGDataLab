@@ -208,12 +208,6 @@ jobs:
       - name: Compute weekly movers
         run: node scripts/compute-weekly-movers.mjs
 
-      # card_streaks（トップページ「継続注目カード」）はR2価格履歴（compute-cheapest-price-
-      # snapshots.mjsが書き込む、このワークフロー前半）とcard_usage_stats（ひとつ上のステップ）
-      # の両方を必要とするため、両方が終わった後の最後に置く。
-      - name: Compute card streaks
-        run: node scripts/compute-card-streaks.mjs
-
       # 注目カードランキングのカードに「予測時点(calculated_at)から今どれだけ動いたか」を
       # 表示する機能（2026-08-29、ユーザー要望）。予測自体（ml/predict_and_publish.py）は
       # 依然手動実行のみだが、既にある最新予測分の価格追跡はこのpipelineの価格履歴更新後に

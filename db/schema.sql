@@ -486,33 +486,8 @@ CREATE TABLE weekly_movers (
 
 CREATE INDEX idx_weekly_movers_lookup ON weekly_movers (calculated_date, category, rank);
 
--- 「継続注目カード」（トップページ、src/lib/dbTrendingCards.ts）専用。trending_scores（1日あたり
--- 上位10件しか保存しない、直近3日変化ベース）とは別物で、こちらはカード詳細ページのグラフと
--- 同じ生データ（card_cheapest_price_snapshots・card_usage_stats）を全カード対象に毎日走査し、
--- 「前日比で実際に何日連続で上がり続けているか」を正確に計算して保存する
--- （scripts/compute-card-streaks.mjs）。streak_days=0（今日は上がっていない）の行は保存しない。
--- 価格はフォーマット非依存（card_cheapest_price_snapshotsがそもそもフォーマット横断の最安値）
--- なのでformatは常に'ALL'固定、採用率はフォーマットごとに別値なのでformatに実際のフォーマット名が入る。
-CREATE TABLE card_streaks (
-  oracle_id       UUID NOT NULL REFERENCES card_oracles (oracle_id),
-  category        TEXT NOT NULL,     -- 'price' | 'usage'
-  format          TEXT NOT NULL,     -- price行は常に'ALL'、usage行は実際のフォーマット名
-  calculated_date DATE NOT NULL,
-  streak_days     INT NOT NULL,      -- 当日を含め何日連続で前日比プラスが続いているか（>=1のみ保存）
-  -- streak開始直前の値→当日の値の累積変化量。priceは%、usageはpt（採用率の単位に合わせる。
-  -- どちらも「率のパーセント」ではなく実際の単位そのままなので同着比較にそのまま使える）
-  change_value    NUMERIC(8, 2) NOT NULL,
-  -- streak開始直前（baseline）の生の値。前日分のこの列を読んで当日分に引き継ぐことで、
-  -- 「直近N日分を毎回スキャンして配列の隣接要素同士を比較する」方式（過去に採用していたが、
-  -- 日付が1日でも欠けると隣接比較がずれて誤集計になる・データソースの品質が過去に遡って
-  -- 変わると再集計するまで古い値を引きずる、という弱点があった）をやめ、
-  -- compute-trending-scores.mjsと同じ「前日比プラスなら+1日・そうでなければリセット」の
-  -- 前日引き継ぎ方式に統一するために追加した（scripts/compute-card-streaks.mjs参照）。
-  baseline_value  NUMERIC(12, 2),
-  PRIMARY KEY (oracle_id, category, format, calculated_date)
-);
-
-CREATE INDEX idx_card_streaks_lookup ON card_streaks (category, calculated_date, streak_days DESC);
+-- card_streaks（「継続注目カード」用）は2026-09-16に機能ごと廃止・DROP TABLE済み
+-- （DB容量削減、card_usage_statsの60日保持制約もこれに伴い7日へ短縮）。
 
 CREATE INDEX idx_trending_lookup ON trending_scores (format, calculated_date, category, score DESC);
 

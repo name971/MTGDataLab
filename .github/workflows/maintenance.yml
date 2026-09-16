@@ -17,7 +17,6 @@ on:
           - snapshot-print-prices
           - compute-cheapest-price-snapshots
           - compute-deck-stats
-          - compute-card-streaks
           - prune-old-usage-stats
           - archive-old-print-prices
 

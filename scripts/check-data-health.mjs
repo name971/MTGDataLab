@@ -79,12 +79,6 @@ async function main() {
     return null;
   });
 
-  await check("継続注目カード（card_streaks）の本日分", async () => {
-    const rows = await supabaseGet("card_streaks?calculated_date=eq." + today + "&select=oracle_id&limit=1");
-    if (rows.length === 0) return `本日(${today})分の行が無い`;
-    return null;
-  });
-
   // Standardで特定フォーマットだけ数日分の取り込みが丸ごと抜け落ち、GitHub Actionsの
   // continue-on-error:trueでジョブが「success」表示のまま誰も気づけなかった事故が実際に
   // 起きたため追加。Commanderはmtgo.comでカバーされずTopDeck.gg（未来日程の事前登録イベントも

@@ -71,7 +71,7 @@ export async function getMlRankingFromDb(
     .eq("calculated_at", latestRow.calculated_at)
     .order("rank", { ascending: true })
     .limit(RANKING_SIZE);
-  // errorは接続/クエリ失敗、rows=[]はまだ予測が無いだけ、で意味が違う（dbTrendingCards.ts参照）
+  // errorは接続/クエリ失敗、rows=[]はまだ予測が無いだけ、で意味が違う
   if (error) throw new Error(`getMlRankingFromDb: ${error.message}`);
   if (!rows || rows.length === 0) return [];
 

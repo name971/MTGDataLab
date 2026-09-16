@@ -1,10 +1,11 @@
 /**
- * card_usage_stats（266,047行、db容量超過の主要因の一つ）は、これまで一度も削除されず
- * 積み上がるだけの日次スナップショットだった。実際に読んでいるのは:
+ * card_usage_statsは一度も削除されず積み上がるだけの日次スナップショットだった。実際に
+ * 読んでいるのは:
  *   - dbCardRanking.ts / dbTrendingRanking.ts: 最新1日分のみ
- *   - compute-card-streaks.mjs: 直近STREAK_LOOKBACK_DAYS（60日）分
- * なので、それより古い行は本当に不要。streak計算が必要とするちょうど60日
- * （マージン無し）をRETENTION_DAYSとし、それより古い行を削除する。
+ *   - compute-weekly-movers.mjs: 直近LOOKBACK_DAYS（7日）分（最長）
+ * （2026-09-16、「継続注目カード」機能とcompute-card-streaks.mjsを廃止したため、
+ * それまで必要だった60日保持の制約が外れた）。それより古い行は本当に不要なので、
+ * 実際の最長利用期間ちょうど7日（マージン無し）をRETENTION_DAYSとし、それより古い行を削除する。
  *
  * 実行: NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... node scripts/prune-old-usage-stats.mjs
  */
@@ -17,7 +18,7 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   process.exit(1);
 }
 
-const RETENTION_DAYS = 60;
+const RETENTION_DAYS = 7;
 
 function isoDate(d) {
   return d.toISOString().slice(0, 10);

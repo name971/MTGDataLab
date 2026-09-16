@@ -250,13 +250,13 @@ async function main() {
   console.log(`card_usage_stats 保存: ${usageRows.length}件（${PERIOD_DAYS_OPTIONS.join("/")}日分）`);
 
   // 保持ポリシー: アプリはランキング表示(getCardRankingFromDb)で最新calculated_atの行しか
-  // 読まず、streak計算(scripts/compute-card-streaks.mjs)だけがperiod_days=7を
-  // STREAK_LOOKBACK_DAYS(60日)分さかのぼって参照する。それ以外の過去分は無期限に
-  // 積み上がるだけの無駄なので、日次実行のたびに不要な古い行を削除する
+  // 読まず、compute-weekly-movers.mjsだけがperiod_days=7をLOOKBACK_DAYS（7日）分さかのぼって
+  // 参照する（2026-09-16、「継続注目カード」廃止に伴いそれまでの60日保持制約を解消）。
+  // それ以外の過去分は無期限に積み上がるだけの無駄なので、日次実行のたびに不要な古い行を削除する
   // （2026-08時点でこの間引きが無くDB容量が無料枠500MBを超過した実績があるため）。
-  const USAGE_STREAK_LOOKBACK_DAYS = 60;
+  const USAGE_WEEKLY_MOVERS_LOOKBACK_DAYS = 7;
   const usageStreakCutoff = new Date(today);
-  usageStreakCutoff.setDate(usageStreakCutoff.getDate() - USAGE_STREAK_LOOKBACK_DAYS);
+  usageStreakCutoff.setDate(usageStreakCutoff.getDate() - USAGE_WEEKLY_MOVERS_LOOKBACK_DAYS);
   await supabaseDelete(
     `card_usage_stats?period_days=in.(30,90)&calculated_at=lt.${today}`,
   );

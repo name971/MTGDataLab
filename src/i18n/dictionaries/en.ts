@@ -48,7 +48,6 @@ const en: typeof ja = {
       `${name ?? ""} prints (${shown}/${total})`,
   },
   home: {
-    trendingHeading: "Cards on a Streak",
     mlRankingHeading: "Cards to Watch",
     mlRankingInfo:
       "Predicted with a machine learning model on the probability of a significant price move (up or down) within 7 days, ranked by confidence (tournament-played cards only). Historical Top 10 accuracy: ~73% for surges, ~95% for crashes.",
