@@ -184,7 +184,10 @@ const ORACLE_ID_CHUNK = 150; // .in()にUUIDを大量に並べるとURLが長す
  * 画像が決まらなかったオラクルはMapに含めない（呼び出し側でcardsテーブルの代表プリント画像に
  * フォールバックする想定）。
  */
-export async function getBestCardImages(oracleIds: string[]): Promise<Map<string, string>> {
+export async function getBestCardImages(
+  oracleIds: string[],
+  locale: "ja" | "en" = "ja",
+): Promise<Map<string, string>> {
   if (oracleIds.length === 0) return new Map();
 
   const rows: {
@@ -243,7 +246,10 @@ export async function getBestCardImages(oracleIds: string[]): Promise<Map<string
       });
 
     const cheapest = priced[0] ?? group[0];
-    const imageUrl = cheapest.image_uri_normal_ja ?? cheapest.image_uri_normal;
+    const imageUrl =
+      locale === "en"
+        ? (cheapest.image_uri_normal ?? cheapest.image_uri_normal_ja)
+        : (cheapest.image_uri_normal_ja ?? cheapest.image_uri_normal);
     if (imageUrl) result.set(oracleId, imageUrl);
   }
   return result;

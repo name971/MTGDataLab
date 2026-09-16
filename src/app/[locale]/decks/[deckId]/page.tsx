@@ -30,7 +30,7 @@ async function resolveDeck(deckId: string, locale: Locale): Promise<PageDeck | n
   const t = getDictionary(locale).deckDetailPage;
   const numericId = Number(deckId);
   if (Number.isInteger(numericId)) {
-    const dbDeck = await getDeckDetailFromDb(numericId);
+    const dbDeck = await getDeckDetailFromDb(numericId, locale);
     if (dbDeck) {
       const dateLabel = dbDeck.eventDate ? formatDateShort(dbDeck.eventDate) : null;
       return {

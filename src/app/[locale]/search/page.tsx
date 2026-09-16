@@ -26,7 +26,7 @@ export default async function SearchPage({
   const { q } = await searchParams;
   const query = q ?? "";
 
-  const dbResults = await searchCardsInDb(query);
+  const dbResults = await searchCardsInDb(query, locale);
   // DB検索がヒットしない場合（未インポートのクエリ等）はサンプルデータにフォールバックする
   const results =
     dbResults.length > 0

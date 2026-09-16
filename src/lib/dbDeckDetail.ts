@@ -158,7 +158,10 @@ export async function getRecentDecksFromDb(format?: string): Promise<RecentDeckS
  * card_oracles/cardsから日本語名・画像も補うが、名寄せ未解決のカードは英語名のみになる
  * （TopDeck.ggの実データはcard_oraclesにまだ全件インポートされていないため、多くは未解決）。
  */
-export async function getDeckDetailFromDb(deckId: number): Promise<DbDeckDetail | null> {
+export async function getDeckDetailFromDb(
+  deckId: number,
+  locale: "ja" | "en" = "ja",
+): Promise<DbDeckDetail | null> {
   const { data: deck, error: deckError } = await supabase
     .from("decks")
     .select("id, player_name, standing, tournament_id, tournaments(event_name, format, event_date)")
@@ -203,7 +206,7 @@ export async function getDeckDetailFromDb(deckId: number): Promise<DbDeckDetail 
         .select("oracle_id, lang, image_uri_art_crop, image_uri_normal, type_line, mana_cost, rarity")
         .in("oracle_id", oracleIds),
       supabase.from("card_current_prices").select("oracle_id, jpy_est").in("oracle_id", oracleIds),
-      getBestCardImages(oracleIds),
+      getBestCardImages(oracleIds, locale),
     ]);
 
     for (const o of oracles ?? []) {
@@ -219,10 +222,10 @@ export async function getDeckDetailFromDb(deckId: number): Promise<DbDeckDetail 
     }
     for (const c of cardRows ?? []) {
       const existing = oracleInfo.get(c.oracle_id);
-      if (existing && c.image_uri_art_crop && (c.lang === "ja" || !existing.artCropUrl)) {
+      if (existing && c.image_uri_art_crop && (c.lang === locale || !existing.artCropUrl)) {
         existing.artCropUrl = c.image_uri_art_crop;
       }
-      if (existing && c.image_uri_normal && (c.lang === "ja" || !existing.imageNormalUrl)) {
+      if (existing && c.image_uri_normal && (c.lang === locale || !existing.imageNormalUrl)) {
         existing.imageNormalUrl = c.image_uri_normal;
       }
       if (existing && c.type_line && (c.lang === "en" || !existing.typeLine)) {

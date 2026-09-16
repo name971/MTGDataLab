@@ -35,6 +35,7 @@ const BASIC_LAND_NAMES = new Set([
 export async function getCardRankingFromDb(
   format: Format,
   periodDays: 7 | 30 | 90 = 30,
+  locale: "ja" | "en" = "ja",
 ): Promise<RankingRow[]> {
   // 必要なのは最新1日分のusage_rateだけなのに、以前はcalculated_at降順で全期間分（Commander等は
   // period_days=30保持だけで60日以上×数千オラクル分）を.range()でページングして丸ごと取得し、
@@ -126,7 +127,7 @@ export async function getCardRankingFromDb(
       .from("cards")
       .select("oracle_id, lang, image_uri_art_crop, mana_cost")
       .in("oracle_id", topOracleIds),
-    getBestCardImages(topOracleIds),
+    getBestCardImages(topOracleIds, locale),
     supabase.from("card_current_prices").select("oracle_id, jpy_est").in("oracle_id", topOracleIds),
   ]);
 
@@ -139,7 +140,7 @@ export async function getCardRankingFromDb(
   const manaCostByOracle = new Map<string, string>();
   for (const c of cardRows ?? []) {
     const existing = artCropByOracle.get(c.oracle_id);
-    if (c.image_uri_art_crop && (c.lang === "ja" || !existing)) {
+    if (c.image_uri_art_crop && (c.lang === locale || !existing)) {
       artCropByOracle.set(c.oracle_id, c.image_uri_art_crop);
     }
     if (c.lang === "en" && c.mana_cost) {

@@ -14,7 +14,10 @@ export interface SearchCardResult {
  * db/search-design.sql の search_cards(query) RPCを呼び出し、
  * ヒットしたoracle_idの代表プリント画像をcardsテーブルから補って返す。
  */
-export async function searchCardsInDb(query: string): Promise<SearchCardResult[]> {
+export async function searchCardsInDb(
+  query: string,
+  locale: "ja" | "en" = "ja",
+): Promise<SearchCardResult[]> {
   const trimmed = query.trim();
   if (!meetsMinQueryLength(trimmed)) return [];
 
@@ -37,7 +40,7 @@ export async function searchCardsInDb(query: string): Promise<SearchCardResult[]
   const oracleIds = oracles.map((o) => o.oracle_id);
   const [{ data: cards }, bestImageByOracle] = await Promise.all([
     supabase.from("cards").select("oracle_id, lang, image_uri_art_crop").in("oracle_id", oracleIds),
-    getBestCardImages(oracleIds),
+    getBestCardImages(oracleIds, locale),
   ]);
 
   // カード詳細ページの「カードデータ」画像選定（安い順+日本語版一致、getBestCardImage）と揃える。
@@ -45,7 +48,7 @@ export async function searchCardsInDb(query: string): Promise<SearchCardResult[]
   // 代表プリント画像にフォールバックする。
   const imageByOracleId = new Map<string, string>();
   for (const card of cards ?? []) {
-    if (card.image_uri_art_crop && (card.lang === "ja" || !imageByOracleId.has(card.oracle_id))) {
+    if (card.image_uri_art_crop && (card.lang === locale || !imageByOracleId.has(card.oracle_id))) {
       imageByOracleId.set(card.oracle_id, card.image_uri_art_crop);
     }
   }

@@ -50,6 +50,7 @@ export interface MlRankingRow {
  */
 export async function getMlRankingFromDb(
   direction: "up" | "down" = "up",
+  locale: "ja" | "en" = "ja",
 ): Promise<MlRankingRow[]> {
   // 2026-08-21、的中率の事後検証用に過去分も残す設計へ変更した（PRIMARY KEYにcalculated_at
   // が加わり1オラクルにつき複数日分の行を持つ、db/schema.sql参照）ため、表示には
@@ -79,7 +80,7 @@ export async function getMlRankingFromDb(
   const [{ data: oracles }, { data: cardRows }, bestImageByOracle, formatsByOracle] = await Promise.all([
     supabase.from("card_oracles").select("oracle_id, name, printed_name_ja").in("oracle_id", oracleIds),
     supabase.from("cards").select("oracle_id, lang, image_uri_art_crop, mana_cost, rarity").in("oracle_id", oracleIds),
-    getBestCardImages(oracleIds),
+    getBestCardImages(oracleIds, locale),
     getFormatsByOracle(oracleIds),
   ]);
 
@@ -90,7 +91,7 @@ export async function getMlRankingFromDb(
   const artCropByOracle = new Map<string, string>();
   for (const c of cardRows ?? []) {
     const existing = artCropByOracle.get(c.oracle_id);
-    if (c.image_uri_art_crop && (c.lang === "ja" || !existing)) {
+    if (c.image_uri_art_crop && (c.lang === locale || !existing)) {
       artCropByOracle.set(c.oracle_id, c.image_uri_art_crop);
     }
   }

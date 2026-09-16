@@ -19,7 +19,10 @@ export default async function TopPage({ params }: { params: Promise<{ locale: st
   let mlRankingDown: Awaited<ReturnType<typeof getMlRankingFromDb>> = [];
   let dbDown = false;
   try {
-    [mlRankingUp, mlRankingDown] = await Promise.all([getMlRankingFromDb("up"), getMlRankingFromDb("down")]);
+    [mlRankingUp, mlRankingDown] = await Promise.all([
+      getMlRankingFromDb("up", locale),
+      getMlRankingFromDb("down", locale),
+    ]);
   } catch (err) {
     // 原因調査に使えるよう、握りつぶさずCloudflareのログに残す（2026-08-29、
     // DB接続失敗の実際の原因が分からず調査が難航したため）

@@ -9,15 +9,17 @@ export default function Header({ locale }: { locale: Locale }) {
   return (
     <header className="sticky top-0 z-50 border-b border-neutral-200 bg-white/90 px-4 py-3 backdrop-blur">
       <div className="mx-auto flex max-w-5xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Link href={`/${locale}`} className="text-lg font-black tracking-tight text-neutral-900">
-          MTG<span className="text-accent">.</span>DataLab
-        </Link>
+        <div className="flex items-center justify-between sm:contents">
+          <Link href={`/${locale}`} className="text-lg font-black tracking-tight text-neutral-900">
+            MTG<span className="text-accent">.</span>DataLab
+          </Link>
+          <div className="flex items-center gap-2 sm:order-last">
+            <LocaleSwitcher />
+            <AuthButton />
+          </div>
+        </div>
         <NavLinks />
         <SearchBar />
-        <div className="flex items-center gap-2">
-          <LocaleSwitcher />
-          <AuthButton />
-        </div>
       </div>
     </header>
   );

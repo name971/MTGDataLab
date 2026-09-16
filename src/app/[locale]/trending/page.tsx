@@ -48,7 +48,7 @@ export default async function TrendingRankingPage({
   // フィルター適用後にページが歯抜けにならないよう、Top100を全件まとめて取得し、
   // ページングはWeeklyMoversList.tsx（クライアント側、フィルター後の配列に対して）で行う
   // （MlRankingList.tsxと同じ方式、2026-08-27）。
-  const { rows } = await getWeeklyMovers(category, metric, usageDirection);
+  const { rows } = await getWeeklyMovers(category, metric, usageDirection, locale);
 
   return (
     <div className="flex flex-col gap-4">

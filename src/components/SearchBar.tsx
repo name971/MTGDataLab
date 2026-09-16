@@ -35,7 +35,7 @@ export default function SearchBar() {
 
     const controller = new AbortController();
     const timer = setTimeout(() => {
-      fetch(`/api/search-suggest?q=${encodeURIComponent(trimmed)}`, { signal: controller.signal })
+      fetch(`/api/search-suggest?q=${encodeURIComponent(trimmed)}&locale=${locale}`, { signal: controller.signal })
         .then((res) => res.json() as Promise<{ results: Suggestion[] }>)
         .then((data) => {
           setSuggestions(data.results);
@@ -82,7 +82,7 @@ export default function SearchBar() {
         />
         <button
           type="submit"
-          className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-900 hover:border-neutral-500"
+          className="shrink-0 whitespace-nowrap rounded-md border border-neutral-300 px-3 py-1.5 text-sm text-neutral-900 hover:border-neutral-500"
         >
           {t.searchButton}
         </button>

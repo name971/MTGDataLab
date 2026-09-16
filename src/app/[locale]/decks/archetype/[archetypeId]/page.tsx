@@ -94,7 +94,7 @@ export default async function ArchetypeDetailPage({
 
   const decks = await getDecksByArchetypeId(numericId);
   const bestDeck = pickBestDeck(decks);
-  const bestDeckDetail = bestDeck ? await getDeckDetailFromDb(bestDeck.deckId) : null;
+  const bestDeckDetail = bestDeck ? await getDeckDetailFromDb(bestDeck.deckId, locale) : null;
   // 新しい開催日順（開催日が同じ場合はdeckId降順）に並べてから表示する
   const otherDecks = decks
     .filter((d) => d.deckId !== bestDeck?.deckId)

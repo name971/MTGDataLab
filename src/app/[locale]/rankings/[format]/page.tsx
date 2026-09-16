@@ -51,7 +51,7 @@ export default async function FormatRankingPage({
   const periodDays = resolvePeriod(period);
 
   const { caveatNote } = await getFormatSettings(format);
-  const rows = await getCardRankingFromDb(format, periodDays);
+  const rows = await getCardRankingFromDb(format, periodDays, locale);
 
   return (
     <div className="flex flex-col gap-4">

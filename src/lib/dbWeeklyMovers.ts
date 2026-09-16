@@ -50,6 +50,7 @@ export async function getWeeklyMovers(
   /** usageカテゴリのみ、上昇/下降を切り替える。weekly_movers.categoryは"usage_down"として
    * 別行で保存されている（2026-08-27）。 */
   usageDirection: "up" | "down" = "up",
+  locale: "ja" | "en" = "ja",
 ): Promise<{ rows: WeeklyMoverRow[] }> {
   const storedCategory =
     category === "price" && priceMetric === "jpy"
@@ -89,7 +90,7 @@ export async function getWeeklyMovers(
       // priceカテゴリは全行がscryfallIdを持っており下のcard_prints取得だけで画像が決まるため、
       // 全オラクル分の代表プリント選定（全プリント走査＋価格照会、300件規模だと非常に重い）は
       // usageカテゴリの時だけ行う（2026-08-27、ページが重いというユーザー指摘で判明）。
-      category === "usage" ? getBestCardImages(oracleIds) : Promise.resolve(new Map<string, string>()),
+      category === "usage" ? getBestCardImages(oracleIds, locale) : Promise.resolve(new Map<string, string>()),
       getFormatsByOracle(oracleIds),
       // priceのみ、その特定プリントの画像・レアリティを使う（オラクルの代表プリントとは
       // 別物 — 値動きしているのはまさにこの版なので、代表画像に差し替わってしまうと
@@ -117,7 +118,9 @@ export async function getWeeklyMovers(
       if (!oracle) return null;
       const print = m.scryfall_id ? printByScryfallId.get(m.scryfall_id) : null;
       const imageUrl = print
-        ? (print.image_uri_normal_ja ?? print.image_uri_normal)
+        ? locale === "en"
+          ? (print.image_uri_normal ?? print.image_uri_normal_ja)
+          : (print.image_uri_normal_ja ?? print.image_uri_normal)
         : bestImageByOracle.get(m.oracle_id);
       if (!imageUrl) return null;
       return {
