@@ -12,7 +12,11 @@ import type { Locale } from "@/i18n/config";
 export default function MlRankingExplainer({ locale }: { locale: Locale }) {
   const t = getDictionary(locale).home;
 
-  const steps = [t.explainerStep1, t.explainerStep2, t.explainerStep3];
+  const steps = [
+    { emoji: "📈", text: t.explainerStep1 },
+    { emoji: "🤖", text: t.explainerStep2 },
+    { emoji: "🏆", text: t.explainerStep3 },
+  ];
 
   return (
     <div className="flex flex-col gap-4">
@@ -20,10 +24,13 @@ export default function MlRankingExplainer({ locale }: { locale: Locale }) {
         {steps.map((step, i) => (
           <div key={i} className="flex items-center gap-3 sm:gap-3">
             <div className="flex flex-col items-center gap-2 text-center">
-              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-neutral-900 text-xs font-bold text-white">
-                {i + 1}
+              <span className="relative flex h-14 w-14 items-center justify-center rounded-full bg-accent-soft text-2xl">
+                {step.emoji}
+                <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-neutral-900 text-[10px] font-bold text-white">
+                  {i + 1}
+                </span>
               </span>
-              <p className="max-w-[9rem] whitespace-pre-line text-sm font-medium text-neutral-800">{step}</p>
+              <p className="max-w-[9rem] whitespace-pre-line text-sm font-medium text-neutral-800">{step.text}</p>
             </div>
             {i < steps.length - 1 && <span className="hidden text-neutral-400 sm:block">→</span>}
           </div>
