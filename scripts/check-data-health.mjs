@@ -48,14 +48,6 @@ async function check(name, fn) {
 }
 
 async function main() {
-  await check("パックEVのマッチ率（pack_slot_avg_prices）", async () => {
-    const rows = await supabaseGet(`pack_slot_avg_prices?calculated_at=eq.${today}&select=match_rate`);
-    if (rows.length === 0) return `本日(${today})分の行が無い（compute-pack-slot-avg-prices.mjsが失敗した可能性）`;
-    const avg = rows.reduce((s, r) => s + Number(r.match_rate), 0) / rows.length;
-    if (avg < 0.8) return `平均${(avg * 100).toFixed(1)}%（${rows.length}件）。参照テーブルがズレている等の可能性`;
-    return null;
-  });
-
   await check("採用率データ（card_usage_stats）の鮮度", async () => {
     const rows = await supabaseGet(
       "card_usage_stats?select=calculated_at&order=calculated_at.desc&limit=1",

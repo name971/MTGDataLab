@@ -22,7 +22,6 @@ const ROUTES = [
   "/banned-cards",
   "/decks",
   "/decks?format=commander",
-  "/packs",
   "/search",
   "/search/advanced",
   // "/cards/<oracleId>",
