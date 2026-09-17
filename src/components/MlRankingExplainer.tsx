@@ -53,7 +53,11 @@ export default function MlRankingExplainer({ locale }: { locale: Locale }) {
               <span className="text-neutral-400">→</span>
               <span className="flex h-11 w-11 items-center justify-center rounded-full bg-neutral-100 text-lg">🛒</span>
             </div>
-            <p className="text-sm text-neutral-700">{t.explainerUpUsage}</p>
+            <p className="text-sm text-neutral-700">
+              {t.explainerUpUsagePrefix}
+              <b className="font-bold text-red-600">{t.explainerUpAction}</b>
+              {t.explainerUpUsageSuffix}💡
+            </p>
           </div>
         </div>
 
@@ -73,7 +77,11 @@ export default function MlRankingExplainer({ locale }: { locale: Locale }) {
               <span className="text-neutral-400">→</span>
               <span className="flex h-11 w-11 items-center justify-center rounded-full bg-neutral-100 text-lg">💸</span>
             </div>
-            <p className="text-sm text-neutral-700">{t.explainerDownUsage}</p>
+            <p className="text-sm text-neutral-700">
+              {t.explainerDownUsagePrefix}
+              <b className="font-bold text-blue-600">{t.explainerDownAction}</b>
+              {t.explainerDownUsageSuffix}💡
+            </p>
           </div>
         </div>
       </div>
