@@ -49,7 +49,18 @@ const ja = {
   home: {
     mlRankingHeading: "注目カードランキング",
     mlRankingInfo:
-      "7日以内に一定以上値上がり・値下がりする確率を機械学習モデルで予測し、確率が高い順に並べています（トーナメントで使用実績のあるカードが対象）。過去のTop10的中率: 高騰予想は約73%、暴落予想は約95%。",
+      "7日以内に一定以上値上がり・値下がりする確率を機械学習モデルで予測し、確率が高い順に並べています（トーナメントで使用実績のあるカードが対象）。週ごとのTop50的中率の平均: 高騰予想は約76%、暴落予想は約84%（過去57週）。",
+    explainerStep1: "過去の値動きと\n大会での人気を分析",
+    explainerStep2: "AIが「今後7日の\n価格」を予想",
+    explainerStep3: "ランキング順に表示",
+    explainerResultHeading: "その結果、実際の的中率は？",
+    explainerUpKicker: "高騰予想の的中率",
+    explainerUpPct: "76",
+    explainerDownKicker: "暴落予想の的中率",
+    explainerDownPct: "84",
+    explainerCaption: "週平均・過去57週",
+    explainerUpUsage: "欲しいカードが高騰予想に入っていたら値上がりする前に早めに買おう💡",
+    explainerDownUsage: "売るか迷っているカードが暴落予想に入っていたら下がりきる前に手放そう💡",
   },
   advancedSearch: {
     metaTitle: "高度検索 - MTG DataLab",

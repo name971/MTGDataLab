@@ -1,9 +1,13 @@
 /**
  * card_price_predictions（ml/predict_and_publish.pyが書き込む注目カードランキングの予測）に、
- * 「予測時点(calculated_at)から今どれだけ動いたか」を追記する。
+ * 「予測時点(calculated_at)から7日以内でどれだけ動いたか」を追記する。
  *
- * - current_pct_change: 直近の実績価格が予測時点からどれだけ変化したか
- * - extreme_pct_change: 予測時点〜直近までの間で一番良かった結果（direction沿い）。
+ * - current_pct_change: 直近の実績価格が予測時点からどれだけ変化したか（7日を過ぎたら
+ *   7日目時点の値で固定される。predict_and_publish.pyは手動運用のため、次のバッチが
+ *   しばらく実行されないとこのスクリプトが同じcalculated_at分を何度も再実行することになり、
+ *   7日という上限が無いと「7日後の価格変動」のはずが無期限に動き続けてしまうため、
+ *   2026-09-17に修正した）
+ * - extreme_pct_change: 予測時点〜7日後までの間で一番良かった結果（direction沿い）。
  *   upは最大値（マイナスの最大＝実は下落、を拾わないよう必ず最大を採る）、
  *   downは最小値（同様にプラスの最大を拾わないよう必ず最小を採る）。
  *
@@ -17,6 +21,9 @@
  */
 
 import { readOracleCardFile, runWithConcurrency } from "./lib/r2PriceArchive.mjs";
+
+// ml/features.pyのTARGET_HORIZON_DAYS（予測が「7日後」を対象にしている）と揃える
+const OUTCOME_WINDOW_DAYS = 7;
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -54,6 +61,13 @@ function round2(n) {
   return Math.round(n * 100) / 100;
 }
 
+/** "2026-09-10" + 7日 -> "2026-09-17" */
+function addDays(isoDate, days) {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 async function main() {
   const [latestRow] = await supabaseGet(
     "card_price_predictions?select=calculated_at&order=calculated_at.desc&limit=1",
@@ -63,6 +77,7 @@ async function main() {
     return;
   }
   const calculatedAt = latestRow.calculated_at;
+  const windowEnd = addDays(calculatedAt, OUTCOME_WINDOW_DAYS);
 
   const rows = await supabaseGet(
     `card_price_predictions?select=oracle_id,direction,jpy_est&calculated_at=eq.${calculatedAt}`,
@@ -79,7 +94,7 @@ async function main() {
     }
     const history = await readOracleCardFile(row.oracle_id);
     const windowRows = history
-      .filter((r) => r.date >= calculatedAt && r.jpy_est != null)
+      .filter((r) => r.date >= calculatedAt && r.date <= windowEnd && r.jpy_est != null)
       .sort((a, b) => a.date.localeCompare(b.date));
     if (windowRows.length === 0) {
       skipped++;

@@ -50,7 +50,18 @@ const en: typeof ja = {
   home: {
     mlRankingHeading: "Cards to Watch",
     mlRankingInfo:
-      "Predicted with a machine learning model on the probability of a significant price move (up or down) within 7 days, ranked by confidence (tournament-played cards only). Historical Top 10 accuracy: ~73% for surges, ~95% for crashes.",
+      "Predicted with a machine learning model on the probability of a significant price move (up or down) within 7 days, ranked by confidence (tournament-played cards only). Average weekly Top 50 accuracy over the past 57 weeks: ~76% for surges, ~84% for crashes.",
+    explainerStep1: "Analyze past price moves\nand tournament play",
+    explainerStep2: "AI predicts the price\nover the next 7 days",
+    explainerStep3: "Show it as a ranking",
+    explainerResultHeading: "So how accurate is it?",
+    explainerUpKicker: "Surge prediction accuracy",
+    explainerUpPct: "76",
+    explainerDownKicker: "Crash prediction accuracy",
+    explainerDownPct: "84",
+    explainerCaption: "Weekly average, past 57 weeks",
+    explainerUpUsage: "If a card you want shows up in the surge predictions, buy it before it climbs 💡",
+    explainerDownUsage: "If a card you're on the fence about shows up in the crash predictions, sell before it bottoms out 💡",
   },
   advancedSearch: {
     metaTitle: "Advanced Search - MTG DataLab",

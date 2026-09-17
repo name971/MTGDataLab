@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { getMlRankingFromDb } from "@/lib/dbMlRanking";
 import MlRankingList from "@/components/MlRankingList";
+import MlRankingExplainer from "@/components/MlRankingExplainer";
 import InfoTooltip from "@/components/InfoTooltip";
 import MaintenanceBanner from "@/components/MaintenanceBanner";
 import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
@@ -40,6 +41,9 @@ export default async function TopPage({ params }: { params: Promise<{ locale: st
             {t.mlRankingHeading}
             <InfoTooltip text={t.mlRankingInfo} />
           </h2>
+          <div className="mb-6">
+            <MlRankingExplainer locale={locale} />
+          </div>
           <Suspense fallback={null}>
             <MlRankingList up={mlRankingUp} down={mlRankingDown} />
           </Suspense>
