@@ -141,11 +141,6 @@ const en: typeof ja = {
     minLength: "Enter at least 2 characters.",
     noResults: "No matching cards found.",
   },
-  packEv: {
-    metaTitle: "Pack EV Calculator - MTG DataLab",
-    heading: "Pack EV Calculator",
-    subheading: "Supports Play Booster / Collector Booster",
-  },
   deckDetailPage: {
     metaTitleFallback: "MTG DataLab",
     deckTitle: (name: string) => `${name}'s Deck`,
@@ -202,7 +197,7 @@ const en: typeof ja = {
     subheading: "Top 300 by change over the last 7 days, updated daily",
     pctRankingLabel: "% ranking",
     jpyRankingLabel: "Price change ranking",
-    jpyUnit: "¥",
+    jpyUnit: "$",
     upRankingLabel: "Rising ranking",
     downRankingLabel: "Falling ranking",
     upLabel: "Rising",

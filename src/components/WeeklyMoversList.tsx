@@ -8,6 +8,7 @@ import { getDictionary } from "@/i18n/getDictionary";
 import { useMemo, useState } from "react";
 import type { WeeklyMoverRow, MoverCategory } from "@/lib/dbWeeklyMovers";
 import { formatLabel, FORMATS } from "@/lib/formats";
+import { formatPrice } from "@/lib/fx";
 import RankingFilterPanel, {
   EMPTY_RANKING_FILTERS,
   GearIcon,
@@ -54,10 +55,12 @@ export default function WeeklyMoversList({
   rows,
   category,
   priceMetric,
+  usdToJpyRate,
 }: {
   rows: WeeklyMoverRow[];
   category: MoverCategory;
   priceMetric: "pct" | "jpy";
+  usdToJpyRate: number;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -127,7 +130,7 @@ export default function WeeklyMoversList({
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 sm:gap-5 lg:grid-cols-5">
         {pageRows.map((row) => (
-          <MoverRow key={row.scryfallId ?? row.oracleId} row={row} category={category} priceMetric={priceMetric} />
+          <MoverRow key={row.scryfallId ?? row.oracleId} row={row} category={category} priceMetric={priceMetric} usdToJpyRate={usdToJpyRate} />
         ))}
       </div>
       {filtered.length === 0 && (
@@ -162,11 +165,14 @@ function MoverRow({
   row,
   category,
   priceMetric,
+  usdToJpyRate,
 }: {
   row: WeeklyMoverRow;
   category: MoverCategory;
   priceMetric: "pct" | "jpy";
+  usdToJpyRate: number;
 }) {
+  const locale = useLocale();
   const useJpy = category === "price" && priceMetric === "jpy";
   // priceMetric/print等は値上がりのみ扱うため常に正だが、採用率下降ランキングは
   // change_valueが負になる。符号は数値側にすでに乗っているので、正の時だけ"+"を足す
@@ -174,9 +180,8 @@ function MoverRow({
   const sign = row.changeValue >= 0 ? "+" : "";
   // 矢印表記は視認性が下がるとの指摘（2026-08-29）で撤回。色（赤/青）だけで示す。
   const changeText = useJpy
-    ? `${sign}¥${Math.round(row.changeValue).toLocaleString()}`
+    ? `${sign}${formatPrice(Math.round(row.changeValue), locale, usdToJpyRate)}`
     : `${sign}${row.changeValue.toFixed(1)}${category === "usage" ? "pt" : "%"}`;
-  const locale = useLocale();
   const t = getDictionary(locale).weeklyMovers;
   // TrendingRankingList.tsxの「採用率(Format) +X.Xpt」表記に揃える
   const moverFormatLabel = row.format
@@ -223,7 +228,7 @@ function MoverRow({
           {changeText}
         </p>
         {row.priceJpy != null && row.priceJpy > 0 && (
-          <p className="font-numeric text-right text-sm">¥{row.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}</p>
+          <p className="font-numeric text-right text-sm">{formatPrice(row.priceJpy, locale, usdToJpyRate)}</p>
         )}
       </div>
     </Link>

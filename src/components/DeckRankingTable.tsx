@@ -6,13 +6,14 @@ import { useMemo, useState } from "react";
 import type { ArchetypeRow } from "@/lib/sampleDeckData";
 import { useLocale } from "@/i18n/useLocale";
 import { getDictionary } from "@/i18n/getDictionary";
+import { formatPrice } from "@/lib/fx";
 
 type SortKey = "usageRatePct" | "medianPriceJpy";
 
 const VISIBLE_COUNT = 25;
 const PRICE_HIGHLIGHT_WINDOW = 10;
 
-export default function DeckRankingTable({ rows }: { rows: ArchetypeRow[] }) {
+export default function DeckRankingTable({ rows, usdToJpyRate }: { rows: ArchetypeRow[]; usdToJpyRate: number }) {
   const locale = useLocale();
   const t = getDictionary(locale).deckRanking;
   const SORT_OPTIONS: { key: SortKey; label: string }[] = [
@@ -110,6 +111,7 @@ export default function DeckRankingTable({ rows }: { rows: ArchetypeRow[] }) {
             key={row.archetypeId}
             row={row}
             displayPriceJpy={displayPrice(row)}
+            usdToJpyRate={usdToJpyRate}
             priceHighlight={
               row.archetypeId === maxPriceArchetypeId
                 ? "max"
@@ -136,10 +138,12 @@ export default function DeckRankingTable({ rows }: { rows: ArchetypeRow[] }) {
 function ArchetypeCard({
   row,
   displayPriceJpy,
+  usdToJpyRate,
   priceHighlight,
 }: {
   row: ArchetypeRow;
   displayPriceJpy: number;
+  usdToJpyRate: number;
   priceHighlight: "max" | "min" | null;
 }) {
   const locale = useLocale();
@@ -211,7 +215,7 @@ function ArchetypeCard({
                     : ""
               }
             >
-              <span className="font-numeric">¥{displayPriceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}</span>
+              <span className="font-numeric">{formatPrice(displayPriceJpy, locale, usdToJpyRate)}</span>
             </span>
           </span>
         </div>

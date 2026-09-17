@@ -3,6 +3,7 @@ import { getWeeklyMovers, type MoverCategory } from "@/lib/dbWeeklyMovers";
 import WeeklyMoversList from "@/components/WeeklyMoversList";
 import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
 import { getDictionary } from "@/i18n/getDictionary";
+import { fetchExchangeRates } from "@/lib/fx";
 
 // 集計バッチ（compute-weekly-movers.mjs）は1日1回しか回らないため、長めにキャッシュする
 export const revalidate = 21600;
@@ -49,6 +50,16 @@ export default async function TrendingRankingPage({
   // ページングはWeeklyMoversList.tsx（クライアント側、フィルター後の配列に対して）で行う
   // （MlRankingList.tsxと同じ方式、2026-08-27）。
   const { rows } = await getWeeklyMovers(category, metric, usageDirection, locale);
+
+  // 英語版は米国市場向けにUSD表示する（2026-09-16方針）
+  let usdToJpyRate = 150;
+  if (locale === "en") {
+    try {
+      usdToJpyRate = (await fetchExchangeRates()).usdToJpy;
+    } catch {
+      // 取得失敗時は既定値150のまま（表示上の概算なので致命的ではない）
+    }
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -128,7 +139,7 @@ export default async function TrendingRankingPage({
       </div>
 
       {rows.length > 0 ? (
-        <WeeklyMoversList rows={rows} category={category} priceMetric={metric} />
+        <WeeklyMoversList rows={rows} category={category} priceMetric={metric} usdToJpyRate={usdToJpyRate} />
       ) : (
         <p className="py-6 text-center text-sm text-neutral-500">
           {t.noData}

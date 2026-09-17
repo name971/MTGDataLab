@@ -7,6 +7,7 @@ import { getArchetypesFromDb } from "@/lib/dbArchetypeStats";
 import DeckRankingTable from "@/components/DeckRankingTable";
 import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
 import { getDictionary } from "@/i18n/getDictionary";
+import { fetchExchangeRates, formatPrice } from "@/lib/fx";
 
 // 集計バッチは1日1回しか回らないため、長めにキャッシュしてegressを抑える
 export const revalidate = 21600;
@@ -58,6 +59,16 @@ export default async function DeckRankingPage({
     rows = hasAnyDbData ? [] : getSampleArchetypes(format);
   }
 
+  // 英語版は米国市場向けにUSD表示する（2026-09-16方針）
+  let usdToJpyRate = 150;
+  if (locale === "en") {
+    try {
+      usdToJpyRate = (await fetchExchangeRates()).usdToJpy;
+    } catch {
+      // 取得失敗時は既定値150のまま（表示上の概算なので致命的ではない）
+    }
+  }
+
   const top10 = rows.slice(0, 10);
   const top10AvgPriceJpy =
     top10.length > 0
@@ -81,7 +92,7 @@ export default async function DeckRankingPage({
             <p className="whitespace-nowrap text-sm text-neutral-600">
               {t.top10Avg(top10.length)}{" "}
               <span className="font-numeric text-lg font-semibold text-neutral-900">
-                ¥{top10AvgPriceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
+                {formatPrice(top10AvgPriceJpy, locale, usdToJpyRate)}
               </span>
             </p>
             {top10ArenaAvgPriceJpy !== null && (
@@ -91,7 +102,7 @@ export default async function DeckRankingPage({
               >
                 {t.arenaAvg}{" "}
                 <span className="font-numeric font-medium text-neutral-700">
-                  ¥{top10ArenaAvgPriceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
+                  {formatPrice(top10ArenaAvgPriceJpy, locale, usdToJpyRate)}
                 </span>
               </p>
             )}
@@ -137,7 +148,7 @@ export default async function DeckRankingPage({
       )}
 
       {rows.length > 0 ? (
-        <DeckRankingTable rows={rows} />
+        <DeckRankingTable rows={rows} usdToJpyRate={usdToJpyRate} />
       ) : (
         <p className="text-sm text-neutral-500">{t.noData}</p>
       )}

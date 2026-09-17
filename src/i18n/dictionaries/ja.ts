@@ -140,11 +140,6 @@ const ja = {
     minLength: "2文字以上（漢字・かなは1文字から）入力してください。",
     noResults: "該当するカードが見つかりませんでした。",
   },
-  packEv: {
-    metaTitle: "パックEV計算 - MTG DataLab",
-    heading: "パックEV計算",
-    subheading: "Play Booster / Collector Boosterに対応",
-  },
   deckDetailPage: {
     metaTitleFallback: "MTG DataLab",
     deckTitle: (name: string) => `${name} のデッキ`,

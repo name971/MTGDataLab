@@ -6,6 +6,7 @@ import { getCardRankingFromDb } from "@/lib/dbCardRanking";
 import RankingTable from "@/components/RankingTable";
 import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
 import { getDictionary } from "@/i18n/getDictionary";
+import { fetchExchangeRates } from "@/lib/fx";
 
 // 集計バッチは1日1回しか回らないため、長めにキャッシュしてegressを抑える
 export const revalidate = 21600;
@@ -53,6 +54,16 @@ export default async function FormatRankingPage({
   const { caveatNote } = await getFormatSettings(format);
   const rows = await getCardRankingFromDb(format, periodDays, locale);
 
+  // 英語版は米国市場向けにUSD表示する（2026-09-16方針）
+  let usdToJpyRate = 150;
+  if (locale === "en") {
+    try {
+      usdToJpyRate = (await fetchExchangeRates()).usdToJpy;
+    } catch {
+      // 取得失敗時は既定値150のまま（表示上の概算なので致命的ではない）
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-semibold">{t.heading}</h1>
@@ -92,7 +103,7 @@ export default async function FormatRankingPage({
       {caveatNote && <p className="text-xs text-neutral-400">{caveatNote}</p>}
 
       {rows.length > 0 ? (
-        <RankingTable rows={rows} />
+        <RankingTable rows={rows} usdToJpyRate={usdToJpyRate} />
       ) : (
         <p className="py-6 text-center text-sm text-neutral-500">
           {t.noData}

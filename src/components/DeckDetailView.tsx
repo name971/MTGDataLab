@@ -3,9 +3,10 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
-import { totalPriceJpy, totalArenaPriceJpy, arenaPriceJpy, formatJpy } from "@/lib/deckPricing";
+import { totalPriceJpy, totalArenaPriceJpy, arenaPriceJpy } from "@/lib/deckPricing";
 import { useLocale } from "@/i18n/useLocale";
 import { getDictionary } from "@/i18n/getDictionary";
+import { formatPrice } from "@/lib/fx";
 import ManaCost from "./ManaCost";
 import DeckStatsBar from "./DeckStatsBar";
 
@@ -91,9 +92,11 @@ export default function DeckDetailView({
   title,
   subtitle,
   headerContent,
+  usdToJpyRate,
 }: {
   cards: DeckCardDisplay[];
   format?: string;
+  usdToJpyRate: number;
   /** 未指定・headerContent未指定ならヘッダー行自体を出さない */
   title?: string;
   subtitle?: string;
@@ -133,7 +136,7 @@ export default function DeckDetailView({
           )}
           <p className="whitespace-nowrap text-lg font-semibold">
             {arenaMode && t.arenaConvertedPrefix}
-            {formatJpy(grandTotalJpy)}
+            {formatPrice(grandTotalJpy, locale, usdToJpyRate)}
           </p>
         </div>
       )}
@@ -180,21 +183,21 @@ export default function DeckDetailView({
       {tab === "list" ? (
         <div className="flex flex-col gap-6">
           {isCommander && sideboard.length > 0 && (
-            <DeckCardList title={sideboardTitle} cards={sideboard} grouped={false} arenaMode={arenaMode} />
+            <DeckCardList title={sideboardTitle} cards={sideboard} grouped={false} arenaMode={arenaMode} usdToJpyRate={usdToJpyRate} />
           )}
-          <DeckCardList title={t.mainboardLabel} cards={mainboard} grouped arenaMode={arenaMode} />
+          <DeckCardList title={t.mainboardLabel} cards={mainboard} grouped arenaMode={arenaMode} usdToJpyRate={usdToJpyRate} />
           {!isCommander && sideboard.length > 0 && (
-            <DeckCardList title={sideboardTitle} cards={sideboard} grouped={false} arenaMode={arenaMode} />
+            <DeckCardList title={sideboardTitle} cards={sideboard} grouped={false} arenaMode={arenaMode} usdToJpyRate={usdToJpyRate} />
           )}
         </div>
       ) : (
         <div className="flex flex-col gap-6">
           {isCommander && sideboard.length > 0 && (
-            <DeckCardGrid title={sideboardTitle} cards={sideboard} grouped={false} arenaMode={arenaMode} />
+            <DeckCardGrid title={sideboardTitle} cards={sideboard} grouped={false} arenaMode={arenaMode} usdToJpyRate={usdToJpyRate} />
           )}
-          <DeckCardGrid title={t.mainboardLabel} cards={mainboard} grouped arenaMode={arenaMode} />
+          <DeckCardGrid title={t.mainboardLabel} cards={mainboard} grouped arenaMode={arenaMode} usdToJpyRate={usdToJpyRate} />
           {!isCommander && sideboard.length > 0 && (
-            <DeckCardGrid title={sideboardTitle} cards={sideboard} grouped={false} arenaMode={arenaMode} />
+            <DeckCardGrid title={sideboardTitle} cards={sideboard} grouped={false} arenaMode={arenaMode} usdToJpyRate={usdToJpyRate} />
           )}
         </div>
       )}
@@ -207,7 +210,7 @@ export default function DeckDetailView({
  * 中の4つのspanが親のグリッド列（名前・単価・枚数・合計）にそのまま並ぶことで、
  * カード名の長さに関わらず単価/枚数/合計が縦に揃う。
  */
-function CardListRow({ card, arenaMode }: { card: DeckCardDisplay; arenaMode: boolean }) {
+function CardListRow({ card, arenaMode, usdToJpyRate }: { card: DeckCardDisplay; arenaMode: boolean; usdToJpyRate: number }) {
   // arenaMode中はレアリティさえ分かれば必ず金額が出せる（不明なレアリティ・コモン/アンコモンは0円）ため、
   // 実勢価格が無いカードでも「価格データなし」にはならない
   const locale = useLocale();
@@ -233,13 +236,13 @@ function CardListRow({ card, arenaMode }: { card: DeckCardDisplay; arenaMode: bo
       {unitPriceJpy !== null ? (
         <>
           <span className="whitespace-nowrap border-b border-neutral-100 py-1 text-right text-neutral-400 font-numeric tabular-nums">
-            ¥{unitPriceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
+            {formatPrice(unitPriceJpy, locale, usdToJpyRate)}
           </span>
           <span className="whitespace-nowrap border-b border-neutral-100 py-1 text-right text-neutral-400 font-numeric tabular-nums">
             ×{card.quantity}
           </span>
           <span className="whitespace-nowrap border-b border-neutral-100 py-1 text-right text-neutral-600 font-numeric tabular-nums">
-            ¥{(unitPriceJpy * card.quantity).toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
+            {formatPrice(unitPriceJpy * card.quantity, locale, usdToJpyRate)}
           </span>
         </>
       ) : (
@@ -256,11 +259,13 @@ function DeckCardList({
   cards,
   grouped,
   arenaMode,
+  usdToJpyRate,
 }: {
   title: string;
   cards: DeckCardDisplay[];
   grouped: boolean;
   arenaMode: boolean;
+  usdToJpyRate: number;
 }) {
   const locale = useLocale();
   const t = getDictionary(locale).deckDetail;
@@ -276,7 +281,7 @@ function DeckCardList({
               </p>
               <ul className="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 text-sm">
                 {group.cards.map((card) => (
-                  <CardListRow key={`${card.nameEn}-${card.board}`} card={card} arenaMode={arenaMode} />
+                  <CardListRow key={`${card.nameEn}-${card.board}`} card={card} arenaMode={arenaMode} usdToJpyRate={usdToJpyRate} />
                 ))}
               </ul>
             </div>
@@ -285,12 +290,12 @@ function DeckCardList({
       ) : (
         <ul className="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 text-sm">
           {sortByKind(cards).map((card) => (
-            <CardListRow key={`${card.nameEn}-${card.board}`} card={card} arenaMode={arenaMode} />
+            <CardListRow key={`${card.nameEn}-${card.board}`} card={card} arenaMode={arenaMode} usdToJpyRate={usdToJpyRate} />
           ))}
         </ul>
       )}
       <p className="mt-2 text-right text-sm font-medium text-neutral-700">
-        {t.total(formatJpy(arenaMode ? totalArenaPriceJpy(cards) : totalPriceJpy(cards)))}
+        {t.total(formatPrice(arenaMode ? totalArenaPriceJpy(cards) : totalPriceJpy(cards), locale, usdToJpyRate))}
       </p>
     </div>
   );
@@ -338,11 +343,13 @@ function DeckCardGrid({
   cards,
   grouped,
   arenaMode,
+  usdToJpyRate,
 }: {
   title: string;
   cards: DeckCardDisplay[];
   grouped: boolean;
   arenaMode: boolean;
+  usdToJpyRate: number;
 }) {
   const locale = useLocale();
   const t = getDictionary(locale).deckDetail;
@@ -372,7 +379,7 @@ function DeckCardGrid({
         </div>
       )}
       <p className="mt-2 text-right text-sm font-medium text-neutral-700">
-        {t.total(formatJpy(arenaMode ? totalArenaPriceJpy(cards) : totalPriceJpy(cards)))}
+        {t.total(formatPrice(arenaMode ? totalArenaPriceJpy(cards) : totalPriceJpy(cards), locale, usdToJpyRate))}
       </p>
     </div>
   );

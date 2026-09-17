@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import type { RankingRow } from "@/lib/sampleRankingData";
 import { useLocale } from "@/i18n/useLocale";
 import { getDictionary } from "@/i18n/getDictionary";
+import { formatPrice } from "@/lib/fx";
 
 /**
  * 取引量は無料データソースが存在しないため launch では対象外（docs/spec.md 2章）。
@@ -18,7 +19,7 @@ type SortKey = "priceChangePct" | "usageRatePct";
 const COLOR_FILTER_OPTIONS = ["W", "U", "B", "R", "G"] as const;
 const VISIBLE_COUNT = 20;
 
-export default function RankingTable({ rows }: { rows: RankingRow[] }) {
+export default function RankingTable({ rows, usdToJpyRate }: { rows: RankingRow[]; usdToJpyRate: number }) {
   const locale = useLocale();
   const t = getDictionary(locale).rankingTable;
   const SORT_OPTIONS: { key: SortKey; label: string }[] = [
@@ -143,6 +144,7 @@ export default function RankingTable({ rows }: { rows: RankingRow[] }) {
               row.priceJpy > 0 && row.priceJpy === maxPrice ? "max" : row.priceJpy > 0 && row.priceJpy === minPrice ? "min" : null
             }
             usageTier={usageTiersByOracleId.get(row.oracleId) ?? "low"}
+            usdToJpyRate={usdToJpyRate}
           />
         ))}
       </div>
@@ -166,11 +168,13 @@ function CardRankRow({
   rank,
   priceHighlight,
   usageTier,
+  usdToJpyRate,
 }: {
   row: RankingRow;
   rank: number;
   priceHighlight: "max" | "min" | null;
   usageTier: "high" | "mid" | "low";
+  usdToJpyRate: number;
 }) {
   // カードそのものを見分けられることが重要なので、アートクロップではなくカード全体の画像を使う。
   // Scryfallの画像URLは/<バリエーション>/front/<...>.jpgという共通構造なので置換で導出できる。
@@ -220,7 +224,7 @@ function CardRankRow({
                   : ""
           }`}
         >
-          {row.priceJpy > 0 ? `¥${row.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}` : t.priceUnknown}
+          {row.priceJpy > 0 ? formatPrice(row.priceJpy, locale, usdToJpyRate) : t.priceUnknown}
         </p>
       </div>
     </Link>

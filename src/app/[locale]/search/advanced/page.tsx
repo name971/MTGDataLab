@@ -6,6 +6,7 @@ import { FORMATS, formatLabel } from "@/lib/formats";
 import { COLOR_ORDER } from "@/lib/manaColors";
 import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
 import { getDictionary } from "@/i18n/getDictionary";
+import { fetchExchangeRates, formatPrice } from "@/lib/fx";
 import {
   COMMON_TYPES,
   PERIODS,
@@ -54,6 +55,16 @@ export default async function AdvancedSearchPage({
     ? await advancedSearchCards(filters, (page - 1) * PAGE_SIZE, PAGE_SIZE)
     : { results: [], totalCount: 0, capped: false };
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+
+  // 英語版は米国市場向けにUSD表示する（2026-09-16方針）
+  let usdToJpyRate = 150;
+  if (locale === "en") {
+    try {
+      usdToJpyRate = (await fetchExchangeRates()).usdToJpy;
+    } catch {
+      // 取得失敗時は既定値150のまま（表示上の概算なので致命的ではない）
+    }
+  }
 
   const selectedColors = new Set(filters.colors);
   const selectedRarities = new Set(filters.rarities);
@@ -380,7 +391,7 @@ export default async function AdvancedSearchPage({
                       <span>{rarityLabel(card.rarity, locale)}</span>
                       <span>
                         {card.priceJpy !== null
-                          ? `¥${card.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}`
+                          ? formatPrice(card.priceJpy, locale, usdToJpyRate)
                           : t.priceUnknown}
                       </span>
                     </div>

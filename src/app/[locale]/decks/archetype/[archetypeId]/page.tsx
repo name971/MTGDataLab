@@ -10,6 +10,7 @@ import DeckDetailView from "@/components/DeckDetailView";
 import { FORMATS, formatLabel, type Format } from "@/lib/formats";
 import { isLocale, DEFAULT_LOCALE, type Locale } from "@/i18n/config";
 import { getDictionary } from "@/i18n/getDictionary";
+import { fetchExchangeRates } from "@/lib/fx";
 
 function formatLabelSafe(format: string, locale: Locale): string {
   return FORMATS.includes(format as Format) ? formatLabel(format as Format, locale) : format;
@@ -102,6 +103,16 @@ export default async function ArchetypeDetailPage({
   const visibleOtherDecks = otherDecks.slice(0, OTHER_DECKS_VISIBLE_COUNT);
   const collapsedOtherDecks = otherDecks.slice(OTHER_DECKS_VISIBLE_COUNT);
 
+  // 英語版は米国市場向けにUSD表示する（2026-09-16方針）
+  let usdToJpyRate = 150;
+  if (locale === "en") {
+    try {
+      usdToJpyRate = (await fetchExchangeRates()).usdToJpy;
+    } catch {
+      // 取得失敗時は既定値150のまま（表示上の概算なので致命的ではない）
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div>
@@ -124,6 +135,7 @@ export default async function ArchetypeDetailPage({
         <DeckDetailView
           cards={bestDeckDetail.cards}
           format={bestDeckDetail.format}
+          usdToJpyRate={usdToJpyRate}
           headerContent={
             <p className="text-sm text-neutral-500">
               {t.representativeDeck}{" "}
