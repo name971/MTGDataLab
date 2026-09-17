@@ -123,6 +123,7 @@ export default function WeeklyMoversList({
               onChange={(next) => updateParams({ filters: next })}
               onClose={() => setShowFilters(false)}
               overrideLocked={UNLOCK_FILTERS ? false : undefined}
+              usdToJpyRate={usdToJpyRate}
             />
           )}
         </div>

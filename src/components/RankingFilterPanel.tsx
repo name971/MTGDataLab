@@ -44,17 +44,23 @@ export default function RankingFilterPanel({
   onClose,
   extra,
   overrideLocked,
+  usdToJpyRate,
 }: {
   filters: RankingFilters;
   onChange: (next: RankingFilters) => void;
   onClose: () => void;
   extra?: ReactNode;
   overrideLocked?: boolean;
+  usdToJpyRate: number;
 }) {
   const status = useIsPremium();
   const locale = useLocale();
   const t = getDictionary(locale).rankingFilter;
   const locked = overrideLocked ?? status !== "premium";
+  // filters.priceMin/Maxは内部的に常に円で保持する（priceJpyとの比較用）。
+  // 英語版では表示だけドル換算し、入力もドルとして受け取って円に変換して保存する。
+  const toDisplay = (jpy: number | null) => (jpy == null ? null : locale === "en" ? jpy / usdToJpyRate : jpy);
+  const toJpy = (n: number | null) => (n == null ? null : locale === "en" ? Math.round(n * usdToJpyRate) : n);
   // overrideLocked指定時（テスト用）はstatusの読み込み待ちを無視して即座に判定する
   const showLockOverlay = overrideLocked !== undefined ? locked : locked && status !== "loading";
 
@@ -154,16 +160,16 @@ export default function RankingFilterPanel({
               <input
                 type="number"
                 placeholder={t.priceMinPlaceholder}
-                value={filters.priceMin ?? ""}
-                onChange={(e) => onChange({ ...filters, priceMin: toNumberOrNull(e.target.value) })}
+                value={toDisplay(filters.priceMin) ?? ""}
+                onChange={(e) => onChange({ ...filters, priceMin: toJpy(toNumberOrNull(e.target.value)) })}
                 className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
               />
               <span className="text-neutral-400">{t.rangeSeparator}</span>
               <input
                 type="number"
                 placeholder={t.priceMaxPlaceholder}
-                value={filters.priceMax ?? ""}
-                onChange={(e) => onChange({ ...filters, priceMax: toNumberOrNull(e.target.value) })}
+                value={toDisplay(filters.priceMax) ?? ""}
+                onChange={(e) => onChange({ ...filters, priceMax: toJpy(toNumberOrNull(e.target.value)) })}
                 className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-sm"
               />
             </div>

@@ -263,7 +263,7 @@ const en: typeof ja = {
     formatLabel: (count: number) => `Format${count > 0 ? ` (${count} selected)` : ""}`,
     colorLabel: "Color",
     rarityLabel: (count: number) => `Rarity${count > 0 ? ` (${count} selected)` : ""}`,
-    priceRangeLabel: "Price range (¥)",
+    priceRangeLabel: "Price range ($)",
     priceMinPlaceholder: "Min",
     priceMaxPlaceholder: "Max",
     rangeSeparator: "–",

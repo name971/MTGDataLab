@@ -126,6 +126,7 @@ export default function MlRankingList({
                 onChange={setFilters}
                 onClose={() => setShowFilters(false)}
                 overrideLocked={UNLOCK_FILTERS ? false : undefined}
+                usdToJpyRate={usdToJpyRate}
               />
             )}
           </div>
