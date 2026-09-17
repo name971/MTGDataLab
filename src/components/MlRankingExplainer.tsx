@@ -20,9 +20,9 @@ export default function MlRankingExplainer({ locale }: { locale: Locale }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col items-center gap-4 rounded-2xl border border-neutral-200 bg-white p-6 sm:flex-row sm:justify-center sm:gap-3">
+      <div className="flex flex-col items-center gap-4 rounded-2xl border border-neutral-200 bg-white p-6 sm:flex-row sm:items-start sm:justify-center sm:gap-3">
         {steps.map((step, i) => (
-          <div key={i} className="flex items-center gap-3 sm:gap-3">
+          <div key={i} className="flex items-center gap-3 sm:items-start sm:gap-3">
             <div className="flex flex-col items-center gap-2 text-center">
               <span className="relative flex h-14 w-14 items-center justify-center rounded-full bg-accent-soft text-2xl leading-none">
                 {step.emoji}
@@ -32,7 +32,7 @@ export default function MlRankingExplainer({ locale }: { locale: Locale }) {
               </span>
               <p className="max-w-[9rem] whitespace-pre-line text-sm font-medium text-neutral-800">{step.text}</p>
             </div>
-            {i < steps.length - 1 && <span className="hidden text-neutral-400 sm:block">→</span>}
+            {i < steps.length - 1 && <span className="hidden text-neutral-400 sm:mt-6 sm:block">→</span>}
           </div>
         ))}
       </div>

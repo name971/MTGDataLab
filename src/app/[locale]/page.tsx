@@ -6,7 +6,7 @@ import InfoTooltip from "@/components/InfoTooltip";
 import MaintenanceBanner from "@/components/MaintenanceBanner";
 import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
 import { getDictionary } from "@/i18n/getDictionary";
-import { fetchExchangeRates } from "@/lib/fx";
+import { fetchExchangeRateForDate } from "@/lib/fx";
 
 // 集計バッチは1日1回しか回らないため、鮮度より egress 削減を優先して長めにキャッシュする（ISR）
 export const revalidate = 3600;
@@ -45,14 +45,18 @@ export default async function TopPage({ params }: { params: Promise<{ locale: st
     dbDown = true;
   }
 
-  // 英語版は米国市場向けにUSD表示する（2026-09-16方針）。DBにはjpy_estしか無いため
-  // 現在の為替レートで換算する（CardHero.tsxのformatPriceと同じ簡易換算）。
+  // 英語版は米国市場向けにUSD表示する（2026-09-16方針）。jpy_estは予測日時点の価格
+  // （固定値）なので、今日のレートで換算すると為替変動分だけ実際の予測日の価格と
+  // ズレて見える（2026-09-17、ユーザー指摘）。予測日（calculatedAt）時点のレートを使う。
   let usdToJpyRate = 150;
   if (locale === "en") {
-    try {
-      usdToJpyRate = (await fetchExchangeRates()).usdToJpy;
-    } catch {
-      // 取得失敗時は既定値150のまま（表示上の概算なので致命的ではない）
+    const calculatedAt = mlRankingUp[0]?.calculatedAt ?? mlRankingDown[0]?.calculatedAt;
+    if (calculatedAt) {
+      try {
+        usdToJpyRate = (await fetchExchangeRateForDate(calculatedAt)) ?? 150;
+      } catch {
+        // 取得失敗時は既定値150のまま（表示上の概算なので致命的ではない）
+      }
     }
   }
 

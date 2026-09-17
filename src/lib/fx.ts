@@ -1,5 +1,7 @@
 /** Frankfurter API（為替レート、APIキー不要）から USD/EUR → JPY レートを取得する */
 
+import { supabase } from "./supabase";
+
 export interface ExchangeRates {
   usdToJpy: number;
   eurToJpy: number;
@@ -21,6 +23,25 @@ export async function fetchExchangeRates(): Promise<ExchangeRates> {
   );
   const eurData = (await eurToJpyRes.json()) as { rates: { JPY: number } };
   return { usdToJpy, eurToJpy: eurData.rates.JPY };
+}
+
+/**
+ * exchange_rates（Supabase、日次でml/fetch_data.pyが参照している同じテーブル）から
+ * 指定日以前で一番新しい為替レートを取得する。過去の日付（予測日等）のJPY価格を
+ * USD換算する際、今日のレートで割り戻すと日々のレート変動分だけ実際の予測時点の
+ * 価格とズレて見えてしまうため（2026-09-17、ユーザー指摘）、その日付時点のレートを使う。
+ * 土日は為替レートが更新されないため、以前の平日分がそのまま入っている想定
+ * （直近の実データで確認済み）。該当データが無い場合はnullを返す。
+ */
+export async function fetchExchangeRateForDate(date: string): Promise<number | null> {
+  const { data } = await supabase
+    .from("exchange_rates")
+    .select("usd_to_jpy")
+    .lte("date", date)
+    .order("date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data ? Number(data.usd_to_jpy) : null;
 }
 
 /** 為替換算した円価格。キリのいい数字に丸めない（誠実さを優先） */
