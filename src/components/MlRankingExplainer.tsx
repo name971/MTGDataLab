@@ -24,7 +24,7 @@ export default function MlRankingExplainer({ locale }: { locale: Locale }) {
         {steps.map((step, i) => (
           <div key={i} className="flex items-center gap-3 sm:gap-3">
             <div className="flex flex-col items-center gap-2 text-center">
-              <span className="relative flex h-14 w-14 items-center justify-center rounded-full bg-accent-soft text-2xl">
+              <span className="relative flex h-14 w-14 items-center justify-center rounded-full bg-accent-soft text-2xl leading-none">
                 {step.emoji}
                 <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-neutral-900 text-[10px] font-bold text-white">
                   {i + 1}
@@ -56,9 +56,9 @@ export default function MlRankingExplainer({ locale }: { locale: Locale }) {
           <span className="hidden self-stretch bg-neutral-200 sm:block" />
           <div className="flex flex-col items-center gap-2 text-center">
             <div className="flex items-center gap-2">
-              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-red-100 text-lg">📈</span>
+              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-red-100 text-lg leading-none">📈</span>
               <span className="text-neutral-400">→</span>
-              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-neutral-100 text-lg">🛒</span>
+              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-neutral-100 text-lg leading-none">🛒</span>
             </div>
             <p className="text-sm text-neutral-700">
               {t.explainerUpUsagePrefix}
@@ -80,9 +80,9 @@ export default function MlRankingExplainer({ locale }: { locale: Locale }) {
           <span className="hidden self-stretch bg-neutral-200 sm:block" />
           <div className="flex flex-col items-center gap-2 text-center">
             <div className="flex items-center gap-2">
-              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-blue-100 text-lg">📉</span>
+              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-blue-100 text-lg leading-none">📉</span>
               <span className="text-neutral-400">→</span>
-              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-neutral-100 text-lg">💸</span>
+              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-neutral-100 text-lg leading-none">💸</span>
             </div>
             <p className="text-sm text-neutral-700">
               {t.explainerDownUsagePrefix}

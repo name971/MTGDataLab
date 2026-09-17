@@ -6,6 +6,7 @@ import InfoTooltip from "@/components/InfoTooltip";
 import MaintenanceBanner from "@/components/MaintenanceBanner";
 import { isLocale, DEFAULT_LOCALE } from "@/i18n/config";
 import { getDictionary } from "@/i18n/getDictionary";
+import { fetchExchangeRates } from "@/lib/fx";
 
 // 集計バッチは1日1回しか回らないため、鮮度より egress 削減を優先して長めにキャッシュする（ISR）
 export const revalidate = 3600;
@@ -44,6 +45,17 @@ export default async function TopPage({ params }: { params: Promise<{ locale: st
     dbDown = true;
   }
 
+  // 英語版は米国市場向けにUSD表示する（2026-09-16方針）。DBにはjpy_estしか無いため
+  // 現在の為替レートで換算する（CardHero.tsxのformatPriceと同じ簡易換算）。
+  let usdToJpyRate = 150;
+  if (locale === "en") {
+    try {
+      usdToJpyRate = (await fetchExchangeRates()).usdToJpy;
+    } catch {
+      // 取得失敗時は既定値150のまま（表示上の概算なので致命的ではない）
+    }
+  }
+
   return (
     <div className="flex flex-col gap-16">
       {dbDown && <MaintenanceBanner />}
@@ -58,7 +70,7 @@ export default async function TopPage({ params }: { params: Promise<{ locale: st
             <MlRankingExplainer locale={locale} />
           </div>
           <Suspense fallback={null}>
-            <MlRankingList up={mlRankingUp} down={mlRankingDown} />
+            <MlRankingList up={mlRankingUp} down={mlRankingDown} usdToJpyRate={usdToJpyRate} />
           </Suspense>
         </section>
       )}

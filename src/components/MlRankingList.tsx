@@ -7,6 +7,7 @@ import { useLocale } from "@/i18n/useLocale";
 import { getDictionary } from "@/i18n/getDictionary";
 import { useMemo, useState } from "react";
 import type { MlRankingRow } from "@/lib/dbMlRanking";
+import { formatPrice } from "@/lib/fx";
 import RankingFilterPanel, {
   EMPTY_RANKING_FILTERS,
   GearIcon,
@@ -31,9 +32,11 @@ const LADDER = [
 export default function MlRankingList({
   up,
   down,
+  usdToJpyRate,
 }: {
   up: MlRankingRow[];
   down: MlRankingRow[];
+  usdToJpyRate: number;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -139,6 +142,7 @@ export default function MlRankingList({
             row={row}
             rank={page * PAGE_SIZE + index + 1}
             direction={direction}
+            usdToJpyRate={usdToJpyRate}
           />
         ))}
       </div>
@@ -209,10 +213,12 @@ function MlRankingCard({
   row,
   rank,
   direction,
+  usdToJpyRate,
 }: {
   row: MlRankingRow;
   rank: number;
   direction: "up" | "down";
+  usdToJpyRate: number;
 }) {
   // カードそのものを見分けられることが重要なので、アートクロップではなくカード全体の画像を使う。
   // Scryfallの画像URLは/<バリエーション>/front/<...>.jpgという共通構造なので置換で導出できる。
@@ -284,7 +290,7 @@ function MlRankingCard({
         <div className="[container-type:inline-size]">
           <div className="flex flex-nowrap items-baseline justify-end gap-x-1">
             <span className="font-numeric shrink-0 text-sm font-semibold">
-              ¥{row.priceJpy.toLocaleString("ja-JP", { maximumFractionDigits: 0 })}
+              {formatPrice(row.priceJpy, locale, usdToJpyRate)}
             </span>
             {/* 色の強弱はMAX優先（モデルが予測しているのはMAX側、ml/features.pyの
                 log_return_7d_max/min）。ただし並び順は現在値→MAXに戻した——MAXを先に
