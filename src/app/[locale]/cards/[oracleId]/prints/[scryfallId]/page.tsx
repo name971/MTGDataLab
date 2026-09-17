@@ -50,6 +50,13 @@ export default async function CardPrintDetailPage({
   ]);
   if (!print || print.scryfallId !== scryfallId || !card) notFound();
 
+  // getPrintPriceHistoryは単体プリントの推移なのでsetCode/setNameを付与しない
+  // （src/components/CardHero.tsxのselectPrintと同じ理由）。ここで補う。
+  const withSetInfo = (history: typeof priceHistory) =>
+    history.map((p) => ({ ...p, setCode: print.setCode, setName: print.setName }));
+  const priceHistoryWithSet = withSetInfo(priceHistory);
+  const foilPriceHistoryWithSet = withSetInfo(foilPriceHistory);
+
   const { oracle, enCard, jaCard, fallbackTypeLineJa, fallbackTextJa } = card;
   const nameJa = jaCard?.printed_name_ja ?? enCard.printed_name_ja ?? oracle.printed_name_ja;
   const nameEn = enCard.name;
@@ -139,8 +146,8 @@ export default async function CardPrintDetailPage({
 
       {(priceHistory.length > 0 || foilPriceHistory.length > 0) && (
         <PriceHistoryChart
-          enHistory={priceHistory}
-          enFoilHistory={foilPriceHistory}
+          enHistory={priceHistoryWithSet}
+          enFoilHistory={foilPriceHistoryWithSet}
           finish="normal"
           iconUrlBySetCode={{}}
           usdToJpyRate={usdToJpyRate}

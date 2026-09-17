@@ -353,8 +353,13 @@ export default function CardHero({
       const [normalData, foilData] = (await Promise.all([normalRes.json(), foilRes.json()])) as {
         history?: PricePoint[];
       }[];
-      setSelectedHistory(normalData.history ?? []);
-      setSelectedFoilHistory(foilData.history ?? []);
+      // 特定プリント単体の値動きは常にそのプリント自身のセットなので、API側では
+      // setCode/setNameを付与していない（アイコン表示ロジックは変化点にのみ描くため、
+      // 集約系列と違い先頭の1点だけ表示されれば十分）。ここで選択中プリントの情報を補う。
+      const withSetInfo = (history: PricePoint[] = []) =>
+        history.map((pt) => ({ ...pt, setCode: p.setCode, setName: p.setName }));
+      setSelectedHistory(withSetInfo(normalData.history));
+      setSelectedFoilHistory(withSetInfo(foilData.history));
     } catch {
       setSelectedHistory([]);
       setSelectedFoilHistory([]);
