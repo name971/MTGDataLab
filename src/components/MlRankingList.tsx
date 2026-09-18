@@ -53,6 +53,14 @@ export default function MlRankingList({
   const [filters, setFilters] = useState<RankingFilters>(EMPTY_RANKING_FILTERS);
 
   const allRows = direction === "up" ? up : down;
+  // 順位はモデルの確信度（予測確率順）を表すため、フィルター後の並び位置で振り直すと
+  // 元々45位のカードが残り3枚に絞られた途端「1位」と表示され、実際の確信度とズレた
+  // 信頼感を与えてしまう。フィルター前の全体順位を固定で使う（2026-09-19ユーザー指摘）。
+  const originalRankByOracleId = useMemo(() => {
+    const map = new Map<string, number>();
+    allRows.forEach((r, i) => map.set(r.oracleId, i + 1));
+    return map;
+  }, [allRows]);
   const rows = useMemo(
     () =>
       allRows.filter((r) =>
@@ -142,11 +150,11 @@ export default function MlRankingList({
           ラベルが潰れて読めなくなっていた（2026-08-29、ユーザー指摘）。他のカードグリッド
           （継続注目カード等）と同じくモバイルは2列にする。 */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-5 lg:grid-cols-5">
-        {pageRows.map((row, index) => (
+        {pageRows.map((row) => (
           <MlRankingCard
             key={row.oracleId}
             row={row}
-            rank={page * PAGE_SIZE + index + 1}
+            rank={originalRankByOracleId.get(row.oracleId) ?? 0}
             direction={direction}
             usdToJpyRate={usdToJpyRate}
           />

@@ -20,7 +20,7 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: "MTG DataLab",
-  description: "MTGカードの価格トレンド・トーナメント環境・パック期待値を可視化する非公式ファンサイト",
+  description: "AIによる高精度な価格予想（的中率76〜84%）で注目カードをランキング。MTGカードの価格トレンド・トーナメント環境も可視化する非公式ファンサイト",
 };
 
 export default function RootLayout({
