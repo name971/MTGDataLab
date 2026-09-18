@@ -1082,3 +1082,35 @@ HTTP 500/503を2/4/6/8/10秒バックオフで最大5回リトライする`fetch
 ページング+リトライ共通ヘルパを足して全スクリプトを統一する案は、影響範囲
 （`scripts/`配下の独自ページング実装すべて）が大きく今回は見送った
 （次に同種のタイムアウトを別スクリプトで踏んだら、個別追加ではなく共通化を優先する）。
+
+---
+
+## 2026-09-18 上記再実行後もClassify decks系5ステップが`column card_oracles.id does not exist`で失敗し続けていた
+
+**症状**: ユーザー指摘「パイプライン完了したけどエラー出ている」。上記のリトライ修正を
+入れて再実行したDaily data pipelineは全体としては`success`表示だったが、
+`Classify decks (Standard/Pioneer/Modern/Legacy/Vintage)`の5ステップが
+`GET card_oracles?select=oracle_id,name&oracle_id=in.(...) failed: 400
+{"message":"column card_oracles.id does not exist"}`で毎回失敗していた。
+`continue-on-error: true`が付いているため、ステップ単体は失敗していても
+ジョブ全体のconclusionは"success"のままで、GitHub Actionsの一覧やAPIの
+`conclusion`フィールドだけを見ても気づけない（`annotations`APIで個別に確認する
+必要があった）。
+
+**原因**: `scripts/classify-decks.ts`の共通ページングヘルパ`supabaseGetAll`は
+`decks`・`deck_cards`（どちらも主キーが`id`）向けに`order=id.asc`を固定で付けていた。
+2026-09-16に「R2アーカイブ行のoracle_idからカード名を引き直す」処理を追加した際、
+主キーが`oracle_id`で`id`列を持たない`card_oracles`テーブルにも同じヘルパをそのまま
+流用してしまい、常にソート列不在の400エラーになっていた。
+
+**教訓**: 汎用ヘルパの前提（このヘルパは「id列を持つテーブル専用」）が暗黙のままだと、
+別テーブルへの横展開時に静かに壊れる。`continue-on-error: true`はワークフロー全体を
+止めない目的で意図的に付けているものだが、副作用として個別ステップの恒常的な失敗が
+ジョブ一覧の色だけでは見えなくなる（今回のように「表示上は成功」を鵜呑みにできない）。
+
+**対応（機械的対策）**: `supabaseGetAll`に`orderColumn`引数（デフォルト`"id"`）を追加し、
+`card_oracles`呼び出し側で明示的に`"oracle_id"`を渡すよう修正。`continue-on-error`系の
+ステップ失敗を機械的に検知する仕組み（Slack通知等）までは今回は入れていない
+（既存の`Check data health`ステップの警告集約と役割が重なるため、次にこの種の
+「表示上は成功、実際は失敗」を見落としたら、continue-on-errorステップの失敗も
+まとめて拾う仕組みを検討する）。

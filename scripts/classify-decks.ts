@@ -58,13 +58,13 @@ async function supabaseGet(path: string) {
 // 得られず、新しく取り込まれたデッキが分類対象から静かに漏れ続ける事故が実際に起きていた。
 // id昇順で固定し、.range()でページングする。
 const PAGE_SIZE = 1000;
-async function supabaseGetAll(pathWithoutOrder: string): Promise<unknown[]> {
+async function supabaseGetAll(pathWithoutOrder: string, orderColumn = "id"): Promise<unknown[]> {
   const separator = pathWithoutOrder.includes("?") ? "&" : "?";
   const rows: unknown[] = [];
   let offset = 0;
   for (;;) {
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/${pathWithoutOrder}${separator}order=id.asc`,
+      `${SUPABASE_URL}/rest/v1/${pathWithoutOrder}${separator}order=${orderColumn}.asc`,
       {
         headers: {
           apikey: SUPABASE_ANON_KEY!,
@@ -215,6 +215,7 @@ async function main() {
       const chunk = needsNameOracleIds.slice(i, i + ORACLE_CHUNK);
       const oracles = (await supabaseGetAll(
         `card_oracles?select=oracle_id,name&oracle_id=in.(${chunk.join(",")})`,
+        "oracle_id",
       )) as { oracle_id: string; name: string }[];
       for (const o of oracles) nameByOracleId.set(o.oracle_id, o.name);
     }
