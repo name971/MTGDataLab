@@ -162,12 +162,18 @@ def _fetch_one_day_worker(day: date) -> tuple[dict[str, float], dict[str, str], 
 
 def fetch_one_day(
     day: date, scryfall_by_product_id: dict[str, str], oracle_by_scryfall: dict[str, str]
-) -> tuple[dict[str, float], dict[str, str], dict[str, float]]:
-    """1日分のアーカイブから、(オラクル単位の最安値, オラクル単位の最安プリントのscryfall_id,
-    プリント単位の価格) を返す。見つからなければ全て空辞書。
+) -> tuple[dict[str, float], dict[str, str], dict[str, dict[str, float]]]:
+    """1日分のアーカイブから、(オラクル単位の最安値[Normalのみ], オラクル単位の最安プリントの
+    scryfall_id, プリント単位の価格{scryfall_id: {"usd": ..., "usd_foil": ...}}) を返す。
+    見つからなければ全て空辞書。
     接続エラー（並列アクセスでtcgcsv.com側に接続をリセットされることが実際にあった）は
     数回リトライし、リトライしても失敗したら諦めてその日はスキップする（1日分の失敗で
-    ワーカープール全体・スクリプト全体を巻き込んでクラッシュさせない）。"""
+    ワーカープール全体・スクリプト全体を巻き込んでクラッシュさせない）。
+
+    2026-09-18: 以前はFoil行（subTypeName == "Foil"）を丸ごと読み飛ばしていた
+    （Foil追跡機能自体が2026-07-27に後から追加されたため、当時はNormalしか使い道が
+    無かった）。過去のFoil価格もアーカイブ自体には存在するため、遡及取得できるよう
+    usd_foilも拾うように変更（ユーザー指摘、再録の値動き調査で判明）。"""
     url = f"https://tcgcsv.com/archive/tcgplayer/prices-{day.isoformat()}.ppmd.7z"
     last_error: Exception | None = None
     for attempt in range(4):
@@ -202,11 +208,12 @@ def fetch_one_day(
         # 以前はここを記録しておらず、このスクリプトでバックフィルした日は「どのセットか」が
         # 分からずアイコン無し表示になっていた（2026-08-21判明）。
         best_scryfall_by_oracle: dict[str, str] = {}
-        usd_by_print: dict[str, float] = {}
+        usd_by_print: dict[str, dict[str, float]] = {}
         for prices_file in mtg_dir.glob("*/prices"):
             body = json.loads(prices_file.read_text(encoding="utf-8"))
             for row in body.get("results", []):
-                if row.get("subTypeName") != "Normal":
+                sub_type = row.get("subTypeName")
+                if sub_type not in ("Normal", "Foil"):
                     continue
                 market = row.get("marketPrice")
                 if market is None:
@@ -215,8 +222,14 @@ def fetch_one_day(
                 if not scryfall_id:
                     continue
                 usd = float(market)
-                usd_by_print[scryfall_id] = usd
+                entry = usd_by_print.setdefault(scryfall_id, {})
+                if sub_type == "Normal":
+                    entry["usd"] = usd
+                else:
+                    entry["usd_foil"] = usd
 
+                if sub_type != "Normal":
+                    continue
                 oracle_id = oracle_by_scryfall.get(scryfall_id)
                 if not oracle_id:
                     continue
@@ -243,6 +256,30 @@ def resolve_rate(day_str: str, sorted_dates: list[str], rate_by_date: dict[str, 
         else:
             break
     return rate_by_date.get(best) if best else None
+
+
+def sync_month_to_local(local_dir: Path, key: str, new_rows: pd.DataFrame, id_column: str) -> None:
+    """sync_month_to_r2のローカル版。R2に書く前段階として、まずローカルディスクに
+    保存して内容を確認できるようにする（ユーザー指示、2026-09-18）。ファイルレイアウトは
+    R2側と同じ（{prefix}/{month}.ndjson.gz）にしておき、後でR2へアップロードしたく
+    なった場合にそのままPutObjectできるようにする。"""
+    path = local_dir / key
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        with gzip.open(path, "rt", encoding="utf-8") as f:
+            existing_records = [json.loads(line) for line in f if line.strip()]
+        existing = pd.DataFrame(existing_records) if existing_records else new_rows.iloc[0:0]
+    else:
+        existing = new_rows.iloc[0:0]
+
+    merged = pd.concat([existing, new_rows], ignore_index=True)
+    merged = merged.drop_duplicates(subset=[id_column, "date"], keep="last")
+    merged = merged.sort_values([id_column, "date"])
+
+    with gzip.open(path, "wt", encoding="utf-8") as f:
+        for record in merged.to_dict(orient="records"):
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    print(f"  ローカルへ保存: {path}（{len(merged)}行）")
 
 
 def sync_month_to_r2(s3, key: str, new_rows: pd.DataFrame, id_column: str) -> None:
@@ -280,13 +317,24 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--start", type=str, default=ARCHIVE_START_DATE.isoformat())
     parser.add_argument("--end", type=str, default=date.today().isoformat())
+    parser.add_argument(
+        "--local-dir",
+        type=str,
+        default=None,
+        help="指定するとR2へは書き込まず、このディレクトリ配下にNDJSON.gzで保存する"
+        "（{prefix}/{month}.ndjson.gz、R2と同じレイアウト。2026-09-18、Foil価格の"
+        "遡及調査用に追加。内容を確認してから改めてR2へ取り込むかは別途判断する）",
+    )
     args = parser.parse_args()
     start = date.fromisoformat(args.start)
     end = date.fromisoformat(args.end)
+    local_dir = Path(args.local_dir) if args.local_dir else None
 
-    if not R2_BUCKET_NAME:
-        raise SystemExit("R2_BUCKET_NAME等のR2関連の環境変数を設定してください")
-    s3 = r2_client()
+    s3 = None
+    if local_dir is None:
+        if not R2_BUCKET_NAME:
+            raise SystemExit("R2_BUCKET_NAME等のR2関連の環境変数を設定してください")
+        s3 = r2_client()
 
     scryfall_by_product_id = build_product_id_to_scryfall_id()
     oracle_by_scryfall = build_candidate_scryfall_to_oracle()
@@ -298,7 +346,7 @@ def main() -> None:
     sorted_rate_dates = sorted(rate_by_date.keys())
     print(f"  {len(rate_by_date)}件（{sorted_rate_dates[0]}〜{sorted_rate_dates[-1]}）")
 
-    all_days = [d for d in daterange(start, end) if d.isoformat() < "2026-08-22"]  # TEMP: 障害期間の穴埋め用に一時変更
+    all_days = list(daterange(start, end))
     # 月ごとにまとめてR2へ書き込む（sync_month_to_r2が既存ファイルを読んでマージするため、
     # 同じ月を並列で書き込むと競合するので、月内の日付だけ並列化し、月をまたぐ処理は逐次にする）
     days_by_month: dict[str, list[date]] = {}
@@ -337,8 +385,13 @@ def main() -> None:
                         "jpy_est": round(usd * rate, 2),
                         "scryfall_id": scryfall_by_oracle.get(oracle_id),
                     })
-                for scryfall_id, usd in usd_by_print.items():
-                    print_month_buffer.append({"scryfall_id": scryfall_id, "date": day_str, "usd": usd})
+                for scryfall_id, prices in usd_by_print.items():
+                    print_month_buffer.append({
+                        "scryfall_id": scryfall_id,
+                        "date": day_str,
+                        "usd": prices.get("usd"),
+                        "usd_foil": prices.get("usd_foil"),
+                    })
                 total_rows_fetched += len(usd_by_oracle)
                 total_print_rows_fetched += len(usd_by_print)
                 print(f"  {day_str}: オラクル{len(usd_by_oracle)}件・プリント{len(usd_by_print)}件取得", flush=True)
