@@ -33,6 +33,11 @@ function formatDateSlash(isoDate: string): string {
 // 判定するより、角が四角い方が少数派で既知のセットに限られるため、こちらを列挙する方が楽。
 const SQUARE_CORNER_SET_CODES = new Set(["ced", "cei"]);
 
+// revalidate指定が漏れており、他の詳細ページ（cards/[oracleId]等）と違って毎回フルSSRで
+// 再計算されていた（2026-09-18、サイト軽量化調査で発覚）。集計バッチは1日1回なので
+// 他ページと同じ間隔でISRキャッシュする。
+export const revalidate = 21600;
+
 export default async function CardPrintDetailPage({
   params,
 }: {

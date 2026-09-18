@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import {
   fetchCardByFuzzyName,
@@ -196,13 +197,15 @@ async function resolveCard(searchName: string, locale: Locale): Promise<Resolved
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-async function resolveCardByParam(oracleId: string, locale: Locale): Promise<ResolvedCard | null> {
+// generateMetadataとページ本体の両方が同じ引数で呼ぶため、cache()で同一リクエスト内の
+// 2回目の呼び出しをメモ化する（重複クエリ、2026-09-18サイト軽量化調査で発覚）。
+const resolveCardByParam = cache(async (oracleId: string, locale: Locale): Promise<ResolvedCard | null> => {
   const searchName = SAMPLE_CARD_SLUGS[oracleId];
   if (searchName) return resolveCard(searchName, locale);
   // 実トーナメントデータ由来のカードはスラグを持たず、oracle_id（UUID）がそのままURLになる
   if (UUID_PATTERN.test(oracleId)) return resolveCardByOracleId(oracleId, locale);
   return null;
-}
+});
 
 export async function generateMetadata({
   params,

@@ -1,11 +1,16 @@
 import Link from "next/link";
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import {
-  getArchetypeById,
+  getArchetypeById as getArchetypeByIdUncached,
   getDecksByArchetypeId,
   getDeckDetailFromDb,
   type RecentDeckSummary,
 } from "@/lib/dbDeckDetail";
+
+// generateMetadataとページ本体の両方が同じ引数で呼ぶため、cache()で同一リクエスト内の
+// 2回目の呼び出しをメモ化する（重複クエリ、2026-09-18サイト軽量化調査で発覚）。
+const getArchetypeById = cache(getArchetypeByIdUncached);
 import DeckDetailView from "@/components/DeckDetailView";
 import { FORMATS, formatLabel, type Format } from "@/lib/formats";
 import { isLocale, DEFAULT_LOCALE, type Locale } from "@/i18n/config";

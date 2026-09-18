@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import { getSampleDeckDetail } from "@/lib/sampleDeckDetail";
 import { getDeckDetailFromDb } from "@/lib/dbDeckDetail";
@@ -27,7 +28,9 @@ interface PageDeck {
   format: string;
 }
 
-async function resolveDeck(deckId: string, locale: Locale): Promise<PageDeck | null> {
+// generateMetadataとページ本体の両方が同じ引数で呼ぶため、cache()で同一リクエスト内の
+// 2回目の呼び出しをメモ化する（重複クエリ、2026-09-18サイト軽量化調査で発覚）。
+const resolveDeck = cache(async (deckId: string, locale: Locale): Promise<PageDeck | null> => {
   const t = getDictionary(locale).deckDetailPage;
   const numericId = Number(deckId);
   if (Number.isInteger(numericId)) {
@@ -71,7 +74,7 @@ async function resolveDeck(deckId: string, locale: Locale): Promise<PageDeck | n
   }
 
   return null;
-}
+});
 
 export async function generateMetadata({
   params,
