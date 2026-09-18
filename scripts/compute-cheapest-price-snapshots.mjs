@@ -44,19 +44,32 @@ const PAGE_SIZE = 1000;
 // （runWithConcurrency、scripts/lib/r2PriceArchive.mjs参照）。
 const DB_CONCURRENCY = 6;
 
+// 大量upsert直後の一時的な負荷スパイクでcard_prints等10万行規模のテーブルへの単純な
+// フィルタ+count(*)がstatement timeout（57014、HTTPは500）を踏むことがある
+// （2026-08-31・2026-09-11・2026-09-15、docs/incident-log.md参照）。恒久的な性能問題では
+// なく一過性のため、ml/fetch_data.pyのsupabase_get_all()と同じ2/4/6/8/10秒バックオフで
+// リトライする。
+async function fetchWithRetry(url, headers, retries = 5) {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, { headers });
+    if (res.ok) return res;
+    const isRetryable = res.status === 500 || res.status === 503;
+    if (!isRetryable || attempt >= retries) return res;
+    await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+  }
+}
+
 /**
  * 1ページ目でcount:'exact'を付けて総件数を取得し、残りのページを並列に取得する
  * （以前は1ページずつ順番に待っており、card_print_current_prices等10万行規模のテーブルで
  * 往復だけで数分かかっていた。dbArchetypeStats.tsのgetArchetypesFromDbと同じパターン）。
  */
 async function supabaseGet(path) {
-  const firstRes = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      Prefer: "count=exact",
-      Range: `0-${PAGE_SIZE - 1}`,
-    },
+  const headers = { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` };
+  const firstRes = await fetchWithRetry(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...headers,
+    Prefer: "count=exact",
+    Range: `0-${PAGE_SIZE - 1}`,
   });
   if (!firstRes.ok) throw new Error(`GET ${path} failed: ${firstRes.status} ${await firstRes.text()}`);
   const firstPage = await firstRes.json();
@@ -69,12 +82,9 @@ async function supabaseGet(path) {
   // runWithConcurrencyは1件失敗しても継続する設計（R2向け）だが、Supabaseの読み取り欠落は
   // 静かに見過ごせないため、失敗件数を見て呼び出し元で必ず例外に変換する。
   const failed = await runWithConcurrency(offsets, DB_CONCURRENCY, async (offset) => {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        Range: `${offset}-${offset + PAGE_SIZE - 1}`,
-      },
+    const res = await fetchWithRetry(`${SUPABASE_URL}/rest/v1/${path}`, {
+      ...headers,
+      Range: `${offset}-${offset + PAGE_SIZE - 1}`,
     });
     if (!res.ok) throw new Error(`GET ${path} (offset ${offset}) failed: ${res.status} ${await res.text()}`);
     pages[offsets.indexOf(offset)] = await res.json();

@@ -1047,3 +1047,38 @@ Commanderページ調査と同種の教訓）。また`{ data } = await supabase
 にも同じパターンが多数あり範囲が大きくなるため今回は見送った（次に同種のエラー握りつぶし
 が原因のバグを踏んだら、個別修正ではなくSupabaseクエリのエラーハンドリング方針自体を
 まとめて見直す）。
+
+---
+
+## 2026-09-18 日次パイプラインが`card_prints?not_tournament_legal=eq.false`のstatement timeoutで失敗した
+
+**症状**: ユーザー指摘「パイプライン失敗している」。`daily-data-pipeline.yml`の
+「Compute cheapest-print-price snapshots」ステップが
+`GET card_prints?not_tournament_legal=eq.false&select=scryfall_id,oracle_id,set_code`で
+`57014 canceling statement due to statement timeout`（HTTP 500）により失敗し、
+以降のステップがskipされた（09-17 23:56 UTC開始、09-18 00:23に失敗）。
+
+**原因**: `compute-cheapest-price-snapshots.mjs`は2026-09-15に追加された
+「行自体が無いプリントを拾うため`card_prints`全件をcount:'exact'付きでページング取得する」
+処理（本ファイル該当箇所参照）を持つが、この独自`supabaseGet`にリトライが無かった。
+2026-08-31・2026-09-11に「大量upsert直後の一時的な負荷スパイクで単純なフィルタ+countが
+statement timeoutする」現象が既に2回記録されており、対応として`ml/fetch_data.py`の
+`supabase_get_all()`にはバックオフリトライを入れたが、同じリスクを持つこのスクリプトの
+`supabaseGet`には反映されていなかった（「教訓を書いても次のコードに反映されない」という
+本ファイル冒頭で繰り返し指摘している構造的な問題が今回も再発した）。直前の
+`Weekly catalog refresh`（09-14、`rebuild-card-prints.mjs`が`card_prints`全件を
+書き換える）による負荷の残存が引き金だった可能性が高い。
+
+**教訓**: 「あるスクリプトでリトライを追加した」だけでは、同じ10万行規模テーブルを
+同種のクエリで舐める他のスクリプトには波及しない。この手の対策は個別スクリプトへの
+後追い実装ではなく、最初から共通ヘルパ（`scripts/lib/supabaseRest.mjs`）に入れて
+全スクリプトに強制すべきだったが、`supabaseRest.mjs`自体もページング機能を持たず、
+`compute-cheapest-price-snapshots.mjs`はページング付きの`supabaseGet`を独自実装していた
+ため素直に乗り換えられなかった。
+
+**対応（機械的対策）**: `compute-cheapest-price-snapshots.mjs`の`supabaseGet`に、
+HTTP 500/503を2/4/6/8/10秒バックオフで最大5回リトライする`fetchWithRetry`を追加。
+今回失敗した日の分は本番再実行で復旧させる。恒久対応として`supabaseRest.mjs`に
+ページング+リトライ共通ヘルパを足して全スクリプトを統一する案は、影響範囲
+（`scripts/`配下の独自ページング実装すべて）が大きく今回は見送った
+（次に同種のタイムアウトを別スクリプトで踏んだら、個別追加ではなく共通化を優先する）。
