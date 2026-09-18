@@ -49,7 +49,7 @@ export default function MlRankingList({
   // 戻った時に見ていた状態のままにするため（クライアント側のuseStateだけだと、
   // 戻り時にこのコンポーネントが再マウントされて状態が失われていた）。
   const direction = searchParams.get("mlDir") === "down" ? "down" : "up";
-  const page = Math.max(0, Number(searchParams.get("mlPage") ?? "0") || 0);
+  const rawPage = Math.max(0, Number(searchParams.get("mlPage") ?? "0") || 0);
   const [filters, setFilters] = useState<RankingFilters>(EMPTY_RANKING_FILTERS);
 
   const allRows = direction === "up" ? up : down;
@@ -61,6 +61,11 @@ export default function MlRankingList({
     [allRows, filters],
   );
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  // フィルターで絞り込んだ結果、URLが指すページが存在しなくなることがある（例: 3ページ目を
+  // 見ている状態で絞り込んだら1ページ分しか残らない）。そのまま使うとpageRowsが空になり、
+  // pageCount<=1でページ送りUIも消えるため、抜け出せない真っ白画面になっていた
+  // （2026-09-18ユーザー指摘）。表示上はページ数の範囲内にクランプする。
+  const page = Math.min(rawPage, pageCount - 1);
   const pageRows = rows.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
 
   function updateParams(next: { direction?: "up" | "down"; page?: number }) {
