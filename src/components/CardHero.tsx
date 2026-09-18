@@ -753,7 +753,7 @@ export default function CardHero({
             <table className="hidden w-full table-fixed border-collapse text-sm sm:table">
               <colgroup>
                 <col className="w-auto" />
-                <col className="w-20" />
+                <col className="w-28" />
               </colgroup>
               <tbody>
                 {visiblePrints.map((p) => {
