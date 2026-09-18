@@ -1,7 +1,7 @@
 import { supabase } from "./supabase";
 import { getBestCardImages } from "./dbCardPrints";
 import { getR2ArchivedDeckCards } from "./deckCardsArchiveR2";
-import { getLatestPricesForOracles } from "./priceArchiveDb";
+import { getR2RecentPriceChanges } from "./priceArchiveR2";
 
 export interface DbDeckCard {
   oracleId: string | null;
@@ -259,10 +259,18 @@ export async function getDeckDetailFromDb(
     // このままだと「価格データなし」扱いになり、デッキ合計金額の計算で実質0円扱いされて
     // しまう（2026-09-15ユーザー指摘）。R2の価格アーカイブに残っている直近の値（古くても可）
     // があればそちらにフォールバックする。
+    // 以前はオラクルごとに個別GetObject（getLatestPricesForOracles）していたが、デッキ1枚の
+    // 表示のたびに数十件の並列R2読み取りが走り重かった。compute-cheapest-price-snapshots.mjsが
+    // 既に全オラクル分の最新価格を1ファイル（price-changes/latest.ndjson.gz）へ日次で
+    // まとめて書いているので、そちらを1回のGetObjectで読んで引く（ランキング/トレンド
+    // ページと同じ事前計算済みキャッシュの使い回し、2026-09-18ユーザー指摘で変更）。
     const missingOracleIds = oracleIds.filter((id) => !priceByOracle.has(id));
     if (missingOracleIds.length > 0) {
-      const fallbackPrices = await getLatestPricesForOracles(missingOracleIds);
-      for (const [oracleId, { jpy }] of fallbackPrices) priceByOracle.set(oracleId, jpy);
+      const recentChanges = await getR2RecentPriceChanges();
+      for (const oracleId of missingOracleIds) {
+        const jpy = recentChanges.get(oracleId)?.jpy;
+        if (jpy != null) priceByOracle.set(oracleId, jpy);
+      }
     }
   }
 
