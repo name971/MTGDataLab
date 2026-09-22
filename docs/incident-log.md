@@ -1114,3 +1114,34 @@ HTTP 500/503を2/4/6/8/10秒バックオフで最大5回リトライする`fetch
 （既存の`Check data health`ステップの警告集約と役割が重なるため、次にこの種の
 「表示上は成功、実際は失敗」を見落としたら、continue-on-errorステップの失敗も
 まとめて拾う仕組みを検討する）。
+
+---
+
+## 2026-09-21 Weekly catalog refreshが`cards`テーブルupsertのstatement timeoutで失敗した
+
+**症状**: ユーザー指摘「パイプライン失敗してたと思う」。`weekly-catalog-refresh.yml`の
+「Import full Scryfall catalog」ステップが
+`cards upsert failed: 500 {"message":"canceling statement due to statement timeout"}`
+で失敗し、以降のステップ（`rebuild-card-prints.mjs`等）がすべてskipされた。
+
+**原因**: `scripts/import-full-catalog.mjs`の`supabaseUpsert`は、`cards`テーブル
+（mana_value生成列があり重いため100件/チャンクに抑えている）を含め数万件規模を
+upsertするが、リトライを持っていなかった。同種の「大量upsert・週次バッチとの
+負荷スパイクで一部チャンクだけ一時的にstatement timeoutする」現象は
+2026-08-31・2026-09-11・2026-09-18と本ファイルに繰り返し記録されており、そのたびに
+踏んだスクリプト個別にリトライを足してきたが、この`import-full-catalog.mjs`には
+まだ反映されていなかった。
+
+**教訓**: 「Supabase REST全件ページング/大量upsertを行うスクリプトにはリトライを
+入れる」という教訓自体は本ファイルに何度も書いてあるのに、新しく書かれた
+（or まだ触っていない）スクリプトには機械的に伝播しない。個別スクリプトへの
+後追い実装を繰り返す限り、この種の障害は「まだ踏んでいないスクリプト」の数だけ
+再発し続ける。
+
+**対応（機械的対策）**: `import-full-catalog.mjs`の`supabaseUpsert`にHTTP 500/503を
+2/4/6/8/10秒バックオフで最大5回リトライする`fetchWithRetry`を追加
+（compute-cheapest-price-snapshots.mjsと同じ実装）。恒久対応として
+`scripts/lib/supabaseRest.mjs`に「大量upsert・ページング」共通ヘルパを作り
+全スクリプトをそこに寄せる案は、`scripts/`配下の該当スクリプトが多く影響範囲が
+大きいため今回も見送った（3回目の再発でも見送っており、次に同種の障害を
+踏んだら個別追加ではなく共通化を最優先で検討する）。

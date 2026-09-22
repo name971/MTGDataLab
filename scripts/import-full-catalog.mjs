@@ -58,11 +58,25 @@ const PAGE_SIZE = 300;
 // さらに小さいバッチにしないと3秒を超える。
 const CARDS_PAGE_SIZE = 100;
 
+// 数万件規模のupsertを毎週流すと、他バッチとの負荷スパイクが重なった一部チャンクだけが
+// statement timeout（57014、HTTPは500）を踏むことがある（2026-08-31・2026-09-11・
+// 2026-09-18と同種の現象がdocs/incident-log.mdに複数回記録されている）。恒久的な性能問題
+// ではなく一過性のため、他スクリプトと同じ2/4/6/8/10秒バックオフでリトライする。
+async function fetchWithRetry(url, options, retries = 5) {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, options);
+    if (res.ok) return res;
+    const isRetryable = res.status === 500 || res.status === 503;
+    if (!isRetryable || attempt >= retries) return res;
+    await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+  }
+}
+
 async function supabaseUpsert(table, rows, conflictColumn) {
   const pageSize = table === "cards" ? CARDS_PAGE_SIZE : PAGE_SIZE;
   for (let i = 0; i < rows.length; i += pageSize) {
     const chunk = rows.slice(i, i + pageSize);
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?on_conflict=${conflictColumn}`, {
+    const res = await fetchWithRetry(`${SUPABASE_URL}/rest/v1/${table}?on_conflict=${conflictColumn}`, {
       method: "POST",
       headers: {
         apikey: SUPABASE_ANON_KEY,
