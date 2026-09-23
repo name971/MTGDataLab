@@ -35,6 +35,9 @@ export function middleware(request: NextRequest) {
   return updateSession(request);
 }
 
+// robots.txtはNext.jsのファイル規約（src/app/robots.ts）でルート直下にしか生成されない。
+// ロケール振り分けの対象からも除外しないと/ja/robots.txt等にリダイレクトされて404になる
+// （2026-09-23判明、AIクローラー対策でrobots.tsを追加した際に発覚）。
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
 };
