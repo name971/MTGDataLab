@@ -60,10 +60,32 @@ export async function getR2PrintPriceHistory(
 
   const rows = await readCardFile<PrintCardRow>(bucket, R2_PRINT_CARD_PREFIX, scryfallId);
   const column = finish === "foil" ? "usd_foil" : "usd";
-  return rows
+  const points = rows
     .filter((r) => r[column] != null)
     .map((r) => ({ date: r.date, usd: Number(r[column]) }))
     .sort((a, b) => a.date.localeCompare(b.date));
+  return forwardFillDaily(points, new Date().toISOString().slice(0, 10));
+}
+
+/**
+ * 日次バッチは値が変わらない日の行を省略する（scripts/lib/r2PriceArchive.mjs dropUnchangedTail、
+ * 最長7日ごとに1行）ので、欠けた日を直前の値で埋めてグラフを階段状に戻す。最終行が8日より古い
+ * プリントは値が来なくなったものとして、今日までは延ばさない。
+ */
+export function forwardFillDaily(points: R2PricePoint[], today: string): R2PricePoint[] {
+  if (points.length === 0) return points;
+  const DAY = 86400000;
+  const last = points[points.length - 1];
+  const end = Date.parse(today) - Date.parse(last.date) <= 8 * DAY ? today : last.date;
+  const out: R2PricePoint[] = [];
+  for (let i = 0; i < points.length; i++) {
+    out.push(points[i]);
+    const until = Date.parse(i + 1 < points.length ? points[i + 1].date : end);
+    for (let t = Date.parse(points[i].date) + DAY; t < until + (i + 1 < points.length ? 0 : 1); t += DAY) {
+      out.push({ date: new Date(t).toISOString().slice(0, 10), usd: points[i].usd });
+    }
+  }
+  return out;
 }
 
 /**

@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
   const query = request.nextUrl.searchParams.get("q") ?? "";
   const locale = request.nextUrl.searchParams.get("locale") === "en" ? "en" : "ja";
 
-  const dbResults = await searchCardsInDb(query, locale);
+  const dbResults = await searchCardsInDb(query, locale, { includeCatalog: false });
   const results =
     dbResults.length > 0
       ? dbResults.map((r) => ({

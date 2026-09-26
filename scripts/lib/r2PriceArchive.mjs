@@ -159,10 +159,11 @@ export async function runWithConcurrency(items, concurrency, fn) {
  * 呼び出し元でも、実際に変化した分だけがR2への書き込み（Class A、無料枠100万件/月）を
  * 消費するようにするため（GET自体は読み取り無料枠10,000,000件/月に対して余裕がある）。
  */
-async function mergeCardFile(prefix, cardId, newRows) {
+async function mergeCardFile(prefix, cardId, newRows, { skipUnchanged = false } = {}) {
   const existing = await readNdjsonGz(`${prefix}/${cardId}.ndjson.gz`);
   const byDate = new Map(existing.map((r) => [r.date, r]));
   let changed = existing.length === 0;
+  if (skipUnchanged && existing.length > 0) newRows = dropUnchangedTail(existing, newRows);
   for (const r of newRows) {
     const prev = byDate.get(r.date);
     if (!prev || JSON.stringify(prev) !== JSON.stringify(r)) changed = true;
@@ -173,15 +174,38 @@ async function mergeCardFile(prefix, cardId, newRows) {
   await writeNdjsonGz(`${prefix}/${cardId}.ndjson.gz`, merged);
 }
 
+const HEARTBEAT_DAYS = 7;
+const withoutDate = ({ date, ...rest }) => JSON.stringify(rest);
+const daysBetween = (a, b) => (Date.parse(b) - Date.parse(a)) / 86400000;
+
+/**
+ * 既存の最終行より新しい日付の行のうち、直前の値と同じものを落とす（2026-09-27、毎日全ファイルに
+ * 新しい日付の行が増えるため「変化なしならPUTしない」が効かず、R2 Class Aが月約390万件に
+ * なっていた。プリントの日次価格変化は約26%のみ）。欠けた日は読み取り側（getR2PrintPriceHistory）
+ * で前日値を引き継ぐ。取引停止等で値が来なくなったプリントと区別するため、同じ値でも
+ * HEARTBEAT_DAYS日ごとに1行は書く。
+ */
+function dropUnchangedTail(existing, newRows) {
+  let last = existing.reduce((a, b) => (a.date >= b.date ? a : b));
+  const kept = [];
+  for (const r of [...newRows].sort((a, b) => a.date.localeCompare(b.date))) {
+    if (r.date <= last.date) { kept.push(r); continue; } // 過去日の上書き（再実行・修正）は常に反映
+    if (withoutDate(r) === withoutDate(last) && daysBetween(last.date, r.date) < HEARTBEAT_DAYS) continue;
+    kept.push(r);
+    last = r;
+  }
+  return kept;
+}
+
 /** カード単位でグルーピングしたrowsを、それぞれのカードファイルへマージ書き込みする。 */
-async function mergeCardFiles(prefix, rows, idColumn, concurrency = 16) {
+async function mergeCardFiles(prefix, rows, idColumn, concurrency = 16, options = {}) {
   const byId = new Map();
   for (const r of rows) {
     if (!byId.has(r[idColumn])) byId.set(r[idColumn], []);
     byId.get(r[idColumn]).push(r);
   }
   const failed = await runWithConcurrency([...byId.entries()], concurrency, ([cardId, cardRows]) =>
-    mergeCardFile(prefix, cardId, cardRows),
+    mergeCardFile(prefix, cardId, cardRows, options),
   );
   if (failed > 0) console.error(`  ${prefix}: ${failed}/${byId.size}件が失敗しました（続行済み）`);
   return byId.size;
@@ -228,7 +252,8 @@ export async function mergeOraclePriceRows(rows) {
 export async function mergePrintPriceRows(rows) {
   guardAgainstRepeatedMergeCalls("mergePrintPriceRows");
   await mergeRowsGroupedByMonth(R2_PRINT_PRICE_PREFIX, rows, "scryfall_id");
-  const cardCount = await mergeCardFiles(R2_PRINT_CARD_PREFIX, rows, "scryfall_id");
+  // ponytail: 省略はプリント単位だけ。oracle-historyはML結果判定等が日別の行を前提にしているため毎日書く
+  const cardCount = await mergeCardFiles(R2_PRINT_CARD_PREFIX, rows, "scryfall_id", 16, { skipUnchanged: true });
   console.log(`  R2（${R2_PRINT_CARD_PREFIX}）へカード単位で書き込み: ${cardCount}件`);
 }
 
@@ -340,3 +365,5 @@ export function monthsBetween(sinceStr, untilStr) {
   }
   return months;
 }
+
+export { dropUnchangedTail as _dropUnchangedTailForTest };

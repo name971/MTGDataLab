@@ -164,12 +164,15 @@ export async function searchCatalogOraclesByName(query: string, limit = 10): Pro
   try {
     const db = await getCatalogDb();
     if (!db) return [];
-    const like = `%${query}%`;
+    // trigramインデックス（db/catalog-fts.sql）は3文字未満を引けない。LIKE全行スキャンに戻すと
+    // D1の日次読み取り上限を圧迫するため、短い語はPostgres側の検索結果だけに任せる
+    // ponytail: 2文字以下の和名（例「稲妻」）はデッキ未使用カードだと出ない。必要なら2-gram列を別途用意
+    if ([...query].length < 3) return [];
     const res = await db
       .prepare(
-        "SELECT oracle_id, name, printed_name_ja, representative_image_uri FROM catalog_oracles WHERE name LIKE ?1 OR printed_name_ja LIKE ?1 LIMIT ?2",
+        "SELECT o.oracle_id, o.name, o.printed_name_ja, o.representative_image_uri FROM catalog_oracles_fts f JOIN catalog_oracles o ON o.rowid = f.rowid WHERE catalog_oracles_fts MATCH ?1 LIMIT ?2",
       )
-      .bind(like, limit)
+      .bind(`"${query.replace(/"/g, '""')}"`, limit)
       .all<{
         oracle_id: string;
         name: string;

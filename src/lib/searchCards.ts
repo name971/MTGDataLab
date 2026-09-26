@@ -17,6 +17,7 @@ export interface SearchCardResult {
 export async function searchCardsInDb(
   query: string,
   locale: "ja" | "en" = "ja",
+  { includeCatalog = true }: { includeCatalog?: boolean } = {},
 ): Promise<SearchCardResult[]> {
   const trimmed = query.trim();
   if (!meetsMinQueryLength(trimmed)) return [];
@@ -28,7 +29,8 @@ export async function searchCardsInDb(
   // デッキ未使用のため図鑑カタログ（D1）側に移ったカードも検索対象に含める
   // （Postgres側のヒットに無い名前だけ追加、重複防止）
   const seenOracleIds = new Set(oracles.map((o) => o.oracle_id));
-  const catalogHits = await searchCatalogOraclesByName(trimmed, 10);
+  // 入力中サジェストは打鍵ごとに呼ばれD1の日次読み取り上限を圧迫するため、確定検索時のみ探す
+  const catalogHits = includeCatalog ? await searchCatalogOraclesByName(trimmed, 10) : [];
   for (const hit of catalogHits) {
     if (seenOracleIds.has(hit.oracleId)) continue;
     seenOracleIds.add(hit.oracleId);

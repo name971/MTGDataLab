@@ -1172,3 +1172,40 @@ $4.99という外れ値しか無く（過去のTCGCSVバックフィル由来）
 現在価格で計算されるようになる。副次効果としてR2の個別読み取り件数も減る。
 フォールバック値自体の鮮度チェック（例: N日より古い値は使わない）は、Power Nine等で
 正規の値が古いものしか無いケースを壊すおそれがあるため今回は入れていない。
+
+---
+
+## 2026-09-27 D1の日次読み取り上限（500万行）に接近：カード名LIKE検索の全行スキャン
+
+**症状**: Cloudflareから「D1の操作数が1日の上限に近づいています」通知。9/26の読み取りが487万行/日。
+98%が `catalog_oracles WHERE name LIKE '%q%' OR printed_name_ja LIKE '%q%'`（270回、平均1.8万行/回）。
+
+**原因**: 検索サジェスト（打鍵ごとに発火）が毎回D1カタログも部分一致検索しており、先頭ワイルドカードの
+LIKEはインデックスが効かず全行スキャンになる。ヒットが少ない語ほど2.1万行を丸ごと読む。
+2026-08-13にデッキ未使用カードをD1へ移した際、検索経路の読み取り行数を見積もっていなかった。
+
+**対応**: (1) サジェストAPIではD1を検索しない（確定検索ページのみ）。(2) `db/catalog-fts.sql` で
+FTS5 trigramインデックス（外部コンテンツ＋トリガー追従）を作り、`searchCatalogOraclesByName` をMATCHに変更。
+3文字未満はtrigramで引けないためD1検索自体をスキップ。
+
+**コードで強制できるか**: D1への新規クエリで `LIKE '%` を使わない、はレビュー観点に留まる。
+定期的な検知として、Cloudflare GraphQL `d1QueriesAdaptiveGroups`（orderBy sum_rowsRead_DESC）で
+クエリ別読み取り行数を確認できる。
+
+---
+
+## 2026-09-27 R2 Class A（書き込み）が月約390万件で無料枠（100万件/月）を超過
+
+**症状**: Cloudflare GraphQL `r2OperationsAdaptiveGroups` で、Class Aが毎日約13万件。
+
+**原因**: `mergeCardFile` の「内容が同じならPUTしない」判定は、毎日「新しい日付の行」が加わるため
+再実行時以外は必ず変化ありになり、oracle-history（約3.3万）＋print-history（約9.6万）を毎日全件書き直していた。
+プリントの日次価格変化は実測約26%のみ。
+
+**対応**: print-historyだけ、直前と同じ値の日の行を省略（`dropUnchangedTail`、7日ごとに1行は書く）。
+読み取り側の `getR2PrintPriceHistory` で `forwardFillDaily` により欠けた日を前日値で埋める。
+月次ファイル（print-price-history/）は従来どおり全行を持つ。oracle-historyはML結果判定などが
+日別の行を前提にしているため、今回は対象外。
+
+**コードで強制できるか**: 「変化なしならスキップ」系の最適化は、日付を含めた比較では効かない。
+今回、単体チェック（`_dropUnchangedTailForTest`）とvitestを追加した。使用量は上記GraphQLで定期的に確認する。
