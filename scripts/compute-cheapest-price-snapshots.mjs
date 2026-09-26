@@ -160,8 +160,24 @@ async function main() {
   // （print-history/{scryfallId}.ndjson.gz）には価格履歴が残っていることが多い。
   // 使用不可版を除いた「価格が無いプリント」だけを対象に、R2から最後に分かっている価格を
   // フォールバックとして拾う。
+  //
+  // 2026-09-26: フォールバックは「どのプリントにも現在価格が無いオラクル」だけに限定する。
+  // 以前は他のプリントに正常な現在価格があるオラクルにも適用しており、R2に残っていた
+  // 2年以上前の外れ値（Alpha版Tropical Islandの$4.99、Summer Magic版Lightning Boltの$0.01等）が
+  // 「全プリント中の最安値」として採用され、12オラクルで価格が桁違いに安く表示されていた
+  // （ユーザー指摘、docs/incident-log.md参照）。
+  const oraclesWithCurrentPrice = new Set(
+    printRowsAll
+      .filter((r) => r.usd != null && !notTournamentLegalIds.has(r.scryfall_id))
+      .map((r) => r.oracle_id),
+  );
   const missingPriceIds = printRowsAll
-    .filter((r) => r.usd == null && !notTournamentLegalIds.has(r.scryfall_id))
+    .filter(
+      (r) =>
+        r.usd == null &&
+        !notTournamentLegalIds.has(r.scryfall_id) &&
+        !oraclesWithCurrentPrice.has(r.oracle_id),
+    )
     .map((r) => r.scryfall_id);
   console.log(`${missingPriceIds.length}件が現在価格未取得のためR2フォールバックを試行中...`);
   const r2FallbackByScryfallId = new Map(); // scryfall_id -> usd
