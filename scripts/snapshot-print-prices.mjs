@@ -93,11 +93,73 @@ async function supabaseUpsert(table, rows, conflictColumn) {
   if (failed > 0) throw new Error(`${table} upsert: ${failed}件のチャンクが失敗`);
 }
 
+const TCGCSV_BASE = "https://tcgcsv.com/tcgplayer/1"; // 1 = Magic
+const TCGCSV_MAX_AGE_HOURS = 36;
+// User-Agent未設定だとブロックされる（https://tcgcsv.com/docs#usage-guidelines）
+const TCGCSV_HEADERS = { "User-Agent": "MTGDataLab/1.0 (https://mtgdatalab.jp-mtgstocks.workers.dev)" };
+
+async function fetchJsonWithRetry(url, attempts = 3) {
+  for (let i = 1; ; i++) {
+    try {
+      const res = await fetch(url, { headers: TCGCSV_HEADERS });
+      if (!res.ok) throw new Error(`${res.status}`);
+      return await res.json();
+    } catch (err) {
+      if (i >= attempts) throw new Error(`GET ${url} failed: ${err.message}`);
+      await new Promise((r) => setTimeout(r, 2000 * i));
+    }
+  }
+}
+
+/**
+ * TCGCSV（TCGplayerの日次価格ミラー）から全MTGセットのマーケット価格を取得し、
+ * productId → { usd, usd_foil } を返す。2026-09-27〜Scryfallの価格が数日更新されず
+ * （バルク自体は毎日更新、中身の価格だけ固定）ほぼ全プリントが横ばいになったため、価格は
+ * TCGCSVを優先し、取れないプリント・日はScryfallの価格で補う（docs/incident-log.md参照）。
+ * 鮮度が古い・取得に大きく失敗した場合はnullを返し、呼び出し側は全件Scryfallに戻す。
+ */
+async function fetchTcgcsvPrices() {
+  try {
+    const res = await fetch("https://tcgcsv.com/last-updated.txt", { headers: TCGCSV_HEADERS });
+    if (!res.ok) throw new Error(`last-updated.txt: ${res.status}`);
+    const lastUpdated = (await res.text()).trim();
+    const ageHours = (Date.now() - Date.parse(lastUpdated)) / 3600000;
+    if (!(ageHours <= TCGCSV_MAX_AGE_HOURS)) {
+      console.warn(`TCGCSVの最終更新が古い（${lastUpdated}）ため使用しません`);
+      return null;
+    }
+    const groups = (await fetchJsonWithRetry(`${TCGCSV_BASE}/groups`)).results.map((g) => g.groupId);
+    const byProductId = new Map();
+    const failed = await runWithConcurrency(groups, 8, async (groupId) => {
+      const body = await fetchJsonWithRetry(`${TCGCSV_BASE}/${groupId}/prices`);
+      for (const row of body.results ?? []) {
+        if (row.marketPrice == null) continue;
+        const key = row.subTypeName === "Normal" ? "usd" : row.subTypeName === "Foil" ? "usd_foil" : null;
+        if (!key) continue;
+        const entry = byProductId.get(row.productId) ?? {};
+        entry[key] = Number(row.marketPrice);
+        byProductId.set(row.productId, entry);
+      }
+    });
+    if (failed > groups.length * 0.05) {
+      console.warn(`TCGCSV: ${failed}/${groups.length}セットの取得に失敗したため使用しません`);
+      return null;
+    }
+    console.log(`TCGCSV: ${groups.length}セット・${byProductId.size}商品の価格を取得（最終更新 ${lastUpdated}、失敗${failed}件）`);
+    return byProductId;
+  } catch (err) {
+    console.warn(`TCGCSVの取得に失敗したためScryfallの価格のみ使用します: ${err.message}`);
+    return null;
+  }
+}
+
 async function main() {
   const today = new Date().toISOString().slice(0, 10);
+  const dryRun = process.argv.includes("--dry-run");
 
   await ensureBulkData();
   const index = await buildPriceIndex();
+  const tcgcsv = await fetchTcgcsvPrices();
 
   const prints = await supabaseGetAll("card_prints?select=scryfall_id,oracle_id&order=scryfall_id.asc");
   console.log(`対象プリント: ${prints.length}件`);
@@ -106,10 +168,21 @@ async function main() {
   const archiveRows = [];
   let priced = 0;
   let foilPriced = 0;
+  const source = { tcgcsv: 0, scryfall: 0 };
+  const diffs = [];
   for (const p of prints) {
     const price = findPriceById(index, p.scryfall_id);
-    const usd = price?.usd != null ? parseFloat(price.usd) : null;
-    const usdFoil = price?.usd_foil != null ? parseFloat(price.usd_foil) : null;
+    const sfUsd = price?.usd != null ? parseFloat(price.usd) : null;
+    const sfFoil = price?.usd_foil != null ? parseFloat(price.usd_foil) : null;
+    // 日本語版等はtcgplayer_idが無い（またはTCGplayerに価格が無い）ためScryfallの値を使う
+    const tcg = price?.tcgplayer_id != null ? tcgcsv?.get(price.tcgplayer_id) : undefined;
+    const usd = tcg?.usd ?? sfUsd;
+    const usdFoil = tcg?.usd_foil ?? sfFoil;
+    for (const [t, sf] of [[tcg?.usd, sfUsd], [tcg?.usd_foil, sfFoil]]) {
+      if (t != null) source.tcgcsv++;
+      else if (sf != null) source.scryfall++;
+      if (t != null && sf != null) diffs.push(Math.abs(t - sf) / sf);
+    }
     if (usd === null && usdFoil === null) continue; // 価格が全く付いていないプリントは対象外
 
     if (usd !== null) priced++;
@@ -119,6 +192,17 @@ async function main() {
     archiveRows.push({ scryfall_id: p.scryfall_id, date: today, usd, usd_foil: usdFoil });
   }
   console.log(`価格あり: ${priced}件（うちFoil ${foilPriced}件）`);
+  console.log(`価格の取得元: TCGCSV ${source.tcgcsv}件 / Scryfallで補完 ${source.scryfall}件（通常・Foil合計）`);
+  if (diffs.length > 0) {
+    diffs.sort((a, b) => a - b);
+    const q = (x) => (diffs[Math.floor(diffs.length * x)] * 100).toFixed(1);
+    const same = diffs.filter((d) => d < 0.005).length;
+    console.log(`TCGCSVとScryfallの差: 一致(0.5%未満) ${((same / diffs.length) * 100).toFixed(1)}%、中央値${q(0.5)}%、90%点${q(0.9)}%、99%点${q(0.99)}%`);
+  }
+  if (dryRun) {
+    console.log("--dry-run: 書き込みはせず終了します");
+    return;
+  }
 
   // 「前日と変わったか」はcard_print_current_prices（Supabase、日次以外の理由でも更新されうる
   // 「今の価格」キャッシュ）と比較せず、全件をR2へ渡してR2側の比較・スキップ判定

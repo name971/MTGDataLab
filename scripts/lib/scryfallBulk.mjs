@@ -260,6 +260,7 @@ export async function buildPriceIndex() {
       eur: raw.prices?.eur ?? null,
       usd_foil: raw.prices?.usd_foil ?? null,
       set_type: raw.set_type,
+      tcgplayer_id: raw.tcgplayer_id ?? null,
     });
   });
 
@@ -295,6 +296,7 @@ export async function loadIndex() {
       eur: raw.prices?.eur ?? null,
       usd_foil: raw.prices?.usd_foil ?? null,
       set_type: raw.set_type,
+      tcgplayer_id: raw.tcgplayer_id ?? null,
     });
 
     if (raw.lang === "ja" && raw.oracle_id) {
