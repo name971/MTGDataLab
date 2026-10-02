@@ -176,9 +176,15 @@ async function main() {
     const sfFoil = price?.usd_foil != null ? parseFloat(price.usd_foil) : null;
     // 日本語版等はtcgplayer_idが無い（またはTCGplayerに価格が無い）ためScryfallの値を使う
     const tcg = price?.tcgplayer_id != null ? tcgcsv?.get(price.tcgplayer_id) : undefined;
-    const usd = tcg?.usd ?? sfUsd;
-    const usdFoil = tcg?.usd_foil ?? sfFoil;
-    for (const [t, sf] of [[tcg?.usd, sfUsd], [tcg?.usd_foil, sfFoil]]) {
+    // 7版の「319」と「319★」のように、通常版とFoil版が別プリントでもTCGplayerでは1商品
+    // （tcgplayer_id共通）のため、そのプリントに存在しない仕上げの価格は採用しない
+    // （両方の行に通常・Foil両方の価格が入り、プリント一覧で同じ行が2つ並んでいた、2026-10-02）
+    const has = (finish) => !price?.finishes || price.finishes.includes(finish);
+    const tcgUsd = has("nonfoil") ? tcg?.usd : undefined;
+    const tcgFoil = has("foil") ? tcg?.usd_foil : undefined;
+    const usd = tcgUsd ?? sfUsd;
+    const usdFoil = tcgFoil ?? sfFoil;
+    for (const [t, sf] of [[tcgUsd, sfUsd], [tcgFoil, sfFoil]]) {
       if (t != null) source.tcgcsv++;
       else if (sf != null) source.scryfall++;
       if (t != null && sf != null) diffs.push(Math.abs(t - sf) / sf);
