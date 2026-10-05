@@ -1243,3 +1243,22 @@ tcgplayer_idが共通のため、両プリントに両方の価格が入った�
 
 **コードで強制できるか**: 取得元の切り替え時は「件数の増減」をそのまま改善と見なさず、増えた行のサンプルを確認する。
 dry-runのログに取得元別件数を出しているので、旧取得元との差が大きい場合は内訳を見ること。
+
+---
+
+## 2026-10-06 Weekly catalog refreshが9/28・10/5の2週連続でcard_printsのFK違反により失敗
+
+**症状**: `import-full-catalog.mjs` の card_prints upsertが409（23503、`card_prints_oracle_id_fkey`）。
+oracle_id 0c597b2e…（トークン「Toy」）がcard_oraclesに無い。
+
+**原因**: 非トーナメントの除外をset_typeだけで判定していた。日本語版「Toy」はプロモ扱いのセット（plg24、
+set_type=promo）に入っているため除外されず、card_printsの候補になった。一方card_oraclesは英語版の代表プリント
+から作るが、英語版はtoken系セット（tdsk）にあり除外されるため、card_oraclesの行が作られずFK違反になった。
+Scryfallへの追加をきっかけに9/28から発生。2週分の週次更新（新カード・プリントの取り込み）が止まっていた。
+
+**対応**: layoutがtoken/double_faced_token/emblem/art_seriesのプリントを除外。加えて、card_oraclesに入らない
+oracle_idのプリントはupsert前に落とす（件数をログに出す）。修正後の確認で、残るずれはSLDのMechtitan（両面
+ポスター型）1件のみで、これもガードで除外される。
+
+**コードで強制できるか**: FKのある子テーブルへupsertする前に、親に存在するキーだけに絞るガードを入れた。
+`rebuild-card-prints.mjs` は既にcard_oraclesのoracle_idに絞っているため同種の問題は起きない。

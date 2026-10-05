@@ -90,6 +90,8 @@ async function supabaseUpsert(table, rows, conflictColumn) {
   }
 }
 
+const TOKEN_LAYOUTS = new Set(["token", "double_faced_token", "emblem", "art_series"]);
+
 async function main() {
   await ensureBulkData();
 
@@ -115,6 +117,11 @@ async function main() {
     // Art Series版が実カードとは別のcard_oraclesの行として登録されてしまっていた）。
     // funnyだけは除外しない: Unfinity以降は同じset内に普通に使用可能なカードが混在するため。
     if (raw.set_type !== "funny" && NON_TOURNAMENT_SET_TYPES.has(raw.set_type)) return;
+    // プロモ扱いのセット（例: plg24の日本語版「Toy」トークン）に入ったトークン・紋章は
+    // set_typeでは弾けないため、layoutでも除外する（英語版はtoken系セットにあり代表プリントに
+    // ならないので、card_oraclesに無いoracle_idのcard_printsだけが作られFK違反で週次更新が
+    // 止まっていた、2026-09-28〜10-05）
+    if (TOKEN_LAYOUTS.has(raw.layout)) return;
 
     // reversible_card（例: Secret Lair Dropの両面ポスター型ボーナス品）等はトップレベルの
     // oracle_idを持たないため、resolveOracleId()でcard_faces側から補う。ここで解決した値は
@@ -181,7 +188,14 @@ async function main() {
     if (jaCard) cardRows.push(toCardRow(jaCard, oracleId));
   }
 
+  const knownOracleIds = new Set(oracleRows.map((r) => r.oracle_id));
+  let skippedPrints = 0;
   for (const raw of allPrintsByKey.values()) {
+    // card_oraclesに入らないoracle_idのプリントはFK違反で全体が止まるため、ここで落とす
+    if (!knownOracleIds.has(resolveOracleId(raw))) {
+      skippedPrints++;
+      continue;
+    }
     const face = raw.card_faces?.[0];
     const imageUris = raw.image_uris ?? face?.image_uris ?? null;
     printRows.push({
@@ -194,6 +208,8 @@ async function main() {
       not_tournament_legal: isNotTournamentLegal(raw),
     });
   }
+
+  if (skippedPrints > 0) console.log(`card_oraclesに対応するoracle_idが無いプリント${skippedPrints}件をスキップ`);
 
   const setRows = [...setsByCode.entries()].map(([set_code, set_name]) => ({ set_code, set_name }));
 
