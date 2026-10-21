@@ -1262,3 +1262,25 @@ oracle_idのプリントはupsert前に落とす（件数をログに出す）�
 
 **コードで強制できるか**: FKのある子テーブルへupsertする前に、親に存在するキーだけに絞るガードを入れた。
 `rebuild-card-prints.mjs` は既にcard_oraclesのoracle_idに絞っているため同種の問題は起きない。
+
+---
+
+## 2026-10-22 日次パイプラインが10/20・10/21の2日連続で`card_prints`全件取得のstatement timeoutにより失敗
+
+**症状**: ユーザー指摘「dailyのエラー出ている」。`snapshot-print-prices.mjs`の
+`GET card_prints?select=scryfall_id,oracle_id&order=scryfall_id.asc`（count=exact付きの1ページ目）が
+`500 57014 canceling statement due to statement timeout`で失敗し、以降のステップがskipされた。
+10/21 08:51の手動再実行は成功しており、朝の定時実行時だけDBが重かった。
+
+**原因**: このスクリプトの独自`supabaseGetAll`は、count=exact（約10.5万行の全件カウント）＋offsetページングで、
+リトライも無かった。2026-08-31・09-11・09-18・09-21と同じ「負荷スパイクで一時的にstatement timeout」の4回目。
+
+**教訓**: 09-18・09-21で「次に同種を踏んだら個別追加ではなく共通化を最優先」と書いていた。今回はそれに従う。
+
+**対応（機械的対策）**: `scripts/lib/supabaseRest.mjs`に
+(1) 主キー順のキーセットページング`getAllByKey`（count=exactもoffsetも使わず、毎回インデックスの範囲読みだけ）、
+(2) 500＋57014も一時的エラーとしてリトライする判定
+を追加し、`snapshot-print-prices.mjs`の独自実装を削除してこれに乗り換えた。本番の読み取りで104,624件
+（総件数と一致、重複・欠落なし、約47秒）を確認。`compute-cheapest-price-snapshots.mjs`・`prune-old-usage-stats.mjs`
+にも独自のcount=exactページングが残っているが、どちらも既に個別リトライがあり今回は失敗していないため、
+次に触るときに`getAllByKey`へ寄せる（未対応として明記）。

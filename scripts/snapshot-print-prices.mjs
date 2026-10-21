@@ -20,6 +20,7 @@
 
 import { ensureBulkData, buildPriceIndex, findPriceById } from "./lib/scryfallBulk.mjs";
 import { mergePrintPriceRows, runWithConcurrency } from "./lib/r2PriceArchive.mjs";
+import { createSupabaseRest } from "./lib/supabaseRest.mjs";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -33,46 +34,6 @@ const PAGE_SIZE = 1000;
 // DB容量逼迫時に大量の同時接続で追い打ちをかけないよう、控えめな同時実行数にする
 // （runWithConcurrency、scripts/lib/r2PriceArchive.mjs参照）。
 const DB_CONCURRENCY = 6;
-
-/**
- * 1ページ目でcount:'exact'を付けて総件数を取得し、残りのページを並列に取得する
- * （以前は1ページずつ順番に待っており、103ページ規模だと往復だけで数分かかっていた。
- * dbArchetypeStats.tsのgetArchetypesFromDbで直したのと同じパターン）。
- */
-async function supabaseGetAll(path) {
-  const firstRes = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      Prefer: "count=exact",
-      Range: `0-${PAGE_SIZE - 1}`,
-    },
-  });
-  if (!firstRes.ok) throw new Error(`GET ${path} failed: ${firstRes.status} ${await firstRes.text()}`);
-  const firstPage = await firstRes.json();
-  const total = Number(firstRes.headers.get("content-range")?.split("/")[1] ?? firstPage.length);
-
-  const rows = [...firstPage];
-  const remainingPageCount = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
-  const offsets = Array.from({ length: remainingPageCount }, (_, i) => (i + 1) * PAGE_SIZE);
-  const pages = new Array(offsets.length);
-  // runWithConcurrencyは1件失敗しても継続する設計（R2向け）だが、Supabaseの読み取り欠落は
-  // 静かに見過ごせないため、失敗件数を見て呼び出し元で必ず例外に変換する。
-  const failed = await runWithConcurrency(offsets, DB_CONCURRENCY, async (offset) => {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        Range: `${offset}-${offset + PAGE_SIZE - 1}`,
-      },
-    });
-    if (!res.ok) throw new Error(`GET ${path} (offset ${offset}) failed: ${res.status} ${await res.text()}`);
-    pages[offsets.indexOf(offset)] = await res.json();
-  });
-  if (failed > 0) throw new Error(`GET ${path}: ${failed}件のページ取得に失敗`);
-  for (const page of pages) rows.push(...page);
-  return rows;
-}
 
 async function supabaseUpsert(table, rows, conflictColumn) {
   const chunks = [];
@@ -161,7 +122,8 @@ async function main() {
   const index = await buildPriceIndex();
   const tcgcsv = await fetchTcgcsvPrices();
 
-  const prints = await supabaseGetAll("card_prints?select=scryfall_id,oracle_id&order=scryfall_id.asc");
+  const prints = await createSupabaseRest({ url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY })
+    .getAllByKey("card_prints", "scryfall_id,oracle_id", "scryfall_id");
   console.log(`対象プリント: ${prints.length}件`);
 
   const cacheRows = [];

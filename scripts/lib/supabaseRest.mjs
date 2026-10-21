@@ -47,7 +47,11 @@ async function withRetry(fn, retries = 5) {
     try {
       return await fn();
     } catch (err) {
-      if (attempt >= retries || !String(err.message).includes(" 503 ")) throw err;
+      // 503（スキーマキャッシュ再読み込み等）と、500のstatement timeout（57014、他バッチとの
+      // 負荷スパイクで一時的に起きる。docs/incident-log.md 2026-10-22参照）は時間をおけば通る
+      const msg = String(err.message);
+      const transient = msg.includes(" 503 ") || (msg.includes(" 500 ") && msg.includes("57014"));
+      if (attempt >= retries || !transient) throw err;
       await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
     }
   }
@@ -78,6 +82,22 @@ export function createSupabaseRest({ url, anonKey }) {
   return {
     async get(path) {
       return request(path);
+    },
+    /**
+     * 主キー順のキーセットページング（key=gt.最後の値）で全件を取る。count=exactとoffsetは
+     * 大きなテーブルで全行走査になり、負荷の高い時間帯にstatement timeoutしていた
+     * （docs/incident-log.md 2026-10-22）。keyは一意でインデックスのある列を渡すこと。
+     */
+    async getAllByKey(table, select, key, pageSize = 1000) {
+      const rows = [];
+      let last = null;
+      for (;;) {
+        const after = last == null ? "" : `&${key}=gt.${encodeURIComponent(last)}`;
+        const page = await request(`${table}?select=${select}&order=${key}.asc&limit=${pageSize}${after}`);
+        rows.push(...page);
+        if (page.length < pageSize) return rows;
+        last = page[page.length - 1][key];
+      }
     },
     /** returnRows: trueにした場合のみ書き込んだ行を応答で受け取る（デフォルトはreturn=minimal） */
     async insert(table, rows, { returnRows = false } = {}) {
