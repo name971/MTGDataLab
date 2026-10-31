@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/proxy";
 import { LOCALES, type Locale } from "@/i18n/config";
+import { isBlockedCrawler } from "@/lib/blockedCrawlers";
 
 // Next.js 16ではmiddleware.tsはproxy.tsに改名されたが、そちらは常にNode.jsランタイムになり
 // Cloudflare向けアダプター（opennextjs-cloudflare）がまだ対応していない
@@ -24,6 +25,11 @@ function preferredLocale(request: NextRequest): Locale {
 }
 
 export function middleware(request: NextRequest) {
+  // robots.txtだけは読ませ（matcherで除外済み）、それ以外はレンダリング前に断ってCPU時間を使わせない。
+  if (isBlockedCrawler(request.headers.get("user-agent"))) {
+    return new NextResponse(null, { status: 403 });
+  }
+
   const { pathname } = request.nextUrl;
 
   if (!LOCALE_EXEMPT_PREFIXES.some((p) => pathname.startsWith(p)) && !hasLocalePrefix(pathname)) {

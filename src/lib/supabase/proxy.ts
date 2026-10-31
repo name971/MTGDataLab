@@ -6,6 +6,12 @@ import { NextResponse, type NextRequest } from "next/server";
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
 
+  // 未ログイン（Supabaseの認証Cookie無し）なら更新するセッションが無い。クローラー等の大半の
+  // リクエストでクライアント生成のCPU時間を省く（無料枠10ms対策、2026-10-31）。
+  if (!request.cookies.getAll().some((c) => c.name.startsWith("sb-"))) {
+    return response;
+  }
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,

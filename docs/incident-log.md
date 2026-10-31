@@ -1284,3 +1284,29 @@ oracle_idのプリントはupsert前に落とす（件数をログに出す）�
 （総件数と一致、重複・欠落なし、約47秒）を確認。`compute-cheapest-price-snapshots.mjs`・`prune-old-usage-stats.mjs`
 にも独自のcount=exactページングが残っているが、どちらも既に個別リトライがあり今回は失敗していないため、
 次に触るときに`getAllByKey`へ寄せる（未対応として明記）。
+
+---
+
+## 2026-10-31 Worker CPU時間超過（exceededResources）が1日最大約5,000件、原因はAmzn-SearchBot
+
+**症状**: ユーザー指摘「workercpuの超過メッセージ沢山くる」。GraphQL Analytics
+（`workersInvocationsAdaptive`）で10/26〜30は毎日3,000〜5,000件、全リクエストの4割前後がCPU超過で失敗。
+少なくとも10月初旬から日によって数件〜数千件の波があり、時間帯別では1時間に数百〜2,000件の集中が見られた。
+最後のデプロイは9/26で、デプロイ起因ではない。
+
+**原因**: `wrangler tail`で10分間取得した63件中59件がUA「Amzn-SearchBot/0.1」（Amazon AWS米国ASN）で、
+CPU超過21件は全件このボット（`/decks/[id]`・`/cards/[id]`の未キャッシュページ）。9/23にrobots.txtへ
+「Amazonbot」を入れたが、Amzn-SearchBotは別名のため素通りしていた。成功リクエストでもCPU中央値28〜100ms
+と無料枠10msを大きく超えており、未キャッシュのSSRはそもそも10msに収まらない。
+※Workers Logs（observability）は未有効、ゾーンもこのアカウントに無いため、パス別の内訳は`wrangler tail`でしか取れない。
+
+**教訓**: robots.txtのボット名は会社単位ではなくUA単位。新しいクローラーは別名で来る。
+CPU超過を見たら推測より先に`npx wrangler tail mtgdatalab --format json`でUA・パスを実測する。
+
+**対応（機械的対策）**:
+- ブロック対象UAを`src/lib/blockedCrawlers.ts`に一本化し、robots.txt（`robots.ts`）とmiddlewareの両方が参照。
+  middlewareはレンダリング前に403を返す（robots.txtを守らないボットも止まる）。Amzn-SearchBotを追加。
+- 未ログイン（`sb-`で始まるCookie無し）のリクエストではSupabaseのセッション更新（クライアント生成）を省略。
+- **コードで強制できるか**: 未知の新しいボット名は事前にリストへ入れようがないため完全には防げない。
+  根本的には有料プラン（CPU上限30秒）か、Cloudflareのゾーン（独自ドメイン）でBot Fight Mode等を使う必要がある。
+  当面は超過が再び増えたら`wrangler tail`でUAを確認してリストへ追加する運用。
