@@ -71,7 +71,7 @@ def ensure_fresh_data() -> None:
             )
 
 SUPABASE_URL = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
-SUPABASE_ANON_KEY = os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+SUPABASE_ANON_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
 TOP_N = 100
 RANK_BY = f"p_{THRESHOLDS_PCT[0]}"  # 最も緩い閾値（+5%以上）で順位を決める
 RETENTION_DAYS = 90  # 的中率検証に使う過去分の保持期間

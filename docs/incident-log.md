@@ -1310,3 +1310,37 @@ CPU超過を見たら推測より先に`npx wrangler tail mtgdatalab --format js
 - **コードで強制できるか**: 未知の新しいボット名は事前にリストへ入れようがないため完全には防げない。
   根本的には有料プラン（CPU上限30秒）か、Cloudflareのゾーン（独自ドメイン）でBot Fight Mode等を使う必要がある。
   当面は超過が再び増えたら`wrangler tail`でUAを確認してリストへ追加する運用。
+
+---
+
+## 2026-11-16 コード全体レビュー：RLS無効で全テーブルがanonキーで書き換え可能／トップ以外の全ページがISRされていなかった
+
+**症状（1）RLS**: Supabaseのadvisorと実DBの権限確認で、favorite_cards / price_alerts 以外の22テーブルがRLS無効、
+anonロールに全テーブルのINSERT/UPDATE/DELETE権限があった。anonキーはブラウザに配っているので、誰でも
+全データを書き換え・削除できる状態。日次バッチ（scripts/ 43本・ml/ 4本）もすべてanonキーで書き込んでいた
+ため、RLSを有効にするとバッチが止まる構造になっていた（＝「RLSを入れられない」理由が設計に埋まっていた）。
+
+**症状（2）キャッシュ**: `next build`のルート表と本番の`x-nextjs-cache`ヘッダーの実測で、ISRが効いているのは
+トップページだけと判明。`revalidate`を書いた9ページはどれも毎リクエストでSSRしていた。原因は2種類:
+(a) `await searchParams`を読むページは動的レンダリングになり`revalidate`は効かない（cards/[oracleId]・rankings・
+trending・decks・banned-cards 等）、(b) 動的セグメントのページは`generateStaticParams`（空配列可）が無いと
+実行時ISRの対象にならない（decks/[deckId]・archetype・prints）。未キャッシュSSRはCPU 28〜100msで無料枠10msを
+超えるため、2026-10-31のCPU超過の根本原因はボットではなくこちら（ボットは引き金）。過去の記録（09-15
+「ISRキャッシュのため6時間焼き付いていた」等）の前提も、実際には成り立っていなかった可能性がある。
+
+**教訓**: `export const revalidate`を書いたことと、キャッシュされていることは別。ビルドのルート表（●かƒか）と
+本番ヘッダーで確認する。「RLSは個人データだけ」という当初の設計判断（db/schema.sql）は、公開データの
+「読める」と「書ける」を区別していなかった。
+
+**対応**:
+- スクリプトとワークフローを`SUPABASE_SERVICE_ROLE_KEY`優先（未設定ならanonキー）に変更。シークレットを
+  入れるまで挙動は変わらない。
+- `db/rls.sql`を作成（全テーブルRLS有効・公開データは読み取りのみ・SECURITY DEFINER関数の匿名実行を禁止・
+  search_path固定）。**未適用**。適用順はファイル冒頭に記載（キー設定→バッチ確認→適用）。
+- キャッシュ（ISR化）は未対応。KVの無料枠（書き込み1,000件/日）に収まるかの見積もりが先に必要なため。
+- 未対応として明記: `useIsPremium`が存在しない`profiles`テーブルを読んでいる／`{ data }`だけ見てerrorを
+  捨てる箇所がsrc/libに29件／本番コードのサンプルデータへのフォールバック／scripts 41本の独自fetch。
+
+**コードで強制できるか**: RLSは、新規テーブルに自動でRLSを有効にするイベントトリガー（`ensure_rls`）が既にDBに
+あるので、`db/rls.sql`適用後は「RLS無しのテーブル」は増えない。キャッシュは、`scripts/check-page-speed.mjs`に
+「主要ページの2回目のアクセスで`x-nextjs-cache: HIT`が返ること」の検査を足せば機械的に検知できる（未実装）。

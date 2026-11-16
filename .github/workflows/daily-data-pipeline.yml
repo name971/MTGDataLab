@@ -30,6 +30,8 @@ jobs:
     env:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      # RLS有効化後の書き込み用。シークレット未設定なら空になり、スクリプトはanonキーにフォールバックする
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       TOPDECK_API_KEY: ${{ secrets.TOPDECK_API_KEY }}
       # scripts/snapshot-catalog-prices.mjsがD1（catalog_prints、デッキ未使用カードの
       # scryfall_id→oracle_id対応）をHTTP API経由で読むために必要。

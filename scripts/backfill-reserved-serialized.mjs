@@ -25,7 +25,8 @@ import { join } from "node:path";
 import { ensureBulkData, forEachJsonArrayObject, DATA_FILE } from "./lib/scryfallBulk.mjs";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+// RLS有効化後の書き込みはservice_roleキーが必要。未設定なら従来どおりanonキー（db/rls.sql参照）
+const SUPABASE_ANON_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const D1_DATABASE_NAME = process.env.D1_DATABASE_NAME ?? "jp-mtgstocks-archive";
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
