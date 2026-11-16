@@ -21,6 +21,10 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
+      # RLS有効化後はanonキーで書き込めない。シークレット未設定のままanonにフォールバックして
+      # 「成功」に見えるのを防ぐため、最初に止める（docs/incident-log.md 2026-11-16）
+      - name: Require SUPABASE_SERVICE_ROLE_KEY
+        run: "[ -n \"$SUPABASE_SERVICE_ROLE_KEY\" ] || { echo \"::error::SUPABASE_SERVICE_ROLE_KEY secret is empty\"; exit 1; }"
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4

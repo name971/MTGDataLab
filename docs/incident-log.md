@@ -1342,5 +1342,7 @@ trending・decks・banned-cards 等）、(b) 動的セグメントのページ�
   捨てる箇所がsrc/libに29件／本番コードのサンプルデータへのフォールバック／scripts 41本の独自fetch。
 
 **コードで強制できるか**: RLSは、新規テーブルに自動でRLSを有効にするイベントトリガー（`ensure_rls`）が既にDBに
-あるので、`db/rls.sql`適用後は「RLS無しのテーブル」は増えない。キャッシュは、`scripts/check-page-speed.mjs`に
+あるので、`db/rls.sql`適用後は「RLS無しのテーブル」は増えない。サービスキーは、スクリプト側がanonキーに
+フォールバックするため「シークレット未設定でもバッチは成功する」＝未設定に気づけない。そこで4つのワークフローの
+最初のステップで`SUPABASE_SERVICE_ROLE_KEY`が空なら失敗させる（2026-11-17追加）。キャッシュは、`scripts/check-page-speed.mjs`に
 「主要ページの2回目のアクセスで`x-nextjs-cache: HIT`が返ること」の検査を足せば機械的に検知できる（未実装）。
