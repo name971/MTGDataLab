@@ -1346,3 +1346,21 @@ trending・decks・banned-cards 等）、(b) 動的セグメントのページ�
 フォールバックするため「シークレット未設定でもバッチは成功する」＝未設定に気づけない。そこで4つのワークフローの
 最初のステップで`SUPABASE_SERVICE_ROLE_KEY`が空なら失敗させる（2026-11-17追加）。キャッシュは、`scripts/check-page-speed.mjs`に
 「主要ページの2回目のアクセスで`x-nextjs-cache: HIT`が返ること」の検査を足せば機械的に検知できる（未実装）。
+
+## 2026-11-20 日次パイプラインが`card_usage_stats`のupsertでstatement timeoutにより失敗
+
+**症状**: ユーザー指摘「Dailyにエラー」。`compute-deck-stats.mjs`の`card_usage_stats upsert`（1,000行）が
+`500 57014 canceling statement due to statement timeout`で失敗し、以降の7ステップ（deck_cardsのR2退避・
+usage_statsの間引き・trending・weekly movers等）がskipされた。前日・前々日は同じコードで成功している。
+
+**原因**: 08-31・09-11・09-18・09-21・10-22と同じ「負荷スパイクで一時的にstatement timeout」の6回目。
+10-22に`scripts/lib/supabaseRest.mjs`へ57014のリトライを入れたが、このスクリプトは独自のfetchラッパーのままで
+リトライが無かった。RLS（未適用）やservice_roleキーへの切り替え（11-17）とは無関係：service_roleの
+タイムアウトはauthenticatorの8秒を引き継ぎ、むしろanonの3秒より長い。
+
+**対応**: `supabaseRest.mjs`の`withRetry`をexportし、`compute-deck-stats.mjs`の独自GET/DELETE/UPSERTを
+それで包んだ（503・500+57014だけを指数バックオフで最大5回リトライ）。
+
+**コードで強制できるか**: 根本は「scriptsの41本が独自fetchラッパーを持っている」こと（11-16レビューで指摘済み）。
+1本ずつ直すたびに次の1本が落ちているので、日次パイプラインで動くスクリプトから順に`createSupabaseRest`か
+`withRetry`へ寄せるのが本筋（未対応）。

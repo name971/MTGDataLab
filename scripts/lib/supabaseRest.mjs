@@ -42,7 +42,7 @@ function trackEgress(byteLength, context) {
   }
 }
 
-async function withRetry(fn, retries = 5) {
+export async function withRetry(fn, retries = 5) {
   for (let attempt = 0; ; attempt++) {
     try {
       return await fn();

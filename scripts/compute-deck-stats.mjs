@@ -10,6 +10,8 @@
 
 import { readOracleCardFile, runWithConcurrency } from "./lib/r2PriceArchive.mjs";
 import { readDeckCardsFromR2 } from "./lib/r2DeckArchive.mjs";
+// 一時的な503/statement timeout(57014)を自動リトライする（docs/incident-log.md 2026-10-22・11-20）
+import { withRetry } from "./lib/supabaseRest.mjs";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 // RLS有効化後の書き込みはservice_roleキーが必要。未設定なら従来どおりanonキー（db/rls.sql参照）
@@ -38,15 +40,17 @@ async function supabaseGet(path) {
   const rows = [];
   let offset = 0;
   for (;;) {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        Range: `${offset}-${offset + PAGE_SIZE - 1}`,
-      },
+    const page = await withRetry(async () => {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          Range: `${offset}-${offset + PAGE_SIZE - 1}`,
+        },
+      });
+      if (!res.ok) throw new Error(`GET ${path} failed: ${res.status} ${await res.text()}`);
+      return res.json();
     });
-    if (!res.ok) throw new Error(`GET ${path} failed: ${res.status} ${await res.text()}`);
-    const page = await res.json();
     rows.push(...page);
     if (page.length < PAGE_SIZE) break;
     offset += PAGE_SIZE;
@@ -55,6 +59,10 @@ async function supabaseGet(path) {
 }
 
 async function supabaseDelete(path) {
+  return withRetry(() => deleteOnce(path));
+}
+
+async function deleteOnce(path) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     method: "DELETE",
     headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
@@ -64,6 +72,10 @@ async function supabaseDelete(path) {
 
 async function supabaseUpsert(table, rows, conflictColumn) {
   if (rows.length === 0) return;
+  return withRetry(() => upsertOnce(table, rows, conflictColumn));
+}
+
+async function upsertOnce(table, rows, conflictColumn) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?on_conflict=${conflictColumn}`, {
     method: "POST",
     headers: {
